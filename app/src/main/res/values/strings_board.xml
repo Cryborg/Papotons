@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="board_back">Retour</string>
+    <string name="board_home">Accueil</string>
+    <string name="board_loading">Chargement des grilles</string>
+    <!-- Annonce TalkBack d'une case qui ouvre une autre grille. -->
+    <string name="board_folder_description">%1$s, dossier</string>
+    <string name="message_hint">Les mots touchés s\'affichent ici</string>
+    <string name="message_speak">Dire la phrase</string>
+    <string name="message_delete_last">Effacer le dernier mot</string>
+    <string name="message_clear">Tout effacer</string>
+</resources>

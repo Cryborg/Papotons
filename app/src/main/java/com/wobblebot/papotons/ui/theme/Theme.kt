@@ -6,7 +6,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 // Thème clair et contrasté : les grilles de communication se lisent mieux sur fond clair.
-// Le code couleur des catégories de mots (Fitzgerald) viendra ici, en tokens nommés par rôle.
 private val PapotonsColorScheme = lightColorScheme(
     primary = Color(0xFF1F5FAD),
     onPrimary = Color(0xFFFFFFFF),
@@ -14,7 +13,16 @@ private val PapotonsColorScheme = lightColorScheme(
     onBackground = Color(0xFF1A1A1A),
     surface = Color(0xFFFFFFFF),
     onSurface = Color(0xFF1A1A1A),
+    // Case mot et fond de la barre de message.
+    surfaceVariant = Color(0xFFEEF2F7),
     onSurfaceVariant = Color(0xFF4A4A4A),
+    // Seul séparateur des cases sur le fond (le fond des cases est presque blanc) : au moins 3:1.
+    outline = Color(0xFF6F7885),
+    // Case dossier : se distingue d'un mot par le fond (et par son icône, la couleur ne suffit pas).
+    secondaryContainer = Color(0xFFFFE7A8),
+    onSecondaryContainer = Color(0xFF3B2C00),
+    // Alerte « voix indisponible ».
+    error = Color(0xFFB3261E),
 )
 
 @Composable

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="board_back">Back</string>
+    <string name="board_home">Home</string>
+    <string name="board_loading">Loading boards</string>
+    <string name="board_folder_description">%1$s, folder</string>
+    <string name="message_hint">Touched words show up here</string>
+    <string name="message_speak">Say the sentence</string>
+    <string name="message_delete_last">Delete the last word</string>
+    <string name="message_clear">Clear all</string>
+</resources>

@@ -16,21 +16,24 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 - **2026-11-06, sauvegarde Android complète** (rien d'exclu). Pourquoi : les grilles personnalisées sont ce qu'il ne faut jamais perdre.
 - **2026-11-06, dépôt public (open source)**.
 - **2026-11-06, code sous GPL-3.0**. Pourquoi : comme Cboard, personne ne peut en tirer une version fermée et payante. Les pictos ARASAAC restent sous leur propre licence (CC BY-NC-SA).
+- **2026-11-06, grilles stockées en Room** (ex-D-3). Open Board Format seulement à l'import et à l'export. Pourquoi : requêtes, migrations vérifiables (schéma exporté dans `app/schemas/`), contraintes qui gardent les positions (index unique) et les dossiers (RESTRICT).
 
 ## Décisions à trancher
 - **D-2 Repli de langue** : `values/` est en français, donc un téléphone en allemand affiche l'appli en français. Garder ce repli (public d'abord francophone) ou poser la brique `langue` pour renvoyer vers l'anglais ?
-- **D-3 Format de stockage des grilles** : Room (requêtes, migrations) ou fichiers OBF en JSON (format d'échange natif, pas de conversion). Recommandation : Room pour l'appli, OBF seulement à l'import et à l'export.
 
 ## Dette ouverte
 
 - **TODO-1** Pas encore de `docs/regles/INVARIANTS.md` ni de tests qui gardent les invariants 1 à 5 du CLAUDE.md : à écrire avec les premières fonctions (S).
 - **TODO-2** Icône provisoire (bulle blanche sur bleu) : à faire dessiner, avec une version monochrome pour les icônes à thème d'Android 13 (S).
+- **TODO-3** Base perdue prise pour un premier lancement : `seedIfEmpty` réinsère la démo dès que `boards` est vide, et le callback par défaut de SQLite supprime le fichier d'une base corrompue. Poser un marqueur « installation amorcée » (table vide + marqueur = alerte, pas de démo) et copier la base avant toute suppression dans `onCorruption` (invariant 4) (S).
+- **TODO-4** Volume média à zéro : la voix part sur le flux média, souvent baissé sur tablette, et l'utilisateur non oral ne peut pas signaler le silence. Prévenir quand le volume est à zéro (S).
+- **TODO-5** Langue de la voix figée : lue une seule fois à l'init, depuis la langue des ressources. Un changement de langue de l'appareil change l'interface et pas la voix ; à terme, la langue appartient à la grille (S).
+- **TODO-6** Message et pile de navigation perdus à la mort du processus : les garder dans `SavedStateHandle` (S).
 
 ## Feuille de route (MVP)
 
-- **MVP-1** Grille de cases (picto + texte), dossiers, barre de message, synthèse vocale (`TextToSpeech`, moteur installé).
-- **MVP-2** Vocabulaire de base en français fourni avec l'appli, positions fixes, code couleur Fitzgerald.
-- **MVP-3** Mode édition protégé : ajout et modification de cases, picto ARASAAC recherché par mot-clé (téléchargé puis gardé hors ligne).
+- **MVP-2** Vocabulaire de base en français fourni avec l'appli (remplace la démo du premier lancement), image de case avec les pictos ARASAAC embarqués, positions fixes, code couleur Fitzgerald.
+- **MVP-3** **Prérequis** : TODO-3. Mode édition protégé : ajout et modification de cases, picto ARASAAC recherché par mot-clé (téléchargé puis gardé hors ligne).
 - **MVP-7** Cartes personnalisées : créer sa propre carte avec une photo prise sur le moment ou une image importée, plus son libellé et ce qu'elle dit. Pistes :
   - photo par `ActivityResultContracts.TakePicture` (aucune permission CAMERA tant que le manifeste n'en déclare pas) ;
   - import par le sélecteur de photos d'Android (`PickVisualMedia`, sans permission de stockage, disponible dès Android 8 via les services Play) ;
@@ -38,7 +41,7 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
   - image copiée dans le stockage de l'appli, jamais référencée par son URI d'origine (elle disparaîtrait si la photo est supprimée de la galerie) ;
   - incluse dans la sauvegarde et l'export `.obz` (invariant 4), jamais envoyée ailleurs (invariant 1 : ce sont souvent des photos de proches).
 - **MVP-4** Sauvegarde et restauration, import et export Open Board Format (`.obf`/`.obz`), rappel de sauvegarde.
-- **MVP-5** Écran « À propos » avec le crédit ARASAAC, politique de confidentialité hébergée gratuitement.
+- **MVP-5** Écran « À propos » avec le crédit ARASAAC, la ligne de version (`AppVersionLine`, sans écran depuis le MVP-1) et la mention Apache 2.0 des icônes Material ; politique de confidentialité hébergée gratuitement.
 - **MVP-6** Test fermé avec des orthophonistes et des familles (ISAAC Francophone, associations).
 
 ## Idées
@@ -48,3 +51,4 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 - **IDEE-3** Verrouillage de l'appli (épinglage d'écran / lock task mode).
 - **IDEE-4** Statistiques d'usage locales pour l'orthophoniste (jamais envoyées nulle part).
 - **IDEE-5** Autres bibliothèques de pictos via Global Symbols.
+- **IDEE-6** Réglages de parole : anti-rebond des appuis répétés, retour à l'accueil après un mot pris dans un dossier, prononciation mot par mot désactivable, choix du moteur et de la voix.

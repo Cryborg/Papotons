@@ -6,7 +6,7 @@ Ce fichier ne porte que ce qui change le code qu'on écrit. Le « pourquoi » vi
 
 ## Stack
 
-- Kotlin 2.4.20, Jetpack Compose (Material 3), Hilt, DataStore. minSdk 26, targetSdk 37. Paquet `com.wobblebot.papotons`.
+- Kotlin 2.4.20, Jetpack Compose (Material 3), Hilt, DataStore, Room (schéma exporté dans `app/schemas/`, versionné). minSdk 26, targetSdk 37. Paquet `com.wobblebot.papotons`.
 - Conventions et pièges de la stack : skill `socle-android:kotlin-compose`. Ce fichier l'emporte en cas de conflit.
 - Briques de l'atelier posées : `gradle`, `appli`, `splash`, `mise-a-jour`, `version`, `file-gradle`, `scan-mecanique`.
 
@@ -21,7 +21,7 @@ Tout build passe par la file de la machine (le hook `garde-gradle` refuse `./gra
 
 ## Architecture
 
-- Arborescence : `ui/` (écrans, `theme/`, `splash/`, `settings/`), `update/` (mise à jour Play depuis l'appli).
+- Arborescence : `domain/` (modèle pur : grille, case, placement), `data/` (Room : grilles et cases, démo du premier lancement), `speech/` (synthèse vocale et son rétablissement), `ui/` (écrans, `board/`, `theme/`, `splash/`, `settings/`), `update/` (mise à jour Play depuis l'appli).
 - Activité unique, écrans en Compose.
 
 ## Conventions

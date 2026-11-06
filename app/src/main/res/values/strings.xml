@@ -1,6 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name" translatable="false">Papotons</string>
-    <!-- Écran provisoire, en attendant la grille de communication. -->
-    <string name="home_tagline">Les grilles de communication arrivent bientôt.</string>
 </resources>

@@ -14,8 +14,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.wobblebot.papotons.ui.home.HomeScreen
+import com.wobblebot.papotons.ui.board.BoardRoute
+import com.wobblebot.papotons.ui.board.BoardViewModel
 import com.wobblebot.papotons.ui.splash.StudioSplashScreen
 import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import com.wobblebot.papotons.update.InAppUpdateManager
@@ -39,7 +41,7 @@ class MainActivity : ComponentActivity() {
         // AVANT super.onCreate, sinon le thème de splash reste en place.
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        // Chaque écran consomme ensuite ses insets (Scaffold, safeDrawingPadding).
+        // Chaque écran consomme ensuite ses insets (la grille : barres système et encoche, pas le clavier).
         enableEdgeToEdge()
         inAppUpdateManager = InAppUpdateManager(this)
         setContent {
@@ -72,12 +74,13 @@ private fun PapotonsApp(inAppUpdateManager: InAppUpdateManager) {
     val isUpdateReady by inAppUpdateManager.isReadyToInstall.collectAsStateWithLifecycle()
     // « Plus tard » vaut pour la session : le flux reste vrai et la boîte reviendrait à chaque retour.
     var isUpdatePostponed by rememberSaveable { mutableStateOf(false) }
-    // À brancher sur « un message est en cours de composition » : le redémarrage de
-    // l'installation ne doit jamais couper quelqu'un au milieu d'une phrase.
-    val isComposingMessage = false
+    val boardViewModel: BoardViewModel = hiltViewModel()
+    val boardState by boardViewModel.uiState.collectAsStateWithLifecycle()
+    // Le redémarrage de l'installation ne doit jamais couper quelqu'un au milieu d'une phrase.
+    val isComposingMessage = boardState.isComposingMessage
 
     Box {
-        HomeScreen()
+        BoardRoute(viewModel = boardViewModel, state = boardState)
         // Dernier enfant de la Box : dessiné au-dessus, il reçoit les taps en premier.
         if (!isSplashFinished) {
             StudioSplashScreen(onFinished = { isSplashFinished = true })

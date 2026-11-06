@@ -4,7 +4,7 @@ Lu par les skills et agents du plugin `socle` (review-and-fix, lessons, push-own
 
 ## Projet
 
-- Stack : Kotlin 2.4.20, Jetpack Compose (Material 3), Hilt, DataStore. Aucun Firebase.
+- Stack : Kotlin 2.4.20, Jetpack Compose (Material 3), Hilt, DataStore, Room. Aucun Firebase.
 - Langue du code : anglais. Langue des textes affichés : français source (`values/`), anglais (`values-en/`)
 - Branche : `main`
 - Base du diff par défaut : travail du jour sur `main` (parent du premier commit depuis minuit) et l'arbre non commité
@@ -28,7 +28,7 @@ Lu par les skills et agents du plugin `socle` (review-and-fix, lessons, push-own
 | Segment | Fichiers | Agents en plus de `socle:code-reviewer` |
 |---|---|---|
 | ui-compose | Composables, thème, `Modifier` | `socle-android:accessibility-auditor`, `socle-android:performance-deep` |
-| données | stockage des grilles, import et export, sauvegarde | `socle:silent-failure-hunter` |
+| données | stockage des grilles (`data/`, `app/schemas/`), import et export, sauvegarde | `socle:silent-failure-hunter` |
 | dépendances | `gradle/libs.versions.toml`, `app/build.gradle.kts`, manifeste | `socle-android:security-auditor` (invariant 1 : rien qui collecte ou coûte) |
 | gros changements | plus de 4 fichiers ou nouvelles abstractions | `socle-android:code-maintainability-guardian` |
 | tests | `src/test/`, `src/androidTest/` | `socle:test-analyzer` |
@@ -37,6 +37,7 @@ Lu par les skills et agents du plugin `socle` (review-and-fix, lessons, push-own
 ## Faux positifs connus
 
 - Fond `Color.Black` en dur dans `ui/splash/StudioSplashScreen.kt` : carton de l'éditeur, identique d'une appli à l'autre (brique `splash`).
+- R15 du scan mécanique sur `ui/board/SpeechUnavailableDialog.kt` : ses boutons portent un texte, qui leur sert de description.
 
 ## Plan
 
