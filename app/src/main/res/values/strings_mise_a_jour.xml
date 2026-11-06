@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Boîte « mise à jour prête » : la version est téléchargée, l'installer redémarre l'appli. -->
+    <string name="update_ready_title">Une nouvelle version est prête</string>
+    <string name="update_ready_body">Elle est déjà téléchargée. L\'installer redémarre l\'appli.</string>
+    <string name="update_ready_install">Installer maintenant</string>
+    <string name="update_ready_later">Plus tard</string>
+</resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_ready_title">A new version is ready</string>
+    <string name="update_ready_body">It is already downloaded. Installing it restarts the app.</string>
+    <string name="update_ready_install">Install now</string>
+    <string name="update_ready_later">Later</string>
+</resources>

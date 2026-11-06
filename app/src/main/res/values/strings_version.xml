@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Version de l'appli, en bas des réglages. Le code de version entre parenthèses
+         désigne un build sans ambiguïté : sans lui, savoir ce qui tourne sur un appareil
+         distant demande de le deviner. -->
+    <string name="settings_version">Version %1$s (%2$d)</string>
+</resources>

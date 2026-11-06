@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Description accessible du logo du carton studio (TalkBack). -->
+    <string name="studio_logo_description">Logo de WobbleBot Studio</string>
+</resources>

@@ -1,0 +1,14 @@
+{
+  "extraKnownMarketplaces": {
+    "atelier": {
+      "source": {
+        "source": "github",
+        "repo": "Cryborg/atelier"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "socle@atelier": true,
+    "socle-android@atelier": true
+  }
+}

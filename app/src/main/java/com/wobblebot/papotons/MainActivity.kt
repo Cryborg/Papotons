@@ -1,0 +1,92 @@
+package com.wobblebot.papotons
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.wobblebot.papotons.ui.home.HomeScreen
+import com.wobblebot.papotons.ui.splash.StudioSplashScreen
+import com.wobblebot.papotons.ui.theme.PapotonsTheme
+import com.wobblebot.papotons.update.InAppUpdateManager
+import com.wobblebot.papotons.update.UpdateReadyDialog
+import dagger.hilt.android.AndroidEntryPoint
+
+/**
+ * L'activité unique : splash du studio, bord à bord, mise à jour depuis l'appli.
+ * Les écrans sont des composables ; ce fichier ne fait que brancher les briques.
+ */
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() {
+    private lateinit var inAppUpdateManager: InAppUpdateManager
+
+    private val updateResultLauncher: ActivityResultLauncher<IntentSenderRequest> =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            inAppUpdateManager.onUpdateFlowResult(result.resultCode)
+        }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // AVANT super.onCreate, sinon le thème de splash reste en place.
+        installSplashScreen()
+        super.onCreate(savedInstanceState)
+        // Chaque écran consomme ensuite ses insets (Scaffold, safeDrawingPadding).
+        enableEdgeToEdge()
+        inAppUpdateManager = InAppUpdateManager(this)
+        setContent {
+            PapotonsTheme {
+                PapotonsApp(inAppUpdateManager)
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        inAppUpdateManager.checkForUpdate(updateResultLauncher)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        inAppUpdateManager.resumeUpdateIfNeeded(updateResultLauncher)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (::inAppUpdateManager.isInitialized) inAppUpdateManager.unregister()
+    }
+}
+
+@Composable
+private fun PapotonsApp(inAppUpdateManager: InAppUpdateManager) {
+    // rememberSaveable : une rotation ou un changement de langue ne rejoue pas le carton du studio.
+    var isSplashFinished by rememberSaveable { mutableStateOf(false) }
+    val isUpdateReady by inAppUpdateManager.isReadyToInstall.collectAsStateWithLifecycle()
+    // « Plus tard » vaut pour la session : le flux reste vrai et la boîte reviendrait à chaque retour.
+    var isUpdatePostponed by rememberSaveable { mutableStateOf(false) }
+    // À brancher sur « un message est en cours de composition » : le redémarrage de
+    // l'installation ne doit jamais couper quelqu'un au milieu d'une phrase.
+    val isComposingMessage = false
+
+    Box {
+        HomeScreen()
+        // Dernier enfant de la Box : dessiné au-dessus, il reçoit les taps en premier.
+        if (!isSplashFinished) {
+            StudioSplashScreen(onFinished = { isSplashFinished = true })
+        }
+        if (isSplashFinished && isUpdateReady && !isUpdatePostponed && !isComposingMessage) {
+            UpdateReadyDialog(
+                onInstall = inAppUpdateManager::completeUpdate,
+                onLater = { isUpdatePostponed = true }
+            )
+        }
+    }
+}
