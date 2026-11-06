@@ -15,10 +15,9 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 - **2026-11-06, orientation libre** : pas de `screenOrientation` ni d'`appCategory="game"`. Pourquoi : sur tablette, la grille se sert couchée comme debout.
 - **2026-11-06, sauvegarde Android complète** (rien d'exclu). Pourquoi : les grilles personnalisées sont ce qu'il ne faut jamais perdre.
 - **2026-11-06, dépôt public (open source)**.
+- **2026-11-06, code sous GPL-3.0**. Pourquoi : comme Cboard, personne ne peut en tirer une version fermée et payante. Les pictos ARASAAC restent sous leur propre licence (CC BY-NC-SA).
 
 ## Décisions à trancher
-
-- **D-1 Licence du code** : GPL-3.0 (recommandée : comme Cboard, empêche un fork fermé et payant), Apache-2.0 ou MIT (plus permissives). Les pictos ARASAAC restent sous CC BY-NC-SA quoi qu'il arrive. À trancher avant de publier le dépôt.
 - **D-2 Repli de langue** : `values/` est en français, donc un téléphone en allemand affiche l'appli en français. Garder ce repli (public d'abord francophone) ou poser la brique `langue` pour renvoyer vers l'anglais ?
 - **D-3 Format de stockage des grilles** : Room (requêtes, migrations) ou fichiers OBF en JSON (format d'échange natif, pas de conversion). Recommandation : Room pour l'appli, OBF seulement à l'import et à l'export.
 

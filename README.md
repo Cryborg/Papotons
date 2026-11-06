@@ -8,6 +8,10 @@ Appli Android de Communication Améliorante et Alternative (CAA) : des grilles d
 
 Le projet démarre : voir [docs/ETUDE.md](docs/ETUDE.md) pour le contexte et [docs/TODO.md](docs/TODO.md) pour la feuille de route.
 
+## Licence
+
+Le code de Papotons est sous licence [GPL-3.0](LICENSE) : libre de l'étudier, de le modifier et de le redistribuer, à condition que toute version dérivée reste sous la même licence.
+
 ## Pictogrammes
 
 Les pictogrammes utilisés sont ceux d'ARASAAC.
