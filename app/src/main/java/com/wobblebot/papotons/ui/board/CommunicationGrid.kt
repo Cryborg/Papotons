@@ -225,7 +225,9 @@ private fun CellLabel(label: String, maxFontSize: TextUnit, modifier: Modifier) 
             style = labelStyle,
             color = { contentColor },
             maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
+            // Clip et pas Ellipsis : avec Ellipsis, la taille adaptative ne voit qu'un mot trop large,
+            // jamais un mot trop haut, et le bas des lettres sortait des cases basses de la tablette.
+            overflow = TextOverflow.Clip,
             autoSize = TextAutoSize.StepBased(
                 minFontSize = LABEL_MIN_FONT_SIZE,
                 maxFontSize = maxFontSize,

@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -15,6 +16,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.height
@@ -31,6 +33,7 @@ import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -41,6 +44,10 @@ private const val LARGE_FONT_SCALE = 2f
 // prendre la place du picto.
 private const val WIDE_CELL_ROWS = 7
 private const val WIDE_CELL_COLUMNS = 2
+// Cases plus de deux fois plus larges que hautes, comme l'accueil sur une tablette en paysage.
+private const val FLAT_CELL_ROWS = 12
+// Le réglage de police par défaut d'une tablette Samsung.
+private const val TABLET_FONT_SCALE = 1.15f
 private const val BUNDLED_PICTOGRAM_ID = 6632L
 private const val MIN_PICTOGRAM_SHARE = 0.4f
 private const val CENTER_TOLERANCE_DP = 2f
@@ -143,6 +150,35 @@ class BoardScreenLayoutTest {
             pictogram.height.value >= cell.height.value * MIN_PICTOGRAM_SHARE,
         )
         assertTrue("label ${label.height}", label.height.value > 0f && label.bottom <= cell.bottom)
+    }
+
+    @Test
+    fun aLabelShrinksToTheHeightOfAFlatCell() {
+        val cells = (0 until FLAT_CELL_ROWS * WIDE_CELL_COLUMNS).map { index ->
+            Cell(
+                id = index.toLong(),
+                row = index / WIDE_CELL_COLUMNS,
+                column = index % WIDE_CELL_COLUMNS,
+                // Des jambages (g, j, p) : ce sont eux qui sortaient de la case.
+                label = if (index == 0) "manger" else "jeu$index",
+                linkedBoardId = null,
+                pictogramId = BUNDLED_PICTOGRAM_ID,
+                category = WordCategory.VERB,
+            )
+        }
+        val state = homeState.copy(board = DisplayedBoard(id = 1, name = "Accueil", grid = layoutGrid(FLAT_CELL_ROWS, WIDE_CELL_COLUMNS, cells), canGoBack = false))
+        composeRule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, TABLET_FONT_SCALE)) {
+                PapotonsTheme { BoardScreen(state = state, actions = noActions) }
+            }
+        }
+
+        val layouts = mutableListOf<TextLayoutResult>()
+        val getLayout = composeRule.onNodeWithText("manger", useUnmergedTree = true).fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult]
+        checkNotNull(getLayout.action)(layouts)
+
+        assertFalse("text of ${layouts.single().multiParagraph.height} px in ${layouts.single().size}", layouts.single().hasVisualOverflow)
     }
 
     @Test
