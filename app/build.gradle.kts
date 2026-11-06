@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.androidx.room)
     alias(libs.plugins.play.publisher)
 }
 
@@ -88,6 +89,12 @@ android {
     }
 }
 
+// Schéma de la base exporté et versionné : les migrations automatiques s'en servent,
+// et sans lui une montée de version ne peut pas prouver qu'elle ne perd rien (invariant 4).
+room {
+    schemaDirectory("$projectDir/schemas")
+}
+
 // gradle-play-publisher : envoi sur la piste interne, puis promotion (brique
 // deploiement). Une clé absente ne casse que l'envoi : bundleRelease reste vert.
 play {
@@ -117,7 +124,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.hilt.android)
     implementation(libs.kotlinx.collections.immutable)
+    implementation(libs.androidx.room.runtime)
     ksp(libs.hilt.compiler)
+    ksp(libs.androidx.room.compiler)
 
     // Brique mise-a-jour
     implementation(libs.play.app.update.ktx)
