@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Langue de la voix : suit la langue des mots fournis avec l'appli. -->
+    <string name="speech_language_tag">fr-FR</string>
+    <!-- Alerte de la barre du haut et titre de la modale, selon la panne. -->
+    <string name="speech_unavailable">Voix indisponible</string>
+    <string name="speech_language_missing">Voix française manquante</string>
+    <string name="speech_dialog_body_unavailable">La synthèse vocale ne répond pas. Réessayez, ou vérifiez qu\'un moteur de synthèse vocale est installé et activé dans les réglages d\'Android.</string>
+    <string name="speech_dialog_body_language_missing">Papotons n\'a pas pu utiliser de voix française qui fonctionne sans connexion. Installez-en une dans les réglages de synthèse vocale d\'Android, puis réessayez.</string>
+    <string name="speech_dialog_retry">Réessayer</string>
+    <string name="speech_dialog_settings">Réglages de la voix</string>
+    <string name="speech_dialog_settings_unreachable">Les réglages n\'ont pas pu s\'ouvrir : ouvrez Réglages, puis Accessibilité, puis Synthèse vocale.</string>
+</resources>

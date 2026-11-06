@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="speech_language_tag">en-US</string>
+    <string name="speech_unavailable">Voice unavailable</string>
+    <string name="speech_language_missing">English voice missing</string>
+    <string name="speech_dialog_body_unavailable">Text-to-speech is not answering. Try again, or check that a text-to-speech engine is installed and enabled in the Android settings.</string>
+    <string name="speech_dialog_body_language_missing">No English voice that works offline could be used. Install one in the Android text-to-speech settings, then try again.</string>
+    <string name="speech_dialog_retry">Try again</string>
+    <string name="speech_dialog_settings">Voice settings</string>
+    <string name="speech_dialog_settings_unreachable">The settings could not be opened: open Settings, then Accessibility, then Text-to-speech.</string>
+</resources>

@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Depuis Android 11, sans cette déclaration le moteur de synthèse vocale est invisible
+         et l'appli reste muette. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <!-- Aucune orientation imposée : sur tablette, la grille se sert aussi bien couchée que debout. -->
     <application
         android:name=".PapotonsApplication"
