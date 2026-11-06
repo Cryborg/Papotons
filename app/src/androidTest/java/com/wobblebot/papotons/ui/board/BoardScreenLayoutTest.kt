@@ -9,7 +9,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -48,6 +52,8 @@ private const val WIDE_CELL_COLUMNS = 2
 private const val FLAT_CELL_ROWS = 12
 // Le réglage de police par défaut d'une tablette Samsung.
 private const val TABLET_FONT_SCALE = 1.15f
+// Plus de mots qu'il n'en tient dans la phrase, même sur tablette.
+private const val LONG_SENTENCE_WORD_COUNT = 30
 private const val BUNDLED_PICTOGRAM_ID = 6632L
 private const val MIN_PICTOGRAM_SHARE = 0.4f
 private const val CENTER_TOLERANCE_DP = 2f
@@ -67,8 +73,7 @@ class BoardScreenLayoutTest {
         Cell(id = 2, row = 1, column = 2, label = "Manger", linkedBoardId = 2),
     )
     private val homeState = BoardUiState(
-        // Un nom long, qui se couperait s'il pouvait faire grandir la barre.
-        board = DisplayedBoard(id = 1, name = "Accueil de la grille principale de tous les jours", grid = layoutGrid(2, 3, cells), canGoBack = false),
+        board = DisplayedBoard(id = 1, name = "Accueil", grid = layoutGrid(2, 3, cells), canGoBack = false),
         message = persistentListOf(),
         speechStatus = SpeechStatus.Ready,
     )
@@ -87,7 +92,9 @@ class BoardScreenLayoutTest {
         val original = cellBounds("Manger")
 
         state = homeState.copy(speechStatus = SpeechStatus.Unavailable)
-        composeRule.onNodeWithText(context.getString(R.string.speech_unavailable)).assertIsDisplayed()
+        // Écrite sur un écran large, réduite à son icône sur un écran étroit.
+        val alertLabel = context.getString(R.string.speech_unavailable)
+        composeRule.onNode(hasText(alertLabel) or hasContentDescription(alertLabel)).assertIsDisplayed()
         assertEquals("voice alert", original, cellBounds("Manger"))
 
         // Des mots avec un picto, deux (élision) ou aucun : la barre ne grandit pour aucun d'eux.
@@ -252,6 +259,57 @@ class BoardScreenLayoutTest {
         assertTrue("label ${label.width}, pictogram ${pictogram.width}", label.width > pictogram.width)
         assertTrue("label starts at ${label.top}, pictogram ends at ${pictogram.bottom}", pictogram.bottom <= label.top)
         assertEquals((pictogram.left + pictogram.right).value / 2, (label.left + label.right).value / 2, CENTER_TOLERANCE_DP)
+    }
+
+    @Test
+    fun theBoardNameFollowsTheOpenedBoardForTalkBack() {
+        var state by mutableStateOf(homeState)
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = state, actions = noActions) } }
+        composeRule.onNode(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, "Accueil")).assertExists()
+
+        state = homeState.copy(board = checkNotNull(homeState.board).copy(name = "Nourriture", canGoBack = true))
+
+        composeRule.onNode(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, "Nourriture")).assertExists()
+    }
+
+    @Test
+    fun theLastWordStaysWhollyVisibleWhenTheSentenceNarrows() {
+        val words = (0 until LONG_SENTENCE_WORD_COUNT).map { SentenceToken("mot$it", persistentListOf()) }
+        val lastWord = "mot${LONG_SENTENCE_WORD_COUNT - 1}"
+        var state by mutableStateOf(homeState.copy(message = words.toImmutableList()))
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = state, actions = noActions) } }
+        fun lastWordBounds() = composeRule.onNodeWithText(lastWord, useUnmergedTree = true).getBoundsInRoot()
+        val wholeWord = lastWordBounds()
+
+        // Ouvrir un dossier fait apparaître Retour et Accueil, qui prennent de la largeur à la phrase.
+        state = state.copy(board = checkNotNull(homeState.board).copy(canGoBack = true))
+        composeRule.waitForIdle()
+
+        assertEquals(wholeWord.width, lastWordBounds().width)
+    }
+
+    @Test
+    fun aNarrowBarKeepsEveryButtonReachable() {
+        // Le pire cas en largeur sur l'émulateur (411 dp) : dossier ouvert, voix en panne, phrase longue.
+        val words = (0 until LONG_SENTENCE_WORD_COUNT).map { SentenceToken("mot$it", persistentListOf()) }
+        val state = homeState.copy(
+            board = checkNotNull(homeState.board).copy(canGoBack = true),
+            message = words.toImmutableList(),
+            speechStatus = SpeechStatus.Unavailable,
+        )
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = state, actions = noActions) } }
+
+        val deleteLast = composeRule.onNodeWithContentDescription(context.getString(R.string.message_delete_last)).getBoundsInRoot()
+        val clear = composeRule.onNodeWithContentDescription(context.getString(R.string.message_clear)).getBoundsInRoot()
+        val alertLabel = context.getString(R.string.speech_unavailable)
+        val alert = composeRule.onNode(hasText(alertLabel) or hasContentDescription(alertLabel)).getBoundsInRoot()
+        val about = composeRule.onNodeWithContentDescription(context.getString(R.string.about_open)).getBoundsInRoot()
+
+        // Chevauchés, l'appui sur « Effacer le dernier mot » effacerait toute la phrase.
+        assertTrue("delete ends at ${deleteLast.right}, clear starts at ${clear.left}", deleteLast.right <= clear.left)
+        assertTrue("clear ends at ${clear.right}, alert starts at ${alert.left}", clear.right <= alert.left)
+        assertTrue("alert ends at ${alert.right}, about starts at ${about.left}", alert.right <= about.left)
+        assertEquals(clear.width, deleteLast.width)
     }
 
     @Test

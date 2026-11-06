@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.Lifecycle
@@ -121,20 +122,21 @@ fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier =
         Column(modifier = Modifier.windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))) {
             val board = state.board
             BoardTopBar(
-                title = board?.name.orEmpty(),
                 canGoBack = board?.canGoBack == true,
                 speechStatus = state.speechStatus,
                 onBack = actions.onBack,
                 onHome = actions.onHome,
                 onSpeechAlertClick = actions.onSpeechAlertClick,
                 onAboutClick = actions.onAboutClick,
-            )
-            MessageBar(
-                words = state.message,
-                onSpeak = actions.onSpeakMessage,
-                onDeleteLastWord = actions.onDeleteLastWord,
-                onClear = actions.onClearMessage,
-            )
+            ) {
+                MessageBar(
+                    words = state.message,
+                    onSpeak = actions.onSpeakMessage,
+                    onDeleteLastWord = actions.onDeleteLastWord,
+                    onClear = actions.onClearMessage,
+                    modifier = Modifier.weight(1f),
+                )
+            }
             if (board == null) {
                 val loadingDescription = stringResource(R.string.board_loading)
                 Box(
@@ -151,7 +153,9 @@ fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier =
                     onCellClick = actions.onCellClick,
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        // Nom de la grille, non affiché : porté en titre de volet pour TalkBack.
+                        .semantics { paneTitle = board.name },
                 )
             }
         }

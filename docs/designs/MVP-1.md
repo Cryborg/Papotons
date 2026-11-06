@@ -8,14 +8,14 @@ Le contrat de la voix fait foi dans la KDoc de `speech/RecoveringSpeaker.kt` ; l
 
 ### Comportement
 
-Au lancement, après le carton du studio, l'écran d'accueil provisoire est remplacé par la grille de communication. De haut en bas : barre du haut (hauteur fixe), barre de message (hauteur fixe), grille (tout le reste).
+Au lancement, après le carton du studio, l'écran d'accueil provisoire est remplacé par la grille de communication. De haut en bas : une barre unique (hauteur fixe) qui porte la navigation, la phrase en cours, l'alerte de voix et « À propos », puis la grille (tout le reste).
 
 - **Grille** : `rowCount` × `columnCount` emplacements de taille égale, sans défilement (tout est visible : condition de la planification motrice). Un emplacement sans case reste vide. Chaque case est placée à SA position (ligne, colonne) stockée, jamais à son rang dans une liste. La grille est forcée en `LayoutDirection.Ltr` (une locale RTL ne renverse pas les colonnes) et la rotation ne transpose jamais (ligne, colonne).
-- **Rien ne fait bouger la grille** (invariant 3) : les deux barres au-dessus ont une hauteur fixe quel que soit leur contenu ; l'alerte de voix vit dans la barre du haut, jamais dans un bandeau inséré.
+- **Rien ne fait bouger la grille** (invariant 3) : la barre au-dessus a une hauteur fixe quel que soit son contenu ; l'alerte de voix vit dans cette barre (réduite à son icône sur un écran étroit), jamais dans un bandeau inséré.
 - **Case mot** : un appui prononce le mot tout de suite (en coupant ce qui se disait) et l'ajoute à la fin de la barre de message.
 - **Case dossier** : un appui ouvre la grille liée, sans parler ni rien ajouter. Fond distinct et icône de dossier ; TalkBack l'annonce comme dossier (ressource traduite).
 - **Libellé** : texte à taille adaptative (`BasicText` avec `TextAutoSize`, plafonnée par l'échelle de police) sur deux lignes au plus, pour tenir dans une case fixe même à 200 % ; rôle bouton ; contraste au moins 4,5:1 pour les deux couleurs de case.
-- **Navigation** : barre du haut avec le nom de la grille ; « Retour » (grille précédente) et « Accueil » (grille d'accueil, pile vidée) visibles seulement hors de l'accueil. Le retour arrière d'Android fait comme « Retour » hors de l'accueil, et n'est pas intercepté à l'accueil.
+- **Navigation** : le nom de la grille n'est pas écrit (la hauteur revient aux cases), TalkBack l'annonce comme titre de volet ; « Retour » (grille précédente) et « Accueil » (grille d'accueil, pile vidée) visibles seulement hors de l'accueil. Le retour arrière d'Android fait comme « Retour » hors de l'accueil, et n'est pas intercepté à l'accueil.
 - **Barre de message** : les mots ajoutés, dans l'ordre, défilant horizontalement jusqu'au dernier ; une indication quand elle est vide. Un appui sur la barre ou sur « Dire la phrase » prononce toute la phrase (rien si elle est vide). « Effacer le dernier mot » et « Tout effacer ». Le message survit à la rotation (ViewModel), pas à la mort du processus (reporté).
 - **Synthèse vocale** : moteur par défaut de l'appareil (`TextToSpeech`), sortie sur le flux média, langue tirée d'une ressource (`fr-FR` dans `values/`, `en-US` dans `values-en/`). Les mots touchés se prononcent à la suite, sans se couper ; « Parler » coupe ce qui se dit pour lire la phrase. Un mot touché avant la fin de l'initialisation est prononcé dès qu'elle aboutit.
 - **La voix se rétablit** : statut `Initializing` / `Ready` / `LanguageMissing` / `Unavailable`.
