@@ -181,10 +181,11 @@ private fun CellButton(cell: Cell, onClick: () -> Unit) {
     }
 }
 
+/** Si [modifier] en fixe la taille, la place du picto est tenue avant le décodage : rien ne bouge à son arrivée. */
 @Composable
-private fun Pictogram(pictogramId: Long, modifier: Modifier) {
+internal fun Pictogram(pictogramId: Long, modifier: Modifier) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        // La table des images est un état Compose : la case se recompose quand elle se remplit.
+        // La table des images est un état Compose : le picto se recompose quand elle se remplit.
         val image = LocalPictogramImages.current(pictogramId)
         if (image != null) {
             Image(

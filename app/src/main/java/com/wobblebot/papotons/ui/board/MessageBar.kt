@@ -3,9 +3,12 @@ package com.wobblebot.papotons.ui.board
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -29,18 +32,23 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wobblebot.papotons.R
+import com.wobblebot.papotons.domain.SentenceToken
 import kotlinx.collections.immutable.ImmutableList
 
-/** Hauteur fixe, comme la barre du haut : un message qui s'allonge ne pousse pas la grille. */
-private val MESSAGE_BAR_HEIGHT = 72.dp
+/**
+ * Hauteur fixe, comme la barre du haut : un message qui s'allonge ne pousse pas la grille. Après
+ * publication, la changer déplacerait toutes les cases à l'écran (invariant 3).
+ */
+private val MESSAGE_BAR_HEIGHT = 104.dp
 private val BAR_HORIZONTAL_PADDING = 8.dp
 private val SENTENCE_VERTICAL_PADDING = 6.dp
 private val SENTENCE_CONTENT_PADDING = 12.dp
-private val WORD_SPACING = 10.dp
+private val WORD_VERTICAL_PADDING = 4.dp
+private val WORD_SPACING = 12.dp
 
 @Composable
 fun MessageBar(
-    words: ImmutableList<String>,
+    words: ImmutableList<SentenceToken>,
     onSpeak: () -> Unit,
     onDeleteLastWord: () -> Unit,
     onClear: () -> Unit,
@@ -50,7 +58,7 @@ fun MessageBar(
     val speakLabel = stringResource(R.string.message_speak)
     val hint = stringResource(R.string.message_hint)
     // LazyRow ne compose que les mots visibles : TalkBack lirait une phrase tronquée.
-    val sentence = if (hasWords) words.joinToString(separator = " ") else hint
+    val sentence = if (hasWords) words.joinToString(separator = " ") { it.text } else hint
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -101,7 +109,7 @@ fun MessageBar(
 }
 
 @Composable
-private fun SentenceWords(words: ImmutableList<String>) {
+private fun SentenceWords(words: ImmutableList<SentenceToken>) {
     val listState = rememberLazyListState()
     // Le dernier mot reste toujours visible, y compris quand il change sur place (« je » → « j'ai »).
     LaunchedEffect(words) {
@@ -109,13 +117,31 @@ private fun SentenceWords(words: ImmutableList<String>) {
     }
     LazyRow(
         state = listState,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = SENTENCE_CONTENT_PADDING),
         horizontalArrangement = Arrangement.spacedBy(WORD_SPACING),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        items(words) { word ->
-            Text(text = word, style = MaterialTheme.typography.titleLarge, maxLines = 1)
+        items(words) { word -> SentenceWordCard(word) }
+    }
+}
+
+/** Comme dans une case : picto dessus, mot centré dessous. */
+@Composable
+private fun SentenceWordCard(word: SentenceToken) {
+    Column(
+        modifier = Modifier
+            .fillMaxHeight()
+            .padding(vertical = WORD_VERTICAL_PADDING),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        // Le picto prend la hauteur que le mot lui laisse : une police agrandie le rapetisse au lieu
+        // de couper le mot. Un mot sans picto garde sa ligne, celle des autres mots.
+        Row(modifier = Modifier.weight(1f)) {
+            for (pictogramId in word.pictogramIds) {
+                Pictogram(pictogramId, Modifier.aspectRatio(1f, matchHeightConstraintsFirst = true))
+            }
         }
+        Text(text = word.text, style = MaterialTheme.typography.titleLarge, maxLines = 1, softWrap = false)
     }
 }

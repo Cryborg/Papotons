@@ -45,13 +45,13 @@ class BoardViewModelTest {
         BoardEntity(id = 3, name = "third", rowCount = 2, columnCount = 1),
     )
     private val cells = listOf(
-        CellEntity(id = 1, boardId = HOME_BOARD_ID, row = 0, column = 0, label = "je", linkedBoardId = null, pictogramId = null, category = null),
+        CellEntity(id = 1, boardId = HOME_BOARD_ID, row = 0, column = 0, label = "je", linkedBoardId = null, pictogramId = 10, category = null),
         CellEntity(id = 2, boardId = HOME_BOARD_ID, row = 0, column = 1, label = "veux", linkedBoardId = null, pictogramId = null, category = null),
         CellEntity(id = 3, boardId = HOME_BOARD_ID, row = 1, column = 0, label = "A", linkedBoardId = 2, pictogramId = null, category = null),
         CellEntity(id = 4, boardId = HOME_BOARD_ID, row = 1, column = 1, label = "lost", linkedBoardId = 99, pictogramId = null, category = null),
         CellEntity(id = 5, boardId = 2, row = 0, column = 0, label = "B", linkedBoardId = 3, pictogramId = null, category = null),
         CellEntity(id = 6, boardId = 3, row = 0, column = 0, label = "rouge", linkedBoardId = null, pictogramId = null, category = null),
-        CellEntity(id = 8, boardId = 3, row = 1, column = 0, label = "ai", linkedBoardId = null, category = "VERB", pictogramId = null),
+        CellEntity(id = 8, boardId = 3, row = 1, column = 0, label = "ai", linkedBoardId = null, category = "VERB", pictogramId = 80),
     )
 
     @Before
@@ -71,6 +71,8 @@ class BoardViewModelTest {
     }
 
     private fun BoardViewModel.state() = uiState.value
+
+    private fun BoardViewModel.messageTexts() = state().message.map { it.text }
 
     private fun BoardViewModel.tap(label: String) {
         val cell: Cell = checkNotNull(state().board).grid.flatten().filterNotNull().first { it.label == label }
@@ -129,7 +131,9 @@ class BoardViewModelTest {
         assertEquals(listOf("veux", "je"), speaker.spoken)
         // Touchés vite, les deux mots doivent s'entendre : aucun ne coupe le précédent.
         assertEquals(listOf(false, false), speaker.interruptions)
-        assertEquals(listOf("veux", "je"), viewModel.state().message)
+        assertEquals(listOf("veux", "je"), viewModel.messageTexts())
+        // Chaque mot garde le picto de sa case ; « veux » est en texte seul.
+        assertEquals(listOf(emptyList(), listOf(10L)), viewModel.state().message.map { it.pictogramIds })
         assertTrue(viewModel.state().isComposingMessage)
     }
 
@@ -242,7 +246,7 @@ class BoardViewModelTest {
         viewModel.tap("rouge")
         viewModel.onHome()
 
-        assertEquals(listOf("je", "rouge"), viewModel.state().message)
+        assertEquals(listOf("je", "rouge"), viewModel.messageTexts())
     }
 
     @Test
@@ -278,11 +282,13 @@ class BoardViewModelTest {
         viewModel.tap("ai")
         speaker.spoken.clear()
 
-        assertEquals(listOf("j'ai"), viewModel.state().message)
+        assertEquals(listOf("j'ai"), viewModel.messageTexts())
+        // « j'ai » montre les deux pictos touchés, celui de « je » puis celui du verbe.
+        assertEquals(listOf(listOf(10L, 80L)), viewModel.state().message.map { it.pictogramIds })
         viewModel.onSpeakMessage()
         assertEquals(listOf("j'ai"), speaker.spoken)
         viewModel.onDeleteLastWord()
-        assertEquals(listOf("je"), viewModel.state().message)
+        assertEquals(listOf("je"), viewModel.messageTexts())
     }
 
     @Test
@@ -294,7 +300,7 @@ class BoardViewModelTest {
 
         viewModel.onDeleteLastWord()
 
-        assertEquals(listOf("je", "veux"), viewModel.state().message)
+        assertEquals(listOf("je", "veux"), viewModel.messageTexts())
     }
 
     @Test

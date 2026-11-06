@@ -18,15 +18,18 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.height
+import androidx.compose.ui.unit.width
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.Cell
+import com.wobblebot.papotons.domain.SentenceToken
 import com.wobblebot.papotons.domain.WordCategory
 import com.wobblebot.papotons.domain.layoutGrid
 import com.wobblebot.papotons.speech.SpeechStatus
 import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -80,8 +83,13 @@ class BoardScreenLayoutTest {
         composeRule.onNodeWithText(context.getString(R.string.speech_unavailable)).assertIsDisplayed()
         assertEquals("voice alert", original, cellBounds("Manger"))
 
-        state = homeState.copy(message = persistentListOf("oui", "non", "encore", "aide", "fini", "pas", "tu"))
-        composeRule.onNodeWithContentDescription("oui non encore aide fini pas tu").assertIsDisplayed()
+        // Des mots avec un picto, deux (élision) ou aucun : la barre ne grandit pour aucun d'eux.
+        val words = listOf("oui", "non", "encore", "aide", "fini", "pas", "tu")
+        val message = words.map { SentenceToken(it, persistentListOf(BUNDLED_PICTOGRAM_ID)) } +
+            SentenceToken("j'ai", persistentListOf(BUNDLED_PICTOGRAM_ID, BUNDLED_PICTOGRAM_ID)) +
+            SentenceToken("vite", persistentListOf())
+        state = homeState.copy(message = message.toImmutableList())
+        composeRule.onNodeWithContentDescription("oui non encore aide fini pas tu j'ai vite").assertIsDisplayed()
         assertEquals("long message", original, cellBounds("Manger"))
 
         state = homeState.copy(board = checkNotNull(homeState.board).copy(canGoBack = true))
@@ -187,6 +195,27 @@ class BoardScreenLayoutTest {
 
         assertEquals((cell.left + cell.right).value / 2, (label.left + label.right).value / 2, CENTER_TOLERANCE_DP)
         assertEquals((cell.top + cell.bottom).value / 2, (label.top + label.bottom).value / 2, CENTER_TOLERANCE_DP)
+    }
+
+    @Test
+    fun aMessageWordIsCenteredUnderItsPictogram() {
+        val image = context.assets.open("pictograms/$BUNDLED_PICTOGRAM_ID.png").use(BitmapFactory::decodeStream).asImageBitmap()
+        // Un mot plus large que son picto : c'est le cas où un alignement à gauche se verrait.
+        val state = homeState.copy(message = persistentListOf(SentenceToken("aujourd'hui", persistentListOf(BUNDLED_PICTOGRAM_ID))))
+        composeRule.setContent {
+            CompositionLocalProvider(LocalPictogramImages provides { image }) {
+                PapotonsTheme { BoardScreen(state = state, actions = noActions) }
+            }
+        }
+
+        val pictogram = composeRule.onNodeWithTag(PICTOGRAM_TEST_TAG, useUnmergedTree = true).getBoundsInRoot()
+        val label = composeRule.onNodeWithText("aujourd'hui", useUnmergedTree = true).getBoundsInRoot()
+
+        assertTrue("pictogram ${pictogram.height}", pictogram.height.value > 0f)
+        // Sinon un mot aligné à gauche serait aussi « centré » : le test ne verrait rien.
+        assertTrue("label ${label.width}, pictogram ${pictogram.width}", label.width > pictogram.width)
+        assertTrue("label starts at ${label.top}, pictogram ends at ${pictogram.bottom}", pictogram.bottom <= label.top)
+        assertEquals((pictogram.left + pictogram.right).value / 2, (label.left + label.right).value / 2, CENTER_TOLERANCE_DP)
     }
 
     @Test

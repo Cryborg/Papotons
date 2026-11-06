@@ -38,6 +38,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.Cell
+import com.wobblebot.papotons.domain.SentenceToken
 import com.wobblebot.papotons.domain.layoutGrid
 import com.wobblebot.papotons.speech.SpeechStatus
 import com.wobblebot.papotons.ui.about.AboutDialog
@@ -191,7 +192,7 @@ private fun BoardScreenPreview() {
         BoardScreen(
             state = BoardUiState(
                 board = DisplayedBoard(id = 1, name = "Accueil", grid = layoutGrid(2, 3, cells), canGoBack = false),
-                message = persistentListOf("je", "veux"),
+                message = persistentListOf(SentenceToken("je", persistentListOf()), SentenceToken("veux", persistentListOf())),
                 speechStatus = SpeechStatus.LanguageMissing,
             ),
             actions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}),
