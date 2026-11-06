@@ -26,9 +26,9 @@ class BoardDaoTest {
     private val folderBoard = BoardEntity(id = 2, name = "folder", rowCount = 1, columnCount = 1)
 
     private fun word(row: Int, column: Int, label: String) =
-        CellEntity(boardId = home.id, row = row, column = column, label = label, linkedBoardId = null)
+        CellEntity(boardId = home.id, row = row, column = column, label = label, linkedBoardId = null, pictogramId = null, category = null)
 
-    private val folder = CellEntity(boardId = home.id, row = 1, column = 1, label = "folder", linkedBoardId = folderBoard.id)
+    private val folder = CellEntity(boardId = home.id, row = 1, column = 1, label = "folder", linkedBoardId = folderBoard.id, pictogramId = null, category = null)
 
     @Before
     fun setUp() {

@@ -17,8 +17,9 @@ data class DisplayedBoard(
 
 @Immutable
 data class BoardUiState(
-    /** `null` tant que l'accueil n'est pas lu (au premier lancement, le temps d'insérer la démo). */
+    /** `null` tant que l'accueil n'est pas lu (au premier lancement, le temps d'insérer le vocabulaire de base). */
     val board: DisplayedBoard? = null,
+    /** La phrase telle qu'elle s'affiche et se dit (« j'ai », pas « je ai »). */
     val message: ImmutableList<String> = persistentListOf(),
     val speechStatus: SpeechStatus = SpeechStatus.Initializing,
 ) {

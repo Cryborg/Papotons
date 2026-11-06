@@ -39,3 +39,6 @@ captures/
 *.hprof
 # Notes de version générées au déploiement
 app/src/main/play/release-notes/
+
+# Artefacts Python (outil de préparation des pictos)
+__pycache__/

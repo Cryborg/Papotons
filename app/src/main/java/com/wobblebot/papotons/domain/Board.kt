@@ -21,6 +21,9 @@ data class Cell(
     val column: Int,
     val label: String,
     val linkedBoardId: Long?,
+    /** Identifiant ARASAAC du picto, `null` pour une case en texte seul. */
+    val pictogramId: Long? = null,
+    val category: WordCategory? = null,
 )
 
 @Immutable

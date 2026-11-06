@@ -39,6 +39,7 @@ fun BoardTopBar(
     onBack: () -> Unit,
     onHome: () -> Unit,
     onSpeechAlertClick: () -> Unit,
+    onAboutClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -81,6 +82,11 @@ fun BoardTopBar(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        // Un écart entre l'alerte et « À propos » : deux cibles collées se touchent par erreur.
+        if (speechStatus.needsAttention) Spacer(modifier = Modifier.width(ALERT_ICON_SPACING))
+        IconButton(onClick = onAboutClick) {
+            Icon(painterResource(R.drawable.ic_info), stringResource(R.string.about_open))
         }
     }
 }

@@ -6,11 +6,14 @@ import androidx.lifecycle.viewModelScope
 import com.wobblebot.papotons.data.board.BoardRepository
 import com.wobblebot.papotons.domain.Board
 import com.wobblebot.papotons.domain.Cell
+import com.wobblebot.papotons.domain.SentenceWord
 import com.wobblebot.papotons.domain.layoutGrid
+import com.wobblebot.papotons.domain.sentenceTokens
 import com.wobblebot.papotons.speech.Speaker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,7 +39,7 @@ class BoardViewModel @Inject constructor(
 ) : ViewModel() {
     /** Pile des grilles ouvertes, l'accueil en bas. Vide tant que l'accueil n'est pas prêt. */
     private val navigation = MutableStateFlow<PersistentList<Long>>(persistentListOf())
-    private val message = MutableStateFlow<PersistentList<String>>(persistentListOf())
+    private val message = MutableStateFlow<PersistentList<SentenceWord>>(persistentListOf())
 
     /**
      * La grille affichée reste la précédente tant que la suivante n'est pas lue : une grille
@@ -54,7 +57,7 @@ class BoardViewModel @Inject constructor(
 
     val uiState: StateFlow<BoardUiState> =
         combine(displayedBoard, message, speaker.status) { board, words, speechStatus ->
-            BoardUiState(board = board, message = words, speechStatus = speechStatus)
+            BoardUiState(board = board, message = sentenceTokens(words).toImmutableList(), speechStatus = speechStatus)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), BoardUiState())
 
     init {
@@ -74,7 +77,7 @@ class BoardViewModel @Inject constructor(
             navigation.update { stack -> if (isShowingTopOf(stack)) stack.adding(linkedBoardId) else stack }
         } else {
             speaker.speak(cell.label)
-            message.update { it.adding(cell.label) }
+            message.update { it.adding(SentenceWord(cell.label, cell.category)) }
         }
     }
 
@@ -88,7 +91,7 @@ class BoardViewModel @Inject constructor(
 
     fun onSpeakMessage() {
         val words = message.value
-        if (words.isNotEmpty()) speaker.speak(words.joinToString(separator = " "))
+        if (words.isNotEmpty()) speaker.speak(sentenceTokens(words).joinToString(separator = " "))
     }
 
     fun onDeleteLastWord() {

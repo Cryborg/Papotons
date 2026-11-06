@@ -17,6 +17,8 @@ Le code de Papotons est sous licence [GPL-3.0](LICENSE) : libre de l'étudier, d
 Les pictogrammes utilisés sont ceux d'ARASAAC.
 Auteur des pictogrammes : Sergio Palao. Origine : ARASAAC (https://arasaac.org). Licence : CC BY-NC-SA 4.0. Propriété : Gouvernement d'Aragon (Espagne).
 
+Les fichiers de `app/src/main/assets/pictograms/` sont sous cette licence CC BY-NC-SA 4.0, **pas** sous la GPL du code : aucun usage commercial. Ils sont choisis et téléchargés par `tools/arasaac/fetch_pictograms.py` (Python 3 et Pillow), lancé à la main ; l'appli elle-même ne télécharge rien.
+
 ## Compiler
 
 ```bash

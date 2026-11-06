@@ -2,6 +2,7 @@ package com.wobblebot.papotons.data.board
 
 import android.content.Context
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
+import com.wobblebot.papotons.domain.WordCategory
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.first
@@ -16,7 +17,7 @@ class BoardRepositoryTest {
     }
 
     @Test
-    fun `the first launch inserts the demo boards once`() = runTest {
+    fun `the first launch inserts the whole core vocabulary once`() = runTest {
         val dao = FakeBoardDao()
         val repository = BoardRepository(dao, context)
 
@@ -24,11 +25,17 @@ class BoardRepositoryTest {
         repository.ensureHomeBoard()
 
         assertEquals(1, dao.insertCount)
-        assertNotNull(repository.observeBoard(HOME_BOARD_ID).first())
+        val seed = CoreVocabulary.build { "label$it" }
+        assertEquals(seed.boards.size, dao.boards.value.size)
+        assertEquals(seed.cells.size, dao.cells.value.size)
+        val home = checkNotNull(repository.observeBoard(HOME_BOARD_ID).first())
+        val firstCell = home.cells.single { it.row == 0 && it.column == 0 }
+        assertNotNull(firstCell.pictogramId)
+        assertEquals(WordCategory.PEOPLE, firstCell.category)
     }
 
     @Test
-    fun `existing boards are never overwritten by the demo`() = runTest {
+    fun `existing boards are never overwritten by the core vocabulary`() = runTest {
         val dao = FakeBoardDao(boards = listOf(BoardEntity(id = HOME_BOARD_ID, name = "mine", rowCount = 1, columnCount = 1)))
 
         BoardRepository(dao, context).ensureHomeBoard()
@@ -44,8 +51,8 @@ class BoardRepositoryTest {
         val dao = FakeBoardDao(
             boards = listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 2, columnCount = 3)),
             cells = listOf(
-                CellEntity(id = 1, boardId = HOME_BOARD_ID, row = 1, column = 2, label = "corner", linkedBoardId = null),
-                CellEntity(id = 2, boardId = HOME_BOARD_ID, row = 0, column = 1, label = "folder", linkedBoardId = 7),
+                CellEntity(id = 1, boardId = HOME_BOARD_ID, row = 1, column = 2, label = "corner", linkedBoardId = null, pictogramId = null, category = null),
+                CellEntity(id = 2, boardId = HOME_BOARD_ID, row = 0, column = 1, label = "folder", linkedBoardId = 7, pictogramId = null, category = null),
             ),
         )
 
@@ -59,6 +66,27 @@ class BoardRepositoryTest {
         val folder = board.cells.single { it.label == "folder" }
         assertEquals(0 to 1, folder.row to folder.column)
         assertEquals(7L, folder.linkedBoardId)
+    }
+
+    @Test
+    fun `pictogram and category are read back, an unknown category as none`() = runTest {
+        val dao = FakeBoardDao(
+            boards = listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 1, columnCount = 3)),
+            cells = listOf(
+                CellEntity(id = 1, boardId = HOME_BOARD_ID, row = 0, column = 0, label = "full", linkedBoardId = null, pictogramId = 6632, category = "PEOPLE"),
+                CellEntity(id = 2, boardId = HOME_BOARD_ID, row = 0, column = 1, label = "bare", linkedBoardId = null, pictogramId = null, category = null),
+                CellEntity(id = 3, boardId = HOME_BOARD_ID, row = 0, column = 2, label = "future", linkedBoardId = null, pictogramId = 2, category = "FUTURE"),
+            ),
+        )
+
+        val cells = checkNotNull(BoardRepository(dao, context).observeBoard(HOME_BOARD_ID).first()).cells.associateBy { it.label }
+
+        assertEquals(6632L, cells.getValue("full").pictogramId)
+        assertEquals(WordCategory.PEOPLE, cells.getValue("full").category)
+        assertEquals(null, cells.getValue("bare").pictogramId)
+        assertEquals(null, cells.getValue("bare").category)
+        assertEquals(2L, cells.getValue("future").pictogramId)
+        assertEquals(null, cells.getValue("future").category)
     }
 
     @Test

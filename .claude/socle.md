@@ -37,7 +37,7 @@ Lu par les skills et agents du plugin `socle` (review-and-fix, lessons, push-own
 ## Faux positifs connus
 
 - Fond `Color.Black` en dur dans `ui/splash/StudioSplashScreen.kt` : carton de l'éditeur, identique d'une appli à l'autre (brique `splash`).
-- R15 du scan mécanique sur `ui/board/SpeechUnavailableDialog.kt` : ses boutons portent un texte, qui leur sert de description.
+- R15 du scan mécanique sur `ui/board/SpeechUnavailableDialog.kt` et `ui/about/AboutDialog.kt` : leurs boutons portent un texte, qui leur sert de description.
 
 ## Plan
 

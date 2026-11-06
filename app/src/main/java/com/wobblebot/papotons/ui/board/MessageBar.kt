@@ -103,8 +103,8 @@ fun MessageBar(
 @Composable
 private fun SentenceWords(words: ImmutableList<String>) {
     val listState = rememberLazyListState()
-    // Le dernier mot ajouté reste toujours visible.
-    LaunchedEffect(words.size) {
+    // Le dernier mot reste toujours visible, y compris quand il change sur place (« je » → « j'ai »).
+    LaunchedEffect(words) {
         listState.animateScrollToItem(words.lastIndex)
     }
     LazyRow(

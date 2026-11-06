@@ -9,10 +9,10 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -40,6 +40,7 @@ import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.layoutGrid
 import com.wobblebot.papotons.speech.SpeechStatus
+import com.wobblebot.papotons.ui.about.AboutDialog
 import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import kotlinx.collections.immutable.persistentListOf
 
@@ -57,6 +58,7 @@ data class BoardActions(
     val onDeleteLastWord: () -> Unit,
     val onClearMessage: () -> Unit,
     val onSpeechAlertClick: () -> Unit,
+    val onAboutClick: () -> Unit,
 )
 
 /** Branche [BoardScreen] sur son ViewModel : retour arrière, premier plan, modale de la voix. */
@@ -65,6 +67,7 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
     val context = LocalContext.current
     var isSpeechDialogOpen by rememberSaveable { mutableStateOf(false) }
     var areSettingsUnreachable by rememberSaveable { mutableStateOf(false) }
+    var isAboutOpen by rememberSaveable { mutableStateOf(false) }
     val actions = remember(viewModel) {
         BoardActions(
             onCellClick = viewModel::onCellClick,
@@ -77,12 +80,14 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
                 areSettingsUnreachable = false
                 isSpeechDialogOpen = true
             },
+            onAboutClick = { isAboutOpen = true },
         )
     }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.recoverSpeech() }
     // À l'accueil, le retour arrière garde son sens habituel (quitter l'appli).
     BackHandler(enabled = state.board?.canGoBack == true, onBack = viewModel::onBack)
     BoardScreen(state = state, actions = actions)
+    if (isAboutOpen) AboutDialog(onClose = { isAboutOpen = false })
     // La voix revenue referme la modale pour de bon : une panne suivante ne doit pas la rouvrir
     // seule. Une relance en cours (Initializing, par exemple à la rotation) la masque sans la fermer.
     val isSpeechReady = state.speechStatus == SpeechStatus.Ready
@@ -121,6 +126,7 @@ fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier =
                 onBack = actions.onBack,
                 onHome = actions.onHome,
                 onSpeechAlertClick = actions.onSpeechAlertClick,
+                onAboutClick = actions.onAboutClick,
             )
             MessageBar(
                 words = state.message,
@@ -188,7 +194,7 @@ private fun BoardScreenPreview() {
                 message = persistentListOf("je", "veux"),
                 speechStatus = SpeechStatus.LanguageMissing,
             ),
-            actions = BoardActions({}, {}, {}, {}, {}, {}, {}),
+            actions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}),
         )
     }
 }

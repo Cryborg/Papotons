@@ -42,15 +42,16 @@ class BoardViewModelTest {
     private val boards = listOf(
         BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 2, columnCount = 2),
         BoardEntity(id = 2, name = "second", rowCount = 1, columnCount = 2),
-        BoardEntity(id = 3, name = "third", rowCount = 1, columnCount = 1),
+        BoardEntity(id = 3, name = "third", rowCount = 2, columnCount = 1),
     )
     private val cells = listOf(
-        CellEntity(id = 1, boardId = HOME_BOARD_ID, row = 0, column = 0, label = "je", linkedBoardId = null),
-        CellEntity(id = 2, boardId = HOME_BOARD_ID, row = 0, column = 1, label = "veux", linkedBoardId = null),
-        CellEntity(id = 3, boardId = HOME_BOARD_ID, row = 1, column = 0, label = "A", linkedBoardId = 2),
-        CellEntity(id = 4, boardId = HOME_BOARD_ID, row = 1, column = 1, label = "lost", linkedBoardId = 99),
-        CellEntity(id = 5, boardId = 2, row = 0, column = 0, label = "B", linkedBoardId = 3),
-        CellEntity(id = 6, boardId = 3, row = 0, column = 0, label = "rouge", linkedBoardId = null),
+        CellEntity(id = 1, boardId = HOME_BOARD_ID, row = 0, column = 0, label = "je", linkedBoardId = null, pictogramId = null, category = null),
+        CellEntity(id = 2, boardId = HOME_BOARD_ID, row = 0, column = 1, label = "veux", linkedBoardId = null, pictogramId = null, category = null),
+        CellEntity(id = 3, boardId = HOME_BOARD_ID, row = 1, column = 0, label = "A", linkedBoardId = 2, pictogramId = null, category = null),
+        CellEntity(id = 4, boardId = HOME_BOARD_ID, row = 1, column = 1, label = "lost", linkedBoardId = 99, pictogramId = null, category = null),
+        CellEntity(id = 5, boardId = 2, row = 0, column = 0, label = "B", linkedBoardId = 3, pictogramId = null, category = null),
+        CellEntity(id = 6, boardId = 3, row = 0, column = 0, label = "rouge", linkedBoardId = null, pictogramId = null, category = null),
+        CellEntity(id = 8, boardId = 3, row = 1, column = 0, label = "ai", linkedBoardId = null, category = "VERB", pictogramId = null),
     )
 
     @Before
@@ -92,7 +93,7 @@ class BoardViewModelTest {
         // Grille 2 × 3 non carrée : des dimensions inversées déplaceraient « coin ».
         val dao = FakeBoardDao(
             boards = listOf(BoardEntity(id = HOME_BOARD_ID, name = "wide", rowCount = 2, columnCount = 3)),
-            cells = listOf(CellEntity(id = 1, boardId = HOME_BOARD_ID, row = 1, column = 2, label = "coin", linkedBoardId = null)),
+            cells = listOf(CellEntity(id = 1, boardId = HOME_BOARD_ID, row = 1, column = 2, label = "coin", linkedBoardId = null, pictogramId = null, category = null)),
         )
 
         val board = checkNotNull(startViewModel(dao).state().board)
@@ -189,7 +190,7 @@ class BoardViewModelTest {
     fun `a missing board deeper in the stack leads back one level only`() = runTest(dispatcher) {
         val dao = FakeBoardDao(
             boards,
-            cells + CellEntity(id = 7, boardId = 2, row = 0, column = 1, label = "gone", linkedBoardId = 98),
+            cells + CellEntity(id = 7, boardId = 2, row = 0, column = 1, label = "gone", linkedBoardId = 98, pictogramId = null, category = null),
         )
         val viewModel = startViewModel(dao)
         viewModel.tap("A")
@@ -261,6 +262,22 @@ class BoardViewModelTest {
         viewModel.onSpeakMessage()
 
         assertTrue(speaker.spoken.isEmpty())
+    }
+
+    @Test
+    fun `je before a verb is shown and spoken elided, and delete removes the last touched word`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.tap("je")
+        viewModel.tap("A")
+        viewModel.tap("B")
+        viewModel.tap("ai")
+        speaker.spoken.clear()
+
+        assertEquals(listOf("j'ai"), viewModel.state().message)
+        viewModel.onSpeakMessage()
+        assertEquals(listOf("j'ai"), speaker.spoken)
+        viewModel.onDeleteLastWord()
+        assertEquals(listOf("je"), viewModel.state().message)
     }
 
     @Test

@@ -95,6 +95,12 @@ room {
     schemaDirectory("$projectDir/schemas")
 }
 
+// Les tests JVM lisent les pictos embarqués (chaque case doit avoir son image) : un picto
+// retiré doit relancer les tests, pas les laisser « à jour ».
+tasks.withType<Test>().configureEach {
+    inputs.dir("src/main/assets/pictograms")
+}
+
 // gradle-play-publisher : envoi sur la piste interne, puis promotion (brique
 // deploiement). Une clé absente ne casse que l'envoi : bundleRelease reste vert.
 play {
@@ -125,6 +131,7 @@ dependencies {
     implementation(libs.hilt.android)
     implementation(libs.kotlinx.collections.immutable)
     implementation(libs.androidx.room.runtime)
+    implementation(platform(libs.kotlinx.serialization.bom))
     ksp(libs.hilt.compiler)
     ksp(libs.androidx.room.compiler)
 
@@ -139,6 +146,7 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.room.testing)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

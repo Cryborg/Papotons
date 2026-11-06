@@ -40,4 +40,13 @@ data class CellEntity(
     @ColumnInfo(name = "grid_column") val column: Int,
     val label: String,
     @ColumnInfo(name = "linked_board_id") val linkedBoardId: Long?,
+    /** Identifiant ARASAAC ; l'image est `assets/pictograms/<id>.png`. `null` : texte seul. */
+    // Pas de valeur par défaut : un futur chemin d'écriture (édition, import) ne doit pas pouvoir
+    // oublier le picto ou la catégorie en compilant quand même.
+    @ColumnInfo(name = "pictogram_id") val pictogramId: Long?,
+    /**
+     * Nom d'une [com.wobblebot.papotons.domain.WordCategory], en texte : un nom inconnu (base
+     * d'une version future) se relit sans planter, ce que le convertisseur d'enum de Room ne fait pas.
+     */
+    @ColumnInfo(name = "word_category") val category: String?,
 )

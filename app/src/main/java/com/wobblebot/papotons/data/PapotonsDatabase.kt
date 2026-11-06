@@ -1,5 +1,6 @@
 package com.wobblebot.papotons.data
 
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import com.wobblebot.papotons.data.board.BoardDao
@@ -11,7 +12,12 @@ import com.wobblebot.papotons.data.board.CellEntity
  * jamais de `fallbackToDestructiveMigration`. Le schéma de chaque version est exporté
  * dans `app/schemas/` et versionné.
  */
-@Database(entities = [BoardEntity::class, CellEntity::class], version = 1, exportSchema = true)
+@Database(
+    entities = [BoardEntity::class, CellEntity::class],
+    version = 2,
+    exportSchema = true,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
+)
 abstract class PapotonsDatabase : RoomDatabase() {
     abstract fun boardDao(): BoardDao
 

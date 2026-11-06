@@ -9,6 +9,7 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -16,13 +17,16 @@ import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.wobblebot.papotons.data.pictogram.PictogramImages
 import com.wobblebot.papotons.ui.board.BoardRoute
 import com.wobblebot.papotons.ui.board.BoardViewModel
+import com.wobblebot.papotons.ui.board.LocalPictogramImages
 import com.wobblebot.papotons.ui.splash.StudioSplashScreen
 import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import com.wobblebot.papotons.update.InAppUpdateManager
 import com.wobblebot.papotons.update.UpdateReadyDialog
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
  * L'activité unique : splash du studio, bord à bord, mise à jour depuis l'appli.
@@ -30,6 +34,9 @@ import dagger.hilt.android.AndroidEntryPoint
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @Inject
+    lateinit var pictogramImages: PictogramImages
+
     private lateinit var inAppUpdateManager: InAppUpdateManager
 
     private val updateResultLauncher: ActivityResultLauncher<IntentSenderRequest> =
@@ -46,7 +53,9 @@ class MainActivity : ComponentActivity() {
         inAppUpdateManager = InAppUpdateManager(this)
         setContent {
             PapotonsTheme {
-                PapotonsApp(inAppUpdateManager)
+                CompositionLocalProvider(LocalPictogramImages provides pictogramImages::image) {
+                    PapotonsApp(inAppUpdateManager)
+                }
             }
         }
     }

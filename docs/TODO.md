@@ -25,14 +25,13 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 
 - **TODO-1** Pas encore de `docs/regles/INVARIANTS.md` ni de tests qui gardent les invariants 1 à 5 du CLAUDE.md : à écrire avec les premières fonctions (S).
 - **TODO-2** Icône provisoire (bulle blanche sur bleu) : à faire dessiner, avec une version monochrome pour les icônes à thème d'Android 13 (S).
-- **TODO-3** Base perdue prise pour un premier lancement : `seedIfEmpty` réinsère la démo dès que `boards` est vide, et le callback par défaut de SQLite supprime le fichier d'une base corrompue. Poser un marqueur « installation amorcée » (table vide + marqueur = alerte, pas de démo) et copier la base avant toute suppression dans `onCorruption` (invariant 4) (S).
+- **TODO-3** Base perdue prise pour un premier lancement : `seedIfEmpty` réinsère le vocabulaire de base dès que `boards` est vide, et le callback par défaut de SQLite supprime le fichier d'une base corrompue. Poser un marqueur « installation amorcée » (table vide + marqueur = alerte, pas de vocabulaire réinséré) et copier la base avant toute suppression dans `onCorruption` (invariant 4) (S).
 - **TODO-4** Volume média à zéro : la voix part sur le flux média, souvent baissé sur tablette, et l'utilisateur non oral ne peut pas signaler le silence. Prévenir quand le volume est à zéro (S).
 - **TODO-5** Langue de la voix figée : lue une seule fois à l'init, depuis la langue des ressources. Un changement de langue de l'appareil change l'interface et pas la voix ; à terme, la langue appartient à la grille (S).
 - **TODO-6** Message et pile de navigation perdus à la mort du processus : les garder dans `SavedStateHandle` (S).
 
 ## Feuille de route (MVP)
 
-- **MVP-2** Vocabulaire de base en français fourni avec l'appli (remplace la démo du premier lancement), image de case avec les pictos ARASAAC embarqués, positions fixes, code couleur Fitzgerald.
 - **MVP-3** **Prérequis** : TODO-3. Mode édition protégé : ajout et modification de cases, picto ARASAAC recherché par mot-clé (téléchargé puis gardé hors ligne).
 - **MVP-7** Cartes personnalisées : créer sa propre carte avec une photo prise sur le moment ou une image importée, plus son libellé et ce qu'elle dit. Pistes :
   - photo par `ActivityResultContracts.TakePicture` (aucune permission CAMERA tant que le manifeste n'en déclare pas) ;
@@ -41,8 +40,9 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
   - image copiée dans le stockage de l'appli, jamais référencée par son URI d'origine (elle disparaîtrait si la photo est supprimée de la galerie) ;
   - incluse dans la sauvegarde et l'export `.obz` (invariant 4), jamais envoyée ailleurs (invariant 1 : ce sont souvent des photos de proches).
 - **MVP-4** Sauvegarde et restauration, import et export Open Board Format (`.obf`/`.obz`), rappel de sauvegarde.
-- **MVP-5** Écran « À propos » avec le crédit ARASAAC, la ligne de version (`AppVersionLine`, sans écran depuis le MVP-1) et la mention Apache 2.0 des icônes Material ; politique de confidentialité hébergée gratuitement.
-- **MVP-6** Test fermé avec des orthophonistes et des familles (ISAAC Francophone, associations).
+- **MVP-5** Politique de confidentialité hébergée gratuitement, liée depuis la fiche Play et depuis la modale « À propos » (qui porte déjà les crédits et la version) ; crédit ARASAAC sur la fiche Play.
+- **MVP-6** Test fermé avec des orthophonistes et des familles (ISAAC Francophone, associations). Faire valider le vocabulaire de base avant toute publication (disposition, mots manquants : `c'est`, `on`, `moi`, `là`, `mettre`, `ouvrir`, `qui ?`) : une fois installé, il devient le plan moteur des utilisateurs. Sur tablette seulement tant que le MVP-8 n'est pas livré.
+- **MVP-8** Nombre de cases réglable, comme dans les logiciels de référence (malvoyants, débutants, troubles moteurs) : quelques tailles prédéfinies (moins de cases plus grosses, la taille standard, plus de cases), chacune avec ses propres positions fixes ; les petites tailles gardent les mots essentiels dans le même ordre de colonnes. Le générateur `tools/arasaac/fetch_pictograms.py` produit chaque taille. Réglage protégé comme le mode édition. Indispensable avant toute diffusion sur téléphone (cases trop étroites en portrait, inutilisables en paysage).
 
 ## Idées
 

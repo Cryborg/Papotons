@@ -18,14 +18,14 @@ class BoardRepository @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     /**
-     * Insère les grilles de démonstration au premier lancement, puis rend l'id de la grille à
+     * Insère le vocabulaire de base au premier lancement, puis rend l'id de la grille à
      * ouvrir. Une base qui a perdu son accueil ouvre sa plus petite grille : ni plantage en boucle
      * ni chargement sans fin, et rien n'est effacé (invariant 4).
      */
     suspend fun ensureHomeBoard(): Long {
-        val seed = DemoBoards.build(context::getString)
+        val seed = CoreVocabulary.build(context::getString)
         if (boardDao.seedIfEmpty(seed.boards, seed.cells)) {
-            Log.i(TAG, "Demo boards inserted: ${seed.boards.size} boards, ${seed.cells.size} cells")
+            Log.i(TAG, "Core vocabulary inserted: ${seed.boards.size} boards, ${seed.cells.size} cells")
         }
         if (boardDao.boardExists(HOME_BOARD_ID)) return HOME_BOARD_ID
         // Jamais nul : la base n'est pas vide après seedIfEmpty.

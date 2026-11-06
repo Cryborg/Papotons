@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="about_open">À propos</string>
+    <string name="about_title">À propos de Papotons</string>
+    <!-- Crédit exigé par la licence des pictogrammes (invariant 5) : auteur, origine, licence, propriétaire. -->
+    <string name="about_arasaac_credit">Pictogrammes : Sergio Palao. Origine : ARASAAC (https://arasaac.org). Licence : CC BY-NC-SA 4.0 (creativecommons.org/licenses/by-nc-sa/4.0). Propriété : Gouvernement d\'Aragon (Espagne).</string>
+    <string name="about_icons_credit">Icônes : Material Icons de Google, sous licence Apache 2.0.</string>
+    <string name="about_app_license">Papotons est un logiciel libre et gratuit, sous licence GPL-3.0.</string>
+    <string name="about_close">Fermer</string>
+</resources>

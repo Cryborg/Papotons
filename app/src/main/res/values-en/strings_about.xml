@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="about_open">About</string>
+    <string name="about_title">About Papotons</string>
+    <string name="about_arasaac_credit">Pictograms: Sergio Palao. Origin: ARASAAC (https://arasaac.org). License: CC BY-NC-SA 4.0 (creativecommons.org/licenses/by-nc-sa/4.0). Owner: Government of Aragon (Spain).</string>
+    <string name="about_icons_credit">Icons: Google Material Icons, under the Apache 2.0 license.</string>
+    <string name="about_app_license">Papotons is free software, under the GPL-3.0 license.</string>
+    <string name="about_close">Close</string>
+</resources>

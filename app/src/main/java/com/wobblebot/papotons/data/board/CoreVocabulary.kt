@@ -1,0 +1,145 @@
+package com.wobblebot.papotons.data.board
+
+import androidx.annotation.StringRes
+import com.wobblebot.papotons.R
+import com.wobblebot.papotons.domain.HOME_BOARD_ID
+import com.wobblebot.papotons.domain.WordCategory
+
+// Généré par tools/arasaac/fetch_pictograms.py : modifier la spécification du script, pas ce fichier.
+
+/**
+ * Vocabulaire de base inséré au premier lancement, dans la langue de l'appareil. Chaque case
+ * porte son picto ARASAAC (fichier `assets/pictograms/<id>.png`) et sa catégorie de mot.
+ * Une fois publiées, ces positions deviennent le plan moteur des utilisateurs : on ajoute dans
+ * les emplacements libres, on ne déplace jamais (invariant 3).
+ */
+object CoreVocabulary {
+    private const val FOOD_BOARD_ID = 2L
+    private const val GAMES_BOARD_ID = 3L
+    private const val PEOPLE_BOARD_ID = 4L
+    private const val FEELINGS_BOARD_ID = 5L
+
+    fun build(label: (Int) -> String): VocabularySeed {
+        fun cell(
+            boardId: Long,
+            row: Int,
+            column: Int,
+            @StringRes text: Int,
+            pictogramId: Long,
+            category: WordCategory,
+            linkedBoardId: Long?,
+        ) = CellEntity(
+            boardId = boardId,
+            row = row,
+            column = column,
+            label = label(text),
+            linkedBoardId = linkedBoardId,
+            pictogramId = pictogramId,
+            category = category.name,
+        )
+
+        val boards = listOf(
+            BoardEntity(HOME_BOARD_ID, label(R.string.vocabulary_board_home), 7, 8),
+            BoardEntity(FOOD_BOARD_ID, label(R.string.vocabulary_board_food), 4, 6),
+            BoardEntity(GAMES_BOARD_ID, label(R.string.vocabulary_board_games), 4, 6),
+            BoardEntity(PEOPLE_BOARD_ID, label(R.string.vocabulary_board_people), 4, 6),
+            BoardEntity(FEELINGS_BOARD_ID, label(R.string.vocabulary_board_feelings), 4, 6),
+        )
+        val cells = listOf(
+            cell(HOME_BOARD_ID, 0, 0, R.string.vocabulary_i, 6632, WordCategory.PEOPLE, null),
+            cell(HOME_BOARD_ID, 1, 0, R.string.vocabulary_you, 6625, WordCategory.PEOPLE, null),
+            cell(HOME_BOARD_ID, 2, 0, R.string.vocabulary_he, 6481, WordCategory.PEOPLE, null),
+            cell(HOME_BOARD_ID, 3, 0, R.string.vocabulary_she, 7028, WordCategory.PEOPLE, null),
+            cell(HOME_BOARD_ID, 4, 0, R.string.vocabulary_we, 7183, WordCategory.PEOPLE, null),
+            cell(HOME_BOARD_ID, 5, 0, R.string.vocabulary_you_plural, 7305, WordCategory.PEOPLE, null),
+            cell(HOME_BOARD_ID, 0, 1, R.string.vocabulary_want, 5441, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 1, 1, R.string.vocabulary_can, 35949, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 2, 1, R.string.vocabulary_like, 37826, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 3, 1, R.string.vocabulary_am_going, 2432, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 4, 1, R.string.vocabulary_am, 36480, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 5, 1, R.string.vocabulary_have, 32761, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 0, 2, R.string.vocabulary_eat, 6456, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 1, 2, R.string.vocabulary_drink, 6061, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 2, 2, R.string.vocabulary_play, 23392, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 3, 2, R.string.vocabulary_go, 8142, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 4, 2, R.string.vocabulary_do, 32751, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 5, 2, R.string.vocabulary_sleep, 6479, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 0, 3, R.string.vocabulary_look, 6564, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 1, 3, R.string.vocabulary_listen, 6572, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 2, 3, R.string.vocabulary_take, 13024, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 3, 3, R.string.vocabulary_give, 28431, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 4, 3, R.string.vocabulary_help, 32648, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 5, 3, R.string.vocabulary_stop, 7196, WordCategory.VERB, null),
+            cell(HOME_BOARD_ID, 0, 4, R.string.vocabulary_not, 5526, WordCategory.NEGATION, null),
+            cell(HOME_BOARD_ID, 1, 4, R.string.vocabulary_more, 37163, WordCategory.LITTLE_WORD, null),
+            cell(HOME_BOARD_ID, 2, 4, R.string.vocabulary_finished, 5358, WordCategory.LITTLE_WORD, null),
+            cell(HOME_BOARD_ID, 3, 4, R.string.vocabulary_with, 7064, WordCategory.LITTLE_WORD, null),
+            cell(HOME_BOARD_ID, 4, 4, R.string.vocabulary_here, 5382, WordCategory.LITTLE_WORD, null),
+            cell(HOME_BOARD_ID, 5, 4, R.string.vocabulary_that, 7091, WordCategory.LITTLE_WORD, null),
+            cell(HOME_BOARD_ID, 0, 5, R.string.vocabulary_good, 13630, WordCategory.DESCRIPTOR, null),
+            cell(HOME_BOARD_ID, 1, 5, R.string.vocabulary_big, 25782, WordCategory.DESCRIPTOR, null),
+            cell(HOME_BOARD_ID, 2, 5, R.string.vocabulary_small, 25839, WordCategory.DESCRIPTOR, null),
+            cell(HOME_BOARD_ID, 3, 5, R.string.vocabulary_hot, 2300, WordCategory.DESCRIPTOR, null),
+            cell(HOME_BOARD_ID, 4, 5, R.string.vocabulary_cold, 4652, WordCategory.DESCRIPTOR, null),
+            cell(HOME_BOARD_ID, 5, 5, R.string.vocabulary_a_lot, 7168, WordCategory.DESCRIPTOR, null),
+            cell(HOME_BOARD_ID, 0, 6, R.string.vocabulary_yes, 5584, WordCategory.SOCIAL, null),
+            cell(HOME_BOARD_ID, 1, 6, R.string.vocabulary_no, 39149, WordCategory.NEGATION, null),
+            cell(HOME_BOARD_ID, 2, 6, R.string.vocabulary_thank_you, 8129, WordCategory.SOCIAL, null),
+            cell(HOME_BOARD_ID, 3, 6, R.string.vocabulary_please, 38907, WordCategory.SOCIAL, null),
+            cell(HOME_BOARD_ID, 4, 6, R.string.vocabulary_what, 38229, WordCategory.QUESTION, null),
+            cell(HOME_BOARD_ID, 5, 6, R.string.vocabulary_where, 7764, WordCategory.QUESTION, null),
+            cell(HOME_BOARD_ID, 0, 7, R.string.vocabulary_board_food, 4610, WordCategory.NOUN, FOOD_BOARD_ID),
+            cell(HOME_BOARD_ID, 1, 7, R.string.vocabulary_board_games, 9813, WordCategory.NOUN, GAMES_BOARD_ID),
+            cell(HOME_BOARD_ID, 2, 7, R.string.vocabulary_board_people, 7116, WordCategory.PEOPLE, PEOPLE_BOARD_ID),
+            cell(HOME_BOARD_ID, 3, 7, R.string.vocabulary_board_feelings, 12359, WordCategory.DESCRIPTOR, FEELINGS_BOARD_ID),
+            cell(HOME_BOARD_ID, 4, 7, R.string.vocabulary_toilet, 5921, WordCategory.NOUN, null),
+            cell(FOOD_BOARD_ID, 0, 0, R.string.vocabulary_apple, 13644, WordCategory.NOUN, null),
+            cell(FOOD_BOARD_ID, 0, 1, R.string.vocabulary_banana, 2530, WordCategory.NOUN, null),
+            cell(FOOD_BOARD_ID, 0, 2, R.string.vocabulary_bread, 2494, WordCategory.NOUN, null),
+            cell(FOOD_BOARD_ID, 0, 3, R.string.vocabulary_cake, 2502, WordCategory.NOUN, null),
+            cell(FOOD_BOARD_ID, 0, 4, R.string.vocabulary_cookie, 8312, WordCategory.NOUN, null),
+            cell(FOOD_BOARD_ID, 0, 5, R.string.vocabulary_chocolate, 25940, WordCategory.NOUN, null),
+            cell(FOOD_BOARD_ID, 1, 0, R.string.vocabulary_yogurt, 2618, WordCategory.NOUN, null),
+            cell(FOOD_BOARD_ID, 1, 1, R.string.vocabulary_cheese, 2541, WordCategory.NOUN, null),
+            cell(FOOD_BOARD_ID, 1, 2, R.string.vocabulary_pasta, 8652, WordCategory.NOUN, null),
+            cell(FOOD_BOARD_ID, 1, 3, R.string.vocabulary_water, 32464, WordCategory.NOUN, null),
+            cell(FOOD_BOARD_ID, 1, 4, R.string.vocabulary_milk, 2445, WordCategory.NOUN, null),
+            cell(FOOD_BOARD_ID, 1, 5, R.string.vocabulary_juice, 11461, WordCategory.NOUN, null),
+            cell(GAMES_BOARD_ID, 0, 0, R.string.vocabulary_ball, 2269, WordCategory.NOUN, null),
+            cell(GAMES_BOARD_ID, 0, 1, R.string.vocabulary_puzzle, 2540, WordCategory.NOUN, null),
+            cell(GAMES_BOARD_ID, 0, 2, R.string.vocabulary_drawing, 11238, WordCategory.NOUN, null),
+            cell(GAMES_BOARD_ID, 0, 3, R.string.vocabulary_book, 25191, WordCategory.NOUN, null),
+            cell(GAMES_BOARD_ID, 0, 4, R.string.vocabulary_music, 24791, WordCategory.NOUN, null),
+            cell(GAMES_BOARD_ID, 0, 5, R.string.vocabulary_car, 6981, WordCategory.NOUN, null),
+            cell(GAMES_BOARD_ID, 1, 0, R.string.vocabulary_doll, 2482, WordCategory.NOUN, null),
+            cell(GAMES_BOARD_ID, 1, 1, R.string.vocabulary_blocks, 26403, WordCategory.NOUN, null),
+            cell(GAMES_BOARD_ID, 1, 2, R.string.vocabulary_bubbles, 8389, WordCategory.NOUN, null),
+            cell(GAMES_BOARD_ID, 1, 3, R.string.vocabulary_tablet, 28099, WordCategory.NOUN, null),
+            cell(GAMES_BOARD_ID, 1, 4, R.string.vocabulary_television, 25498, WordCategory.NOUN, null),
+            cell(GAMES_BOARD_ID, 1, 5, R.string.vocabulary_outside, 5475, WordCategory.DESCRIPTOR, null),
+            cell(PEOPLE_BOARD_ID, 0, 0, R.string.vocabulary_mom, 31148, WordCategory.PEOPLE, null),
+            cell(PEOPLE_BOARD_ID, 0, 1, R.string.vocabulary_dad, 2497, WordCategory.PEOPLE, null),
+            cell(PEOPLE_BOARD_ID, 0, 2, R.string.vocabulary_brother, 2423, WordCategory.PEOPLE, null),
+            cell(PEOPLE_BOARD_ID, 0, 3, R.string.vocabulary_sister, 37966, WordCategory.PEOPLE, null),
+            cell(PEOPLE_BOARD_ID, 0, 4, R.string.vocabulary_grandma, 2243, WordCategory.PEOPLE, null),
+            cell(PEOPLE_BOARD_ID, 0, 5, R.string.vocabulary_grandpa, 2244, WordCategory.PEOPLE, null),
+            cell(PEOPLE_BOARD_ID, 1, 0, R.string.vocabulary_baby, 2275, WordCategory.PEOPLE, null),
+            cell(PEOPLE_BOARD_ID, 1, 1, R.string.vocabulary_friend_boy, 25790, WordCategory.PEOPLE, null),
+            cell(PEOPLE_BOARD_ID, 1, 2, R.string.vocabulary_friend_girl, 8486, WordCategory.PEOPLE, null),
+            cell(PEOPLE_BOARD_ID, 1, 3, R.string.vocabulary_teacher, 2456, WordCategory.PEOPLE, null),
+            cell(PEOPLE_BOARD_ID, 1, 4, R.string.vocabulary_doctor, 6561, WordCategory.PEOPLE, null),
+            cell(FEELINGS_BOARD_ID, 0, 0, R.string.vocabulary_happy, 35547, WordCategory.DESCRIPTOR, null),
+            cell(FEELINGS_BOARD_ID, 0, 1, R.string.vocabulary_sad, 35545, WordCategory.DESCRIPTOR, null),
+            cell(FEELINGS_BOARD_ID, 0, 2, R.string.vocabulary_angry, 35539, WordCategory.DESCRIPTOR, null),
+            cell(FEELINGS_BOARD_ID, 0, 3, R.string.vocabulary_scared, 10261, WordCategory.NOUN, null),
+            cell(FEELINGS_BOARD_ID, 0, 4, R.string.vocabulary_tired, 35537, WordCategory.DESCRIPTOR, null),
+            cell(FEELINGS_BOARD_ID, 0, 5, R.string.vocabulary_sick, 3308, WordCategory.DESCRIPTOR, null),
+            cell(FEELINGS_BOARD_ID, 1, 0, R.string.vocabulary_hungry, 35559, WordCategory.NOUN, null),
+            cell(FEELINGS_BOARD_ID, 1, 1, R.string.vocabulary_thirsty, 7273, WordCategory.NOUN, null),
+            cell(FEELINGS_BOARD_ID, 1, 2, R.string.vocabulary_hurt, 2367, WordCategory.NOUN, null),
+            cell(FEELINGS_BOARD_ID, 1, 3, R.string.vocabulary_calm, 31310, WordCategory.DESCRIPTOR, null),
+            cell(FEELINGS_BOARD_ID, 1, 4, R.string.vocabulary_surprised, 35529, WordCategory.DESCRIPTOR, null),
+        )
+        return VocabularySeed(boards, cells)
+    }
+}
