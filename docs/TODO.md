@@ -30,7 +30,13 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 
 - **MVP-1** Grille de cases (picto + texte), dossiers, barre de message, synthèse vocale (`TextToSpeech`, moteur installé).
 - **MVP-2** Vocabulaire de base en français fourni avec l'appli, positions fixes, code couleur Fitzgerald.
-- **MVP-3** Mode édition protégé : ajout et modification de cases, photo ou picto ARASAAC recherché par mot-clé (téléchargé puis gardé hors ligne).
+- **MVP-3** Mode édition protégé : ajout et modification de cases, picto ARASAAC recherché par mot-clé (téléchargé puis gardé hors ligne).
+- **MVP-7** Cartes personnalisées : créer sa propre carte avec une photo prise sur le moment ou une image importée, plus son libellé et ce qu'elle dit. Pistes :
+  - photo par `ActivityResultContracts.TakePicture` (aucune permission CAMERA tant que le manifeste n'en déclare pas) ;
+  - import par le sélecteur de photos d'Android (`PickVisualMedia`, sans permission de stockage, disponible dès Android 8 via les services Play) ;
+  - recadrage carré et réduction de taille avant stockage (tablettes modestes, plafond de 25 Mo de la sauvegarde Android) ;
+  - image copiée dans le stockage de l'appli, jamais référencée par son URI d'origine (elle disparaîtrait si la photo est supprimée de la galerie) ;
+  - incluse dans la sauvegarde et l'export `.obz` (invariant 4), jamais envoyée ailleurs (invariant 1 : ce sont souvent des photos de proches).
 - **MVP-4** Sauvegarde et restauration, import et export Open Board Format (`.obf`/`.obz`), rappel de sauvegarde.
 - **MVP-5** Écran « À propos » avec le crédit ARASAAC, politique de confidentialité hébergée gratuitement.
 - **MVP-6** Test fermé avec des orthophonistes et des familles (ISAAC Francophone, associations).
