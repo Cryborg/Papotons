@@ -6,8 +6,14 @@ import kotlinx.coroutines.flow.StateFlow
 interface Speaker {
     val status: StateFlow<SpeechStatus>
 
-    /** Prononce [text] en coupant ce qui se disait. */
-    fun speak(text: String)
+    /**
+     * Prononce [text] après ce qui se dit déjà (des mots touchés vite s'entendent tous), ou en
+     * coupant tout si [interrupt] (la phrase entière remplace les mots en attente).
+     */
+    fun speak(text: String, interrupt: Boolean)
+
+    /** Coupe ce qui se dit et oublie les mots en attente. */
+    fun stop()
 
     /** Relance le moteur s'il n'est pas utilisable (voix installée ou moteur réactivé entre-temps). */
     fun recoverIfNeeded()

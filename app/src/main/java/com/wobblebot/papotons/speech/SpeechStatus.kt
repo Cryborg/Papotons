@@ -9,7 +9,7 @@ enum class SpeechStatus {
     /** Aucune voix locale de la langue : le moteur parle avec ce qu'il a, il faut en installer une. */
     LanguageMissing,
 
-    /** Le moteur ne répond pas ou n'a pas pu dire le dernier mot : l'appli est muette. */
+    /** Le moteur ne répond pas ou n'a pas pu dire un mot : l'appli est muette. */
     Unavailable;
 
     /** Vrai quand l'utilisateur doit être prévenu. */

@@ -21,12 +21,14 @@ internal const val INIT_TIMEOUT_MS = 5_000L
  * - L'ancien moteur est éteint et son délai annulé avant d'en créer un autre.
  * - Pendant une recréation le statut vaut [SpeechStatus.Initializing], jamais `Unavailable` :
  *   un retour au premier plan ne relance donc pas une init en cours.
- * - Un mot touché pendant l'init attend (seul le dernier compte) ; il n'existe qu'en
- *   `Initializing`, donc au plus un délai d'init par moteur créé (deux si le rejeu est refusé) :
- *   jamais une parole prise longtemps après l'appui.
- * - Un refus de `speak` éteint le moteur, en recrée un seul et rejoue le mot ; un refus au rejeu
- *   ne recrée plus rien (statut `Unavailable`). Le budget se réarme au premier énoncé accepté et
- *   à chaque relance demandée (retour au premier plan, « Réessayer », mot touché en `Unavailable`).
+ * - Les mots touchés pendant l'init attendent, dans l'ordre (une interruption efface ceux d'avant) ;
+ *   ils n'existent qu'en `Initializing`, donc au plus un délai d'init par moteur créé (deux si le
+ *   rejeu est refusé) : jamais une parole prise longtemps après l'appui.
+ * - Un refus de `speak` éteint le moteur, en recrée un et rejoue le mot refusé (avec ceux qui
+ *   attendaient derrière lui) ; un refus au rejeu ne recrée plus rien (statut `Unavailable`). Le
+ *   budget se réarme à chaque énoncé accepté et à chaque relance demandée (retour au premier
+ *   plan, « Réessayer », mot touché en `Unavailable`). Les mots que l'ancien moteur avait acceptés
+ *   sans les dire encore se perdent avec lui : un moteur qui refuse n'est déjà plus lié.
  * - En `LanguageMissing` on parle quand même, avec la voix que le moteur a : mieux qu'un silence.
  * - Après [shutdown], plus rien ne crée de moteur.
  */
@@ -40,7 +42,7 @@ class RecoveringSpeaker @Inject constructor(
     private var engine: SpeechEngine? = null
     private var generation = 0
     private var cancelInitTimeout: () -> Unit = {}
-    private var pendingText: String? = null
+    private val pendingTexts = mutableListOf<String>()
     private var hasRecreatedAfterError = false
     private var isShutDown = false
 
@@ -50,15 +52,23 @@ class RecoveringSpeaker @Inject constructor(
         createEngine()
     }
 
-    override fun speak(text: String) {
+    override fun speak(text: String, interrupt: Boolean) {
         if (isShutDown) return
         when (mutableStatus.value) {
-            SpeechStatus.Initializing -> pendingText = text
-            SpeechStatus.Ready, SpeechStatus.LanguageMissing -> utter(text)
+            SpeechStatus.Initializing -> {
+                if (interrupt) pendingTexts.clear()
+                pendingTexts += text
+            }
+            SpeechStatus.Ready, SpeechStatus.LanguageMissing -> utter(text, interrupt)
             // Un appui est aussi une demande de voix : on relance le moteur, et ce mot-ci,
             // tout juste touché, part dès qu'il répond.
             SpeechStatus.Unavailable -> restart(pending = text)
         }
+    }
+
+    override fun stop() {
+        pendingTexts.clear()
+        engine?.stop()
     }
 
     override fun recoverIfNeeded() {
@@ -72,13 +82,14 @@ class RecoveringSpeaker @Inject constructor(
         cancelInitTimeout()
         engine?.shutdown()
         engine = null
-        pendingText = null
+        pendingTexts.clear()
     }
 
     private fun restart(pending: String?) {
         hasRecreatedAfterError = false
         // Avant la création : un échec synchrone de l'init doit pouvoir l'effacer.
-        pendingText = pending
+        pendingTexts.clear()
+        if (pending != null) pendingTexts += pending
         createEngine()
     }
 
@@ -121,9 +132,14 @@ class RecoveringSpeaker @Inject constructor(
         }
         // Honoré même après le délai : un moteur lent qui finit par répondre rend la voix.
         mutableStatus.value = if (hasLocalVoice) SpeechStatus.Ready else SpeechStatus.LanguageMissing
-        pendingText?.let { text ->
-            pendingText = null
-            utter(text)
+        speakPendingTexts()
+    }
+
+    private fun speakPendingTexts() {
+        // Le moteur vient de démarrer : il n'a rien à couper, tout part à la suite. Un refus remet
+        // le mot en tête de la file, que le moteur recréé reprendra.
+        while (pendingTexts.isNotEmpty()) {
+            if (!utter(pendingTexts.removeAt(0), interrupt = false)) return
         }
     }
 
@@ -139,24 +155,27 @@ class RecoveringSpeaker @Inject constructor(
     }
 
     private fun becomeUnavailable() {
-        pendingText = null
+        if (pendingTexts.isNotEmpty()) Log.w(TAG, "${pendingTexts.size} waiting words dropped")
+        pendingTexts.clear()
         mutableStatus.value = SpeechStatus.Unavailable
     }
 
-    private fun utter(text: String) {
-        if (engine?.speak(text) == true) {
+    /** Vrai quand le moteur a accepté l'énoncé. */
+    private fun utter(text: String, interrupt: Boolean): Boolean {
+        if (engine?.speak(text, interrupt) == true) {
             hasRecreatedAfterError = false
-            return
+            return true
         }
         Log.e(TAG, "Text-to-speech refused the utterance")
         if (hasRecreatedAfterError) {
-            mutableStatus.value = SpeechStatus.Unavailable
-            return
+            becomeUnavailable()
+            return false
         }
         // Moteur mis à jour ou tué pendant que l'appli vivait : l'instance n'est plus liée.
         // Le mot repart avec un nouveau délai d'init : au pire deux délais après l'appui.
         hasRecreatedAfterError = true
-        pendingText = text
+        pendingTexts.add(0, text)
         createEngine()
+        return false
     }
 }

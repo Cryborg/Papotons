@@ -32,12 +32,12 @@ class AndroidSpeechEngine(
     }
     private var utteranceCount = 0L
 
-    /** Seul le dernier énoncé compte : une erreur sur un mot déjà coupé par le suivant est ignorée. */
-    private var lastUtteranceId: String? = null
+    /** Une erreur sur un énoncé coupé par une interruption est ignorée : seuls comptent les suivants. */
+    private var firstLiveUtterance = 0L
 
-    override fun speak(text: String): Boolean {
-        val utteranceId = UTTERANCE_ID_PREFIX + ++utteranceCount
-        lastUtteranceId = utteranceId
+    override fun speak(text: String, interrupt: Boolean): Boolean {
+        val utteranceNumber = ++utteranceCount
+        if (interrupt) firstLiveUtterance = utteranceNumber
         // À partir de la longueur maximale (incluse) le moteur refuse tout, ce qui passerait pour
         // une panne. La coupe ne tombe jamais au milieu d'un emoji (paire de substitution).
         val maxLength = TextToSpeech.getMaxSpeechInputLength() - 1
@@ -48,7 +48,14 @@ class AndroidSpeechEngine(
             val cut = text.take(maxLength)
             if (cut.last().isHighSurrogate()) cut.dropLast(1) else cut
         }
-        return textToSpeech.speak(utterance, TextToSpeech.QUEUE_FLUSH, null, utteranceId) != TextToSpeech.ERROR
+        val queueMode = if (interrupt) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+        return textToSpeech.speak(utterance, queueMode, null, UTTERANCE_ID_PREFIX + utteranceNumber) != TextToSpeech.ERROR
+    }
+
+    override fun stop() {
+        // Les erreurs des énoncés coupés ici ne comptent plus, comme après une interruption.
+        firstLiveUtterance = utteranceCount + 1
+        textToSpeech.stop()
     }
 
     override fun configure(): Boolean {
@@ -68,9 +75,10 @@ class AndroidSpeechEngine(
             }
 
             override fun onError(utteranceId: String?, errorCode: Int) {
-                // Certains moteurs ne donnent pas l'id : l'erreur vaut alors pour le dernier énoncé.
+                // Certains moteurs ne donnent pas l'id : l'erreur compte alors.
+                val utteranceNumber = utteranceId?.removePrefix(UTTERANCE_ID_PREFIX)?.toLongOrNull()
                 mainHandler.post {
-                    if (utteranceId == null || utteranceId == lastUtteranceId) callbacks.onUtteranceError(errorCode)
+                    if (utteranceNumber == null || utteranceNumber >= firstLiveUtterance) callbacks.onUtteranceError(errorCode)
                 }
             }
         })

@@ -127,6 +127,8 @@ class BoardViewModelTest {
         viewModel.tap("je")
 
         assertEquals(listOf("veux", "je"), speaker.spoken)
+        // Touchés vite, les deux mots doivent s'entendre : aucun ne coupe le précédent.
+        assertEquals(listOf(false, false), speaker.interruptions)
         assertEquals(listOf("veux", "je"), viewModel.state().message)
         assertTrue(viewModel.state().isComposingMessage)
     }
@@ -249,10 +251,13 @@ class BoardViewModelTest {
         viewModel.tap("veux")
         viewModel.tap("je")
         speaker.spoken.clear()
+        speaker.interruptions.clear()
 
         viewModel.onSpeakMessage()
 
         assertEquals(listOf("veux je"), speaker.spoken)
+        // La phrase remplace les mots encore en attente au lieu de passer après eux.
+        assertEquals(listOf(true), speaker.interruptions)
     }
 
     @Test
@@ -312,6 +317,8 @@ class BoardViewModelTest {
 
         assertTrue(viewModel.state().message.isEmpty())
         assertFalse(viewModel.state().isComposingMessage)
+        // Les mots touchés en rafale qui attendent encore leur tour se taisent avec le message.
+        assertEquals(1, speaker.stopCount)
     }
 
     @Test

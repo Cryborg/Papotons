@@ -51,4 +51,4 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 - **IDEE-3** Verrouillage de l'appli (épinglage d'écran / lock task mode).
 - **IDEE-4** Statistiques d'usage locales pour l'orthophoniste (jamais envoyées nulle part).
 - **IDEE-5** Autres bibliothèques de pictos via Global Symbols.
-- **IDEE-6** Réglages de parole : anti-rebond des appuis répétés, retour à l'accueil après un mot pris dans un dossier, prononciation mot par mot désactivable, choix du moteur et de la voix.
+- **IDEE-6** Réglages de parole : anti-rebond des appuis répétés (les mots touchés se mettent en file : une rafale se dit en entier, seul « Tout effacer » la coupe), retour à l'accueil après un mot pris dans un dossier, prononciation mot par mot désactivable, choix du moteur et de la voix.

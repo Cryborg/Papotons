@@ -7,13 +7,21 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class FakeSpeaker : Speaker {
     override val status = MutableStateFlow(SpeechStatus.Ready)
     val spoken = mutableListOf<String>()
+    val interruptions = mutableListOf<Boolean>()
     var recoverCount = 0
         private set
     var isShutDown = false
         private set
+    var stopCount = 0
+        private set
 
-    override fun speak(text: String) {
+    override fun speak(text: String, interrupt: Boolean) {
         spoken += text
+        interruptions += interrupt
+    }
+
+    override fun stop() {
+        stopCount++
     }
 
     override fun recoverIfNeeded() {

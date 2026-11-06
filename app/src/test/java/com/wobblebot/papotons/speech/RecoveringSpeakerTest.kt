@@ -12,12 +12,23 @@ class RecoveringSpeakerTest {
         var acceptsSpeech = true
         var hasLocalVoice = true
         var configurationFailure: RuntimeException? = null
+        var refusedText: String? = null
+        var stopCount = 0
         val spoken = mutableListOf<String>()
+        val interruptions = mutableListOf<Boolean>()
         var isShutDown = false
 
-        override fun speak(text: String): Boolean {
-            if (acceptsSpeech) spoken += text
-            return acceptsSpeech
+        override fun speak(text: String, interrupt: Boolean): Boolean {
+            val accepts = acceptsSpeech && text != refusedText
+            if (accepts) {
+                spoken += text
+                interruptions += interrupt
+            }
+            return accepts
+        }
+
+        override fun stop() {
+            stopCount++
         }
 
         override fun configure(): Boolean {
@@ -66,15 +77,103 @@ class RecoveringSpeakerTest {
     private fun engine(index: Int) = factory.engines[index]
 
     @Test
-    fun `only the last word touched during init is spoken once the engine is ready`() {
+    fun `words touched during init are all spoken in order once the engine is ready`() {
         val speaker = RecoveringSpeaker(factory, scheduler)
 
-        speaker.speak("je")
-        speaker.speak("veux")
+        speaker.speak("je", interrupt = false)
+        speaker.speak("veux", interrupt = false)
         engine(0).callbacks.onInit(true)
 
-        assertEquals(listOf("veux"), engine(0).spoken)
+        assertEquals(listOf("je", "veux"), engine(0).spoken)
+        // Les mots en attente se suivent : aucun ne coupe celui d'avant.
+        assertEquals(listOf(false, false), engine(0).interruptions)
         assertEquals(SpeechStatus.Ready, speaker.status.value)
+    }
+
+    @Test
+    fun `an interruption during init drops only the words waiting before it`() {
+        val speaker = RecoveringSpeaker(factory, scheduler)
+
+        speaker.speak("je", interrupt = false)
+        speaker.speak("je veux", interrupt = true)
+        speaker.speak("pomme", interrupt = false)
+        engine(0).callbacks.onInit(true)
+
+        assertEquals(listOf("je veux", "pomme"), engine(0).spoken)
+    }
+
+    @Test
+    fun `words follow each other while an interruption cuts what is being said`() {
+        val speaker = RecoveringSpeaker(factory, scheduler)
+        engine(0).callbacks.onInit(true)
+
+        speaker.speak("je", interrupt = false)
+        speaker.speak("veux", interrupt = false)
+        speaker.speak("je veux", interrupt = true)
+
+        assertEquals(listOf(false, false, true), engine(0).interruptions)
+    }
+
+    @Test
+    fun `a refusal while speaking the waiting words replays them all on the new engine`() {
+        val speaker = RecoveringSpeaker(factory, scheduler)
+        engine(0).acceptsSpeech = false
+        speaker.speak("je", interrupt = false)
+        speaker.speak("veux", interrupt = false)
+        speaker.speak("pomme", interrupt = false)
+
+        engine(0).callbacks.onInit(true)
+        engine(1).callbacks.onInit(true)
+
+        assertEquals(listOf("je", "veux", "pomme"), engine(1).spoken)
+        assertEquals(listOf(false, false, false), engine(1).interruptions)
+    }
+
+    @Test
+    fun `a refusal in the middle of the waiting words replays the refused word and the ones after it`() {
+        val speaker = RecoveringSpeaker(factory, scheduler)
+        engine(0).refusedText = "veux"
+        speaker.speak("je", interrupt = false)
+        speaker.speak("veux", interrupt = false)
+        speaker.speak("pomme", interrupt = false)
+
+        engine(0).callbacks.onInit(true)
+        engine(1).callbacks.onInit(true)
+
+        assertEquals(listOf("je"), engine(0).spoken)
+        assertEquals(listOf("veux", "pomme"), engine(1).spoken)
+    }
+
+    @Test
+    fun `a second refusal in the middle of the waiting words gives up and forgets them`() {
+        val speaker = RecoveringSpeaker(factory, scheduler)
+        factory.acceptsSpeech = false
+        engine(0).acceptsSpeech = false
+        speaker.speak("je", interrupt = false)
+        speaker.speak("veux", interrupt = false)
+        engine(0).callbacks.onInit(true)
+
+        engine(1).callbacks.onInit(true)
+
+        assertEquals(2, factory.engines.size)
+        assertEquals(SpeechStatus.Unavailable, speaker.status.value)
+        // Une relance demandée part de zéro : les mots abandonnés ne ressortent pas plus tard.
+        factory.acceptsSpeech = true
+        speaker.recoverIfNeeded()
+        engine(2).callbacks.onInit(true)
+        assertTrue(engine(2).spoken.isEmpty())
+    }
+
+    @Test
+    fun `stop cuts the engine and forgets the words waiting for the init`() {
+        val speaker = RecoveringSpeaker(factory, scheduler)
+        speaker.speak("biscuit", interrupt = false)
+
+        speaker.stop()
+        engine(0).callbacks.onInit(true)
+
+        assertEquals(1, engine(0).stopCount)
+        assertTrue(engine(0).spoken.isEmpty())
     }
 
     @Test
@@ -93,7 +192,7 @@ class RecoveringSpeakerTest {
         engine(0).hasLocalVoice = false
         engine(0).callbacks.onInit(true)
 
-        speaker.speak("oui")
+        speaker.speak("oui", interrupt = false)
 
         assertEquals(listOf("oui"), engine(0).spoken)
     }
@@ -111,7 +210,7 @@ class RecoveringSpeakerTest {
     @Test
     fun `an engine that never answers becomes unavailable and forgets the waiting word`() {
         val speaker = RecoveringSpeaker(factory, scheduler)
-        speaker.speak("aide")
+        speaker.speak("aide", interrupt = false)
 
         scheduler.runAll()
 
@@ -164,7 +263,7 @@ class RecoveringSpeakerTest {
         engine(0).callbacks.onInit(true)
         engine(0).acceptsSpeech = false
 
-        speaker.speak("encore")
+        speaker.speak("encore", interrupt = false)
 
         assertTrue(engine(0).isShutDown)
         assertEquals(SpeechStatus.Initializing, speaker.status.value)
@@ -179,7 +278,7 @@ class RecoveringSpeakerTest {
         engine(0).acceptsSpeech = false
         factory.acceptsSpeech = false
 
-        speaker.speak("encore")
+        speaker.speak("encore", interrupt = false)
         engine(1).callbacks.onInit(true)
 
         assertEquals(2, factory.engines.size)
@@ -191,11 +290,11 @@ class RecoveringSpeakerTest {
         val speaker = RecoveringSpeaker(factory, scheduler)
         engine(0).callbacks.onInit(true)
         engine(0).acceptsSpeech = false
-        speaker.speak("un")
+        speaker.speak("un", interrupt = false)
         engine(1).callbacks.onInit(true)
 
         engine(1).acceptsSpeech = false
-        speaker.speak("deux")
+        speaker.speak("deux", interrupt = false)
         engine(2).callbacks.onInit(true)
 
         assertEquals(listOf("deux"), engine(2).spoken)
@@ -205,7 +304,7 @@ class RecoveringSpeakerTest {
     fun `an utterance error raises the alert without speaking the word later`() {
         val speaker = RecoveringSpeaker(factory, scheduler)
         engine(0).callbacks.onInit(true)
-        speaker.speak("pomme")
+        speaker.speak("pomme", interrupt = false)
 
         engine(0).callbacks.onUtteranceError(-4)
 
@@ -220,7 +319,7 @@ class RecoveringSpeakerTest {
         val speaker = RecoveringSpeaker(factory, scheduler)
         scheduler.runAll()
 
-        speaker.speak("eau")
+        speaker.speak("eau", interrupt = false)
 
         assertEquals(SpeechStatus.Initializing, speaker.status.value)
         engine(1).callbacks.onInit(true)
@@ -240,7 +339,7 @@ class RecoveringSpeakerTest {
         val speaker = RecoveringSpeaker(factory, scheduler)
         engine(0).hasLocalVoice = false
         engine(0).callbacks.onInit(true)
-        speaker.speak("pomme")
+        speaker.speak("pomme", interrupt = false)
 
         engine(0).callbacks.onUtteranceError(TextToSpeech.ERROR_NETWORK)
 
@@ -252,10 +351,10 @@ class RecoveringSpeakerTest {
         val speaker = RecoveringSpeaker(factory, scheduler)
         engine(0).hasLocalVoice = false
         engine(0).callbacks.onInit(true)
-        speaker.speak("pomme")
+        speaker.speak("pomme", interrupt = false)
 
         engine(0).callbacks.onUtteranceError(TextToSpeech.ERROR_SERVICE)
-        speaker.speak("pain")
+        speaker.speak("pain", interrupt = false)
 
         assertEquals(2, factory.engines.size)
         engine(1).callbacks.onInit(true)
@@ -265,7 +364,7 @@ class RecoveringSpeakerTest {
     @Test
     fun `a word waiting during a failed init is never spoken later`() {
         val speaker = RecoveringSpeaker(factory, scheduler)
-        speaker.speak("aide")
+        speaker.speak("aide", interrupt = false)
 
         engine(0).callbacks.onInit(false)
         speaker.recoverIfNeeded()
@@ -281,7 +380,7 @@ class RecoveringSpeakerTest {
         engine(0).acceptsSpeech = false
         factory.failsSynchronously = true
 
-        speaker.speak("encore")
+        speaker.speak("encore", interrupt = false)
         assertEquals(SpeechStatus.Unavailable, speaker.status.value)
         factory.failsSynchronously = false
         speaker.recoverIfNeeded()
@@ -296,14 +395,14 @@ class RecoveringSpeakerTest {
         engine(0).callbacks.onInit(true)
         engine(0).acceptsSpeech = false
         factory.acceptsSpeech = false
-        speaker.speak("un")
+        speaker.speak("un", interrupt = false)
         engine(1).callbacks.onInit(true)
         assertEquals(SpeechStatus.Unavailable, speaker.status.value)
 
         speaker.recoverIfNeeded()
         engine(2).callbacks.onInit(true)
         factory.acceptsSpeech = true
-        speaker.speak("deux")
+        speaker.speak("deux", interrupt = false)
 
         assertEquals(4, factory.engines.size)
         engine(3).callbacks.onInit(true)
@@ -323,7 +422,7 @@ class RecoveringSpeakerTest {
     @Test
     fun `after shutdown the engine is released and late callbacks change nothing`() {
         val speaker = RecoveringSpeaker(factory, scheduler)
-        speaker.speak("pain")
+        speaker.speak("pain", interrupt = false)
 
         speaker.shutdown()
         engine(0).callbacks.onInit(true)
@@ -341,7 +440,7 @@ class RecoveringSpeakerTest {
         engine(0).acceptsSpeech = false
 
         speaker.shutdown()
-        speaker.speak("x")
+        speaker.speak("x", interrupt = false)
         speaker.recoverIfNeeded()
 
         assertEquals(1, factory.engines.size)

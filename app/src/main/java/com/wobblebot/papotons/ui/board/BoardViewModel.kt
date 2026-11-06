@@ -76,7 +76,7 @@ class BoardViewModel @Inject constructor(
             // grille affichée : il n'empile rien.
             navigation.update { stack -> if (isShowingTopOf(stack)) stack.adding(linkedBoardId) else stack }
         } else {
-            speaker.speak(cell.label)
+            speaker.speak(cell.label, interrupt = false)
             message.update { it.adding(SentenceWord(cell.label, cell.category)) }
         }
     }
@@ -91,7 +91,7 @@ class BoardViewModel @Inject constructor(
 
     fun onSpeakMessage() {
         val words = message.value
-        if (words.isNotEmpty()) speaker.speak(sentenceTokens(words).joinToString(separator = " "))
+        if (words.isNotEmpty()) speaker.speak(sentenceTokens(words).joinToString(separator = " "), interrupt = true)
     }
 
     fun onDeleteLastWord() {
@@ -99,6 +99,8 @@ class BoardViewModel @Inject constructor(
     }
 
     fun onClearMessage() {
+        // Des mots touchés en rafale peuvent encore attendre leur tour : effacer les fait taire.
+        speaker.stop()
         message.value = persistentListOf()
     }
 
