@@ -1,0 +1,1 @@
+- [Tests instrumentés sur l'émulateur seul](tests-instrumentes-emulateur-seul.md) — ANDROID_SERIAL=emulator-5554, le téléphone de Franck peut être branché
