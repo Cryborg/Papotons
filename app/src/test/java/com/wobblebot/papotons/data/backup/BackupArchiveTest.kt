@@ -2,6 +2,7 @@ package com.wobblebot.papotons.data.backup
 
 import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.board.CellEntity
+import com.wobblebot.papotons.data.board.MAX_SCREEN_POSITION
 import com.wobblebot.papotons.data.profile.MAX_PROFILES
 import com.wobblebot.papotons.data.profile.MAX_PROFILE_NAME_LENGTH
 import com.wobblebot.papotons.data.profile.ProfileEntity
@@ -380,7 +381,7 @@ class BackupArchiveTest {
         val restored = restore(beforeScreens(startBoardId = null, value = cycle))
 
         assertEquals(mapOf(1L to 0, 7L to null, 12L to null), restored.boards.associate { it.id to it.screenPosition })
-        entries(restored)
+        assertTrue(entries(restored).containsKey(MANIFEST_PATH))
     }
 
     @Test
@@ -461,4 +462,23 @@ class BackupArchiveTest {
 
         assertEquals("boards/1001.obf", manifest.getString("root"))
     }
+
+    /** L'écran de départ ne sert plus : même présent dans un format 3, il n'arrive pas en base. */
+    @Test
+    fun `a start board in a current backup is not kept`() {
+        val archive = entries().toMutableMap()
+        val manifest = JSONObject(checkNotNull(archive[MANIFEST_PATH]))
+        manifest.getJSONArray("ext_papotons_profiles").getJSONObject(0).put("ext_papotons_start_board_id", 12)
+        archive[MANIFEST_PATH] = manifest.toString()
+
+        assertEquals(listOf(leo.copy(startBoardId = null)), restore(archive).profiles)
+    }
+
+    /** Un rang que l'appli ne pourrait pas suivre (l'écran suivant déborderait) est refusé ; le plus grand accepté passe. */
+    @Test
+    fun `a screen position beyond the largest accepted one is refused`() {
+        validate(content.copy(boards = listOf(home.copy(screenPosition = MAX_SCREEN_POSITION), food, unreachable)))
+        assertRefused(RefusalReason.Invalid) { validate(content.copy(boards = listOf(home.copy(screenPosition = MAX_SCREEN_POSITION + 1), food, unreachable))) }
+    }
 }
+

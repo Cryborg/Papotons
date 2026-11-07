@@ -1,6 +1,7 @@
 package com.wobblebot.papotons.data.board
 
 import android.database.sqlite.SQLiteConstraintException
+import android.database.sqlite.SQLiteException
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -285,7 +286,7 @@ class BoardDaoTest {
         assertFalse(boardDao.isScreenOf(annaHouseFolder, anna))
         assertEquals(listOf(annaHome, annaHouse), boardDao.screensOf(anna).map { it.id })
         assertEquals("Maison", boardDao.screensOf(anna).last().name)
-        assertEquals(listOf(annaHome, annaHouse), boardDao.observeScreensBesides(annaHouseFolder).first().map { it.id })
+        assertEquals(listOf(annaHome, annaHouse), boardDao.observeScreensOfOwner(annaHouseFolder).first().map { it.id })
         assertEquals(setOf(HOME_BOARD_ID, annaHome, annaHouse), boardDao.allScreenIds().toSet())
         assertEquals(0, boardDao.renameScreen(LEO.id, annaHouse, "Volé"))
         assertEquals(anna, boardDao.smallestOtherProfileWithBoards(LEO.id))
@@ -304,6 +305,48 @@ class BoardDaoTest {
         assertThrows(SQLiteConstraintException::class.java) {
             runBlocking { boardDao.insertAll(listOf(BoardEntity(id = 3000, name = "doublon", rowCount = 1, columnCount = 1, profileId = LEO.id, screenPosition = 0)), emptyList()) }
         }
+    }
+
+    /** Ensemble ou pas du tout : la dernière écriture de l'échange d'écrans échoue, aucun rang négatif ne reste (l'export le refuserait). */
+    @Test
+    fun aScreenSwapThatFailsHalfwayKeepsTheOrder() = runBlocking<Unit> {
+        val vocabulary = CoreVocabulary.build { "label$it" }
+        boardDao.seedIfEmpty(vocabulary.subtree(HOME_BOARD_ID), "Léo")
+        val house = boardDao.insertScreen(LEO.id, "Maison", vocabulary.subtree(LARGE_CELLS_HOME_ID), LARGE_CELLS_HOME_ID)
+        database.openHelper.writableDatabase.execSQL(
+            "CREATE TEMP TRIGGER fail_last_screen_write BEFORE UPDATE OF screen_position ON boards " +
+                "WHEN OLD.screen_position = -1 BEGIN SELECT RAISE(ABORT, 'disk full'); END"
+        )
+
+        assertThrows(SQLiteException::class.java) { runBlocking { boardDao.moveScreen(LEO.id, house, -1) } }
+
+        assertEquals(listOf(HOME_BOARD_ID to 0, house to 1), boardDao.screensOf(LEO.id).map { it.id to it.screenPosition })
+    }
+
+    /** L'index unique réel des positions : l'échange passe par une place hors de la grille, sans rien perdre. */
+    @Test
+    fun twoCellsSwapUnderTheUniqueIndex() = runBlocking {
+        boardDao.insertAll(listOf(home), listOf(word(1, 0, "je"), word(0, 1, "veux")))
+        val je = boardDao.allCells().single { it.label == "je" }
+
+        boardDao.moveCell(je.id, home.id, 1, 0, 0, 1)
+
+        assertEquals(mapOf("je" to (0 to 1), "veux" to (1 to 0)), boardDao.allCells().associate { it.label to (it.row to it.column) })
+    }
+
+    /** Ensemble ou pas du tout : la dernière écriture de l'échange échoue, aucune case ne reste hors de la grille. */
+    @Test
+    fun aSwapThatFailsHalfwayLeavesBothCellsInPlace() = runBlocking<Unit> {
+        boardDao.insertAll(listOf(home), listOf(word(1, 0, "je"), word(0, 1, "veux")))
+        val je = boardDao.allCells().single { it.label == "je" }
+        database.openHelper.writableDatabase.execSQL(
+            "CREATE TEMP TRIGGER fail_last_swap_write BEFORE UPDATE OF grid_row ON cells " +
+                "WHEN OLD.grid_row = -1 BEGIN SELECT RAISE(ABORT, 'disk full'); END"
+        )
+
+        assertThrows(SQLiteException::class.java) { runBlocking { boardDao.moveCell(je.id, home.id, 1, 0, 0, 1) } }
+
+        assertEquals(mapOf("je" to (1 to 0), "veux" to (0 to 1)), boardDao.allCells().associate { it.label to (it.row to it.column) })
     }
 
     /** Le RESTRICT réel : l'écran part avec ses dossiers imbriqués, l'autre écran et ses dossiers restent. */

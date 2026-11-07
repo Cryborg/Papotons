@@ -1,11 +1,10 @@
 package com.wobblebot.papotons.domain
 
 /**
- * Une taille de cases = un jeu de grilles à part, inséré avec le vocabulaire de base : son accueil a
- * un id fixe dans `CoreVocabulary` ([homeBoardId], vérifié par le générateur et par CoreVocabularyTest),
- * et ses dossiers ont leur taille, reprise par les dossiers que l'adulte y crée. Chaque utilisateur a sa
- * copie de cet accueil, reconnue par son `core_board_id` ; l'écran de départ retient l'id de la copie,
- * jamais le nom de la taille.
+ * Une taille de cases = un jeu de grilles à part dans `CoreVocabulary` : son accueil a un id fixe
+ * ([homeBoardId], vérifié par le générateur et par CoreVocabularyTest), et ses dossiers ont leur
+ * taille, reprise par les dossiers que l'adulte y crée. Un écran reçoit à sa création la copie du jeu
+ * de sa taille ; on reconnaît sa taille au `core_board_id` de sa racine.
  */
 enum class BoardSize(
     val homeBoardId: Long,

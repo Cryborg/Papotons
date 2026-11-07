@@ -2,6 +2,7 @@ package com.wobblebot.papotons.data.board
 
 import android.content.Context
 import com.wobblebot.papotons.data.FakePreferences
+import com.wobblebot.papotons.data.backup.MAX_BOARDS
 import com.wobblebot.papotons.data.profile.FIRST_PROFILE_ID
 import com.wobblebot.papotons.data.profile.ProfileEntity
 import com.wobblebot.papotons.domain.BoardSize
@@ -252,4 +253,75 @@ class BoardScreensTest {
 
         assertTrue(dao.boards.value.any { it.id == 1000L })
     }
+
+    /** Un id d'écran d'un autre utilisateur (périmé après une restauration) : rien ne bouge chez personne. */
+    @Test
+    fun `screen actions never reach the screens of another profile`() = runTest {
+        val dao = FakeBoardDao()
+        val repository = freshRepository(dao)
+        val leoHouse = repository.createScreen("Maison", BoardSize.LARGE_CELLS)
+        val anna = repository.createProfile("Anna")
+        repository.switchProfile(anna)
+        val annaHome = dao.screenIds(anna).single()
+        val boards = dao.boards.value
+
+        // Anna n'a qu'un écran : le dernier de SON profil, même si Léo en a deux.
+        assertThrows(LastScreenException::class.java) { runBlocking { repository.deleteScreen(annaHome) } }
+        assertThrows(ScreenNotFoundException::class.java) { runBlocking { repository.deleteScreen(leoHouse) } }
+        assertThrows(ScreenNotFoundException::class.java) { runBlocking { repository.moveScreen(leoHouse, -1) } }
+        assertThrows(ScreenNotFoundException::class.java) { runBlocking { repository.renameScreen(leoHouse, "Volé") } }
+        repository.moveScreen(annaHome, -1)
+
+        assertEquals(boards, dao.boards.value)
+    }
+
+    /** Créé après une suppression qui a laissé un trou : toujours en dernier, jamais sur un rang pris. */
+    @Test
+    fun `a screen created after a deletion still comes last`() = runTest {
+        val dao = FakeBoardDao()
+        val repository = freshRepository(dao)
+        val school = repository.createScreen("École", BoardSize.LARGE_CELLS)
+        val park = repository.createScreen("Parc", BoardSize.LARGE_CELLS)
+        val house = repository.createScreen("Maison", BoardSize.LARGE_CELLS)
+        repository.deleteScreen(park)
+
+        val garden = repository.createScreen("Jardin", BoardSize.LARGE_CELLS)
+
+        assertEquals(listOf(HOME_BOARD_ID, school, house, garden), dao.screenIds())
+    }
+
+    /** L'export doit rester possible : jamais plus de grilles que la sauvegarde n'en accepte, borne exacte. */
+    @Test
+    fun `a screen that would exceed the boards of a backup is refused, one that fits is created`() = runTest {
+        val dao = FakeBoardDao()
+        val repository = freshRepository(dao)
+        val largeBoardCount = seed.subtree(BoardSize.LARGE_CELLS.homeBoardId).boards.size
+        val firstFillerId = 100_000L
+        fun fillUpTo(boardCount: Int) {
+            val missing = boardCount - dao.boards.value.size
+            dao.boards.value += (0 until missing).map { BoardEntity(firstFillerId + it, "rempli", 1, 1, profileId = FIRST_PROFILE_ID) }
+        }
+        fillUpTo(MAX_BOARDS - largeBoardCount + 1)
+
+        assertThrows(TooManyScreensException::class.java) { runBlocking { repository.createScreen("De trop", BoardSize.LARGE_CELLS) } }
+        assertEquals(MAX_BOARDS - largeBoardCount + 1, dao.boards.value.size)
+
+        dao.boards.value = dao.boards.value.filter { it.id != firstFillerId }
+        repository.createScreen("Juste", BoardSize.LARGE_CELLS)
+        assertEquals(MAX_BOARDS, dao.boards.value.size)
+    }
+
+    /** Un rang maximal ne vient que d'une sauvegarde retouchée : l'écran suivant ne déborde pas, il est refusé. */
+    @Test
+    fun `a screen after the largest accepted position is refused instead of overflowing`() = runTest {
+        val dao = FakeBoardDao()
+        val repository = freshRepository(dao)
+        dao.boards.value = dao.boards.value.map { if (it.id == HOME_BOARD_ID) it.copy(screenPosition = MAX_SCREEN_POSITION - 1) else it }
+        val last = repository.createScreen("Maison", BoardSize.LARGE_CELLS)
+        assertEquals(MAX_SCREEN_POSITION, dao.boards.value.single { it.id == last }.screenPosition)
+
+        assertThrows(TooManyScreensException::class.java) { runBlocking { repository.createScreen("École", BoardSize.LARGE_CELLS) } }
+        assertEquals(listOf(HOME_BOARD_ID, last), dao.screenIds())
+    }
 }
+

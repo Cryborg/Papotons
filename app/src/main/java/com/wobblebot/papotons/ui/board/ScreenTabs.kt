@@ -1,6 +1,8 @@
 package com.wobblebot.papotons.ui.board
 
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -16,6 +18,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,16 +38,19 @@ import kotlinx.collections.immutable.ImmutableList
  * la police du système (réglée une fois), jamais avec ce qui s'affiche : la grille ne bouge pas.
  */
 private val TAB_MIN_HEIGHT = 56.dp
+
+/** Au-delà, un nom long finit par des points de suspension : les autres onglets restent en vue. */
 private val TAB_MAX_WIDTH = 240.dp
 private val TAB_HORIZONTAL_PADDING = 20.dp
 private val TAB_SPACING = 8.dp
-private val ROW_HORIZONTAL_PADDING = 8.dp
+private val TAB_ROW_HORIZONTAL_PADDING = 8.dp
 private val TAB_SHAPE = RoundedCornerShape(12.dp)
 
 /**
  * Les onglets de l'enfant, un par écran, entre la barre du haut et la grille : en toucher un ouvre cet
  * écran. Celui de l'écran ouvert ([selectedId], même depuis un de ses dossiers) est plein. La rangée
- * défile quand ils ne tiennent pas ; un nom long finit par des points de suspension.
+ * défile quand ils ne tiennent pas, et ramène toujours l'onglet ouvert en vue (zoom, police agrandie) ;
+ * un nom long finit par des points de suspension.
  */
 @Composable
 fun ScreenTabs(screens: ImmutableList<Screen>, selectedId: Long, onChosen: (Long) -> Unit, modifier: Modifier = Modifier) {
@@ -54,7 +61,7 @@ fun ScreenTabs(screens: ImmutableList<Screen>, selectedId: Long, onChosen: (Long
         modifier = modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = ROW_HORIZONTAL_PADDING)
+            .padding(horizontal = TAB_ROW_HORIZONTAL_PADDING)
             .selectableGroup()
             .semantics { contentDescription = rowDescription },
     ) {
@@ -67,12 +74,15 @@ fun ScreenTabs(screens: ImmutableList<Screen>, selectedId: Long, onChosen: (Long
 @Composable
 private fun ScreenTab(name: String, isSelected: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
+    val viewRequester = remember { BringIntoViewRequester() }
+    LaunchedEffect(isSelected) { if (isSelected) viewRequester.bringIntoView() }
     Surface(
         shape = TAB_SHAPE,
         color = if (isSelected) colors.primary else colors.surfaceVariant,
         contentColor = if (isSelected) colors.onPrimary else colors.onSurfaceVariant,
         // Découpé avant la sélection : l'ondulation de l'appui suit les coins arrondis.
         modifier = Modifier
+            .bringIntoViewRequester(viewRequester)
             .heightIn(min = TAB_MIN_HEIGHT)
             .widthIn(max = TAB_MAX_WIDTH)
             .clip(TAB_SHAPE)

@@ -3,13 +3,10 @@ package com.wobblebot.papotons.ui.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -18,21 +15,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import com.wobblebot.papotons.R
-import com.wobblebot.papotons.data.profile.MAX_PROFILE_NAME_LENGTH
 import com.wobblebot.papotons.data.profile.normalizedProfileName
 import com.wobblebot.papotons.domain.BoardSize
-import com.wobblebot.papotons.ui.edit.takeWhole
 
 private val FIELD_SPACING = 8.dp
 
@@ -54,8 +47,17 @@ sealed interface ScreenDialogTarget {
 @Composable
 fun ScreenDialog(target: ScreenDialogTarget, onSave: (name: String, size: BoardSize) -> Unit, onDelete: () -> Unit, onClose: () -> Unit) {
     val existing = target as? ScreenDialogTarget.Existing
+    val focusManager = LocalFocusManager.current
     var name by remember { mutableStateOf(existing?.name.orEmpty()) }
-    var size by remember { mutableStateOf((target as? ScreenDialogTarget.New)?.initialSize ?: BoardSize.STANDARD) }
+    // La taille ne compte qu'à la création : un écran existant garde la sienne.
+    var size by remember {
+        mutableStateOf(
+            when (target) {
+                is ScreenDialogTarget.New -> target.initialSize
+                is ScreenDialogTarget.Existing -> BoardSize.STANDARD
+            }
+        )
+    }
     var isNameMissing by remember { mutableStateOf(false) }
     var isConfirmingDelete by remember { mutableStateOf(false) }
     if (isConfirmingDelete && existing?.canDelete == true) {
@@ -74,23 +76,18 @@ fun ScreenDialog(target: ScreenDialogTarget, onSave: (name: String, size: BoardS
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(FIELD_SPACING), modifier = Modifier.verticalScroll(rememberScrollState())) {
                 if (existing == null) Text(stringResource(R.string.screen_new_explanation), style = MaterialTheme.typography.bodyMedium)
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { typed ->
-                        name = typed.replace('\n', ' ').takeWhole(MAX_PROFILE_NAME_LENGTH)
+                NameField(
+                    name = name,
+                    onNameChange = {
+                        name = it
                         isNameMissing = false
                     },
-                    label = { Text(stringResource(R.string.screen_name)) },
-                    singleLine = true,
-                    isError = isNameMissing,
-                    supportingText = if (isNameMissing) {
-                        // Annoncé : le focus de TalkBack reste sur le bouton, qui n'a rien fait.
-                        { Text(stringResource(R.string.screen_name_missing), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive }) }
-                    } else {
-                        null
-                    },
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { save() }),
+                    label = stringResource(R.string.screen_name),
+                    missingMessage = stringResource(R.string.screen_name_missing),
+                    isMissing = isNameMissing,
+                    capitalization = KeyboardCapitalization.Sentences,
+                    // À la création, Entrée ferme le clavier et découvre les tailles : rien n'est créé sans les avoir vues.
+                    onDone = if (existing != null) save else { { focusManager.clearFocus() } },
                 )
                 if (existing == null) {
                     Text(stringResource(R.string.settings_board_size), style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
@@ -115,18 +112,13 @@ fun ScreenDialog(target: ScreenDialogTarget, onSave: (name: String, size: BoardS
 
 @Composable
 private fun DeleteScreenDialog(name: String, onConfirm: () -> Unit, onCancel: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onCancel,
-        properties = DialogProperties(dismissOnClickOutside = false),
-        title = { Text(stringResource(R.string.screen_delete_confirm_title, name)) },
-        text = { Text(stringResource(R.string.screen_delete_confirm_text)) },
-        // À droite, loin du « Supprimer » du corps qui a ouvert la confirmation.
-        confirmButton = {
-            TextButton(onClick = onConfirm) { Text(stringResource(R.string.screen_delete), color = MaterialTheme.colorScheme.error) }
-        },
-        dismissButton = {
-            TextButton(onClick = onCancel) { Text(stringResource(R.string.screen_cancel)) }
-        },
+    ConfirmDeleteDialog(
+        title = stringResource(R.string.screen_delete_confirm_title, name),
+        text = stringResource(R.string.screen_delete_confirm_text),
+        deleteLabel = stringResource(R.string.screen_delete),
+        cancelLabel = stringResource(R.string.screen_cancel),
+        onConfirm = onConfirm,
+        onCancel = onCancel,
     )
 }
 

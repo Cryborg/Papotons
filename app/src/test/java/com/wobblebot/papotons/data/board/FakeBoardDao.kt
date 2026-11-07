@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 
 /**
- * Hérite des corps des transactions (`seedIfEmpty`, `insertFolder`, `deleteCellAndOrphanBoards`,
+ * Hérite des corps des transactions (`seedIfEmpty`, `insertFolder`, `deleteCellAndOrphanBoards`, `moveCell`,
  * `insertProfileWithCoreVocabulary`, `deleteProfile`), sans leur annulation en cas d'échec.
  * Imite l'index unique des positions, la CASCADE et le RESTRICT des cases, et la clé étrangère des
  * grilles vers leur utilisateur, uniquement sur les nouvelles écritures ; la vraie Room se teste
@@ -148,6 +148,30 @@ class FakeBoardDao(
 
     override suspend fun cell(cellId: Long): CellEntity? = cells.value.firstOrNull { it.id == cellId }
 
+    override suspend fun board(boardId: Long): BoardEntity? = boards.value.firstOrNull { it.id == boardId }
+
+    override suspend fun cellAt(boardId: Long, row: Int, column: Int): CellEntity? =
+        cells.value.firstOrNull { it.boardId == boardId && it.row == row && it.column == column }
+
+    /** Levée par `setCellPosition` (disque plein pendant un déplacement). */
+    var cellPositionFailure: RuntimeException? = null
+
+    /** Retient la prochaine écriture de position de case tant qu'il n'est pas complété (déplacement lent), une seule fois. */
+    var cellPositionGate: CompletableDeferred<Unit>? = null
+
+    override suspend fun setCellPosition(cellId: Long, row: Int, column: Int) {
+        cellPositionGate?.let { gate ->
+            cellPositionGate = null
+            gate.await()
+        }
+        cellPositionFailure?.let { throw it }
+        val moved = cells.value.single { it.id == cellId }
+        if (cells.value.any { it.id != cellId && it.boardId == moved.boardId && it.row == row && it.column == column }) {
+            throw SQLiteConstraintException("UNIQUE constraint failed: cells.board_id, cells.grid_row, cells.grid_column")
+        }
+        cells.value = cells.value.map { if (it.id == cellId) it.copy(row = row, column = column) else it }
+    }
+
     override suspend fun deleteCell(cellId: Long): Int {
         val before = cells.value.size
         cells.value = cells.value.filterNot { it.id == cellId }
@@ -273,7 +297,7 @@ class FakeBoardDao(
     private fun screensOfNow(profileId: Long) = boards.value.filter { it.profileId == profileId && it.screenPosition != null }.sortedBy { it.screenPosition }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    override fun observeScreensBesides(boardId: Long): Flow<List<BoardEntity>> = areReadsHeld.flatMapLatest { isHeld ->
+    override fun observeScreensOfOwner(boardId: Long): Flow<List<BoardEntity>> = areReadsHeld.flatMapLatest { isHeld ->
         if (isHeld) {
             emptyFlow()
         } else {
@@ -284,7 +308,19 @@ class FakeBoardDao(
         }
     }
 
+    /** Retient la prochaine écriture de rang d'écran tant qu'il n'est pas complété, une seule fois. */
+    var screenPositionGate: CompletableDeferred<Unit>? = null
+
+    /** Écritures de rang d'écran : un échange en fait trois. */
+    var screenPositionWrites = 0
+        private set
+
     override suspend fun setScreenPosition(boardId: Long, position: Int) {
+        screenPositionWrites++
+        screenPositionGate?.let { gate ->
+            screenPositionGate = null
+            gate.await()
+        }
         val changed = boards.value.map { if (it.id == boardId) it.copy(screenPosition = position) else it }
         checkScreenPositions(changed)
         boards.value = changed

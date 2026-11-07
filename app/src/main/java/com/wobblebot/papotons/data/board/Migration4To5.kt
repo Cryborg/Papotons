@@ -7,7 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 private const val TAG = "Migration4To5"
 
 /**
- * Les écrans : l'écran de départ de chaque utilisateur devient son premier écran ([firstScreenOf]).
+ * Les écrans : l'écran de départ de chaque utilisateur devient son premier écran ([legacyFirstScreenOf]).
  * Par ajout de colonne, jamais en recréant `boards` (même raison que la migration 3 → 4) ; aucun id
  * ni aucune position de case ne bouge. Les accueils des autres tailles restent, sans rang.
  */
@@ -29,7 +29,7 @@ object Migration4To5 : Migration(4, 5) {
             while (cursor.moveToNext()) {
                 val profileId = cursor.getLong(0)
                 val startBoardId = if (cursor.isNull(1)) null else cursor.getLong(1)
-                val screenId = firstScreenOf(startBoardId, boardsByProfile[profileId].orEmpty(), linkedBoardIds)
+                val screenId = legacyFirstScreenOf(startBoardId, boardsByProfile[profileId].orEmpty(), linkedBoardIds)
                 if (screenId == null) {
                     // Au lancement, cet utilisateur sans grille n'est jamais ouvert (repli sur un autre).
                     Log.w(TAG, "Profile $profileId has no board, no screen set")

@@ -39,35 +39,52 @@ private val BADGE_SPACING = 6.dp
  */
 private val WRITTEN_BACKUP_MIN_WIDTH = 360.dp
 
-/** À la place de la phrase en édition, dans la même barre à hauteur fixe : rien ne bouge (invariant 3). */
+/**
+ * À la place de la phrase en édition, dans la même barre à hauteur fixe : rien ne bouge (invariant 3).
+ * [hasMoveFailed] : un déplacement de case a échoué, dit à la place du titre (la barre ne grandit pas).
+ */
 @Composable
-fun EditBanner(onDone: () -> Unit, onBackup: () -> Unit, hasUnsavedChanges: Boolean, modifier: Modifier = Modifier) {
+fun EditBanner(onDone: () -> Unit, onBackup: () -> Unit, hasUnsavedChanges: Boolean, modifier: Modifier = Modifier, hasMoveFailed: Boolean = false) {
     BoxWithConstraints(modifier = modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
         val isBackupWritten = maxWidth >= WRITTEN_BACKUP_MIN_WIDTH * LocalDensity.current.fontScale
-        BannerRow(onDone, onBackup, hasUnsavedChanges, isBackupWritten)
+        BannerRow(onDone, onBackup, hasUnsavedChanges, isBackupWritten, hasMoveFailed)
     }
 }
 
 @Composable
-private fun BannerRow(onDone: () -> Unit, onBackup: () -> Unit, hasUnsavedChanges: Boolean, isBackupWritten: Boolean) {
+private fun BannerRow(onDone: () -> Unit, onBackup: () -> Unit, hasUnsavedChanges: Boolean, isBackupWritten: Boolean, hasMoveFailed: Boolean) {
     Row(
         modifier = Modifier.fillMaxHeight(),
         horizontalArrangement = Arrangement.spacedBy(BANNER_SPACING),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Court : à police agrandie, une consigne longue se couperait. Annoncé à l'entrée en édition.
-        Text(
-            text = stringResource(R.string.edit_banner),
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = BANNER_MAX_LINES,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .weight(1f)
-                .semantics {
-                    heading()
-                    liveRegion = LiveRegionMode.Polite
-                },
-        )
+        if (hasMoveFailed) {
+            // Annoncé tout de suite : le doigt vient de lâcher la case, rien n'a bougé.
+            Text(
+                text = stringResource(R.string.edit_move_failed),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                maxLines = BANNER_MAX_LINES,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics { liveRegion = LiveRegionMode.Assertive },
+            )
+        } else {
+            Text(
+                text = stringResource(R.string.edit_banner),
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = BANNER_MAX_LINES,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics {
+                        heading()
+                        liveRegion = LiveRegionMode.Polite
+                    },
+            )
+        }
         // Une pastille, et ses mots pour TalkBack : la couleur seule ne dit rien.
         val unsaved = stringResource(R.string.backup_unsaved_badge)
         if (isBackupWritten) {

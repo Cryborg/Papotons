@@ -2,6 +2,7 @@ package com.wobblebot.papotons.data.backup
 
 import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.board.CellEntity
+import com.wobblebot.papotons.data.board.MAX_SCREEN_POSITION
 import com.wobblebot.papotons.data.board.withFirstScreens
 import com.wobblebot.papotons.data.photo.CELL_PHOTO_NAME
 import com.wobblebot.papotons.data.profile.FIRST_PROFILE_ID
@@ -129,7 +130,7 @@ fun validate(content: BackupContent) {
     val profileIds = HashSet<Long>()
     for (profile in profiles) {
         if (profile.id !in 1..MAX_BOARD_ID || !profileIds.add(profile.id)) refuse(RefusalReason.Invalid, "Profile id ${profile.id} out of range or repeated")
-        // Un nom vide ou trop long ne se saisit pas dans l'appli ; l'écran de départ, lui, est revalidé au lancement.
+        // Un nom vide ou trop long ne se saisit pas dans l'appli.
         if (!isValidProfileName(profile.name)) refuse(RefusalReason.Invalid, "Profile ${profile.id} name")
     }
     val profileOfBoard = HashMap<Long, Long>()
@@ -148,7 +149,7 @@ fun validate(content: BackupContent) {
     val screenPlaces = HashSet<Pair<Long, Int>>()
     for (board in boards) {
         val position = board.screenPosition ?: continue
-        if (position < 0 || !screenPlaces.add(board.profileId to position)) refuse(RefusalReason.Invalid, "Screen ${board.id} position")
+        if (position !in 0..MAX_SCREEN_POSITION || !screenPlaces.add(board.profileId to position)) refuse(RefusalReason.Invalid, "Screen ${board.id} position")
     }
     (profileIds - screenPlaces.map { it.first }.toSet()).firstOrNull()?.let { refuse(RefusalReason.Invalid, "Profile $it without screens") }
     val positions = HashSet<Triple<Long, Int, Int>>()
@@ -187,7 +188,9 @@ fun backupEntries(content: BackupContent, pictogramsInArchive: Set<Long>, photos
     val cellsByBoard = content.cells.groupBy { it.boardId }
     // Pour les autres lecteurs seulement : le premier écran du premier utilisateur.
     val firstProfileId = content.profiles.minOf { it.id }
-    val rootId = content.boards.filter { it.profileId == firstProfileId && it.screenPosition != null }.minByOrNull { checkNotNull(it.screenPosition) }?.id
+    val rootId = content.boards.filter { it.profileId == firstProfileId }
+        .mapNotNull { board -> board.screenPosition?.let { position -> board.id to position } }
+        .minByOrNull { (_, position) -> position }?.first
         ?: content.boards.minOf { it.id }
     val boardPaths = JSONObject()
     val imagePaths = JSONObject()
@@ -290,7 +293,7 @@ fun readManifest(text: String): BackupManifest = parse {
         ProfileEntity(
             id = profile.longOrNull(KEY_ID) ?: refuse(RefusalReason.Invalid, "Profile $index without id"),
             name = profile.stringOrNull(KEY_NAME) ?: refuse(RefusalReason.Invalid, "Profile $index without name"),
-            // Lu seulement au format 2 (le premier écran en dépend), jamais écrit depuis.
+            // Ne sert qu'au format 2 (le premier écran en dépend) ; jamais écrit depuis, jamais gardé.
             startBoardId = profile.longOrNull(KEY_START_BOARD_ID),
             // Absent (sauvegarde d'avant l'option) : protégé, comme un nouvel utilisateur.
             isExitLocked = profile.booleanOrNull(KEY_EXIT_LOCKED) ?: true,
@@ -306,19 +309,18 @@ fun readManifest(text: String): BackupManifest = parse {
  * ne sert plus, n'est pas gardé.
  */
 fun backupContent(manifest: BackupManifest, boards: List<BoardEntity>, cells: List<CellEntity>, defaultProfileName: String): BackupContent {
-    if (manifest.version > BEFORE_SCREENS_FORMAT_VERSION) return BackupContent(checkNotNull(manifest.profiles), boards, cells)
+    val isSingleProfile = manifest.profiles == null
     val profiles = manifest.profiles ?: listOf(ProfileEntity(FIRST_PROFILE_ID, defaultProfileName, startBoardId = null))
-    val profiledBoards = if (manifest.profiles != null) {
-        boards
-    } else {
+    // L'écran de départ ne sert plus : jamais gardé, quel que soit le format (la colonne reste inerte).
+    val forgottenStarts = profiles.map { it.copy(startBoardId = null) }
+    if (manifest.version > BEFORE_SCREENS_FORMAT_VERSION) return BackupContent(forgottenStarts, boards, cells)
+    val profiledBoards = if (isSingleProfile) {
         val linkedBoardIds = cells.mapNotNullTo(HashSet()) { it.linkedBoardId }
         boards.map { board -> board.copy(profileId = FIRST_PROFILE_ID, coreBoardId = legacyCoreBoardId(board.id, isLinked = board.id in linkedBoardIds)) }
+    } else {
+        boards
     }
-    return BackupContent(
-        profiles = profiles.map { it.copy(startBoardId = null) },
-        boards = withFirstScreens(profiles, profiledBoards, cells),
-        cells = cells,
-    )
+    return BackupContent(forgottenStarts, withFirstScreens(profiles, profiledBoards, cells), cells)
 }
 
 /** Une grille et ses cases (ids de cases à zéro : la base en donne de neufs). */

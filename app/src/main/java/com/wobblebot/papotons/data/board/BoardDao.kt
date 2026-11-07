@@ -38,6 +38,10 @@ const val FIRST_USER_BOARD_ID = 1000L
 /** Le rang que prend un écran le temps d'échanger le sien : l'index unique refuse deux écrans au même. */
 private const val SWAP_SCREEN_POSITION = -1
 
+/** La place, hors de toute grille, que prend une case le temps d'un échange. */
+private const val SWAP_CELL_ROW = -1
+private const val SWAP_CELL_COLUMN = -1
+
 /** Supprimer le dernier utilisateur qui a des grilles viderait la base : refusé. */
 class LastProfileException(profileId: Long) : SQLiteException("Profile $profileId is the last one with boards")
 
@@ -159,7 +163,7 @@ abstract class BoardDao {
         "SELECT * FROM boards WHERE screen_position IS NOT NULL " +
             "AND profile_id = (SELECT profile_id FROM boards WHERE id = :boardId) ORDER BY screen_position"
     )
-    abstract fun observeScreensBesides(boardId: Long): Flow<List<BoardEntity>>
+    abstract fun observeScreensOfOwner(boardId: Long): Flow<List<BoardEntity>>
 
     @Query("UPDATE boards SET screen_position = :position WHERE id = :boardId")
     abstract suspend fun setScreenPosition(boardId: Long, position: Int)
@@ -196,9 +200,10 @@ abstract class BoardDao {
     open suspend fun insertScreen(profileId: Long, name: String, seed: VocabularySeed, rootCoreBoardId: Long): Long {
         if (profile(profileId) == null) throw ProfileNotFoundException(profileId)
         val screens = screensOf(profileId)
-        // Au-delà, la sauvegarde refuserait la base : l'export doit rester possible (invariant 4).
-        if (screens.size >= MAX_SCREENS || countBoards() + seed.boards.size > MAX_BOARDS) throw TooManyScreensException()
         val position = (screens.mapNotNull { it.screenPosition }.maxOrNull() ?: (FIRST_SCREEN_POSITION - 1)) + 1
+        // Au-delà des grilles ou du rang, la sauvegarde refuserait la base : l'export doit rester possible
+        // (invariant 4). Un rang maximal ne vient que d'une sauvegarde modifiée à la main.
+        if (screens.size >= MAX_SCREENS || countBoards() + seed.boards.size > MAX_BOARDS || position > MAX_SCREEN_POSITION) throw TooManyScreensException()
         val copy = seed.forProfile(profileId, maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID))
         val boards = copy.boards.asScreen(rootCoreBoardId, position, name)
         insertAll(boards, copy.cells)
@@ -223,19 +228,22 @@ abstract class BoardDao {
     /**
      * Échange le rang de l'écran [boardId] de [profileId] avec celui de son voisin, d'un cran vers la
      * fin ([offset] positif) ou vers le début : le voisin dans l'ordre, pas le rang ± 1 (une suppression
-     * laisse des trous). Sans voisin de ce côté, rien. Rang temporaire négatif : l'index unique.
+     * laisse des trous). Sans voisin de ce côté, rien. Rang temporaire négatif : l'index unique. Vrai si
+     * l'ordre a changé.
      */
     @Transaction
-    open suspend fun moveScreen(profileId: Long, boardId: Long, offset: Int) {
+    open suspend fun moveScreen(profileId: Long, boardId: Long, offset: Int): Boolean {
         val screens = screensOf(profileId)
         val index = screens.indexOfFirst { it.id == boardId }
         if (index < 0) throw ScreenNotFoundException(boardId)
-        val neighbor = screens.getOrNull(index + offset.coerceIn(-1, 1)) ?: return
+        if (offset == 0) return false
+        val neighbor = screens.getOrNull(index + offset.coerceIn(-1, 1)) ?: return false
         val position = checkNotNull(screens[index].screenPosition)
         val neighborPosition = checkNotNull(neighbor.screenPosition)
         setScreenPosition(boardId, SWAP_SCREEN_POSITION)
         setScreenPosition(neighbor.id, position)
         setScreenPosition(boardId, neighborPosition)
+        return true
     }
 
     @Query("SELECT photo_file FROM cells WHERE photo_file IS NOT NULL AND board_id IN (SELECT id FROM boards WHERE profile_id = :profileId)")
@@ -315,6 +323,42 @@ abstract class BoardDao {
 
     @Query("UPDATE boards SET name = :name WHERE id = :boardId")
     abstract suspend fun renameBoard(boardId: Long, name: String): Int
+
+    @Query("SELECT * FROM boards WHERE id = :boardId")
+    abstract suspend fun board(boardId: Long): BoardEntity?
+
+    @Query("SELECT * FROM cells WHERE board_id = :boardId AND grid_row = :row AND grid_column = :column")
+    abstract suspend fun cellAt(boardId: Long, row: Int, column: Int): CellEntity?
+
+    /** La seule écriture de position : réservée à [moveCell], le geste explicite de l'adulte. */
+    @Query("UPDATE cells SET grid_row = :row, grid_column = :column WHERE id = :cellId")
+    abstract suspend fun setCellPosition(cellId: Long, row: Int, column: Int)
+
+    /**
+     * L'adulte, en édition, pose la case [cellId] de la grille [boardId] ailleurs dans cette grille
+     * (invariant 3 : jamais d'elle-même). Une case déjà à l'arrivée prend la place laissée : les deux
+     * s'échangent, ensemble ou pas du tout. Refusé si la case a disparu ([CellNotFoundException]), n'est
+     * plus à ([fromRow], [fromColumn]) ou dans cette grille, ou si l'arrivée est hors de la grille
+     * ([CellChangedException]) : rien n'est écrit. Vrai si la case a bougé (faux : lâchée à sa place).
+     */
+    @Transaction
+    open suspend fun moveCell(cellId: Long, boardId: Long, fromRow: Int, fromColumn: Int, toRow: Int, toColumn: Int): Boolean {
+        val moved = cell(cellId) ?: throw CellNotFoundException(cellId)
+        if (moved.boardId != boardId || moved.row != fromRow || moved.column != fromColumn) throw CellChangedException(cellId)
+        val board = board(boardId) ?: throw CellChangedException(cellId)
+        if (toRow !in 0 until board.rowCount || toColumn !in 0 until board.columnCount) throw CellChangedException(cellId)
+        if (toRow == fromRow && toColumn == fromColumn) return false
+        val occupant = cellAt(boardId, toRow, toColumn)
+        if (occupant == null) {
+            setCellPosition(cellId, toRow, toColumn)
+            return true
+        }
+        // Hors de la grille le temps de l'échange : l'index unique refuse deux cases au même endroit.
+        setCellPosition(cellId, SWAP_CELL_ROW, SWAP_CELL_COLUMN)
+        setCellPosition(occupant.id, fromRow, fromColumn)
+        setCellPosition(cellId, toRow, toColumn)
+        return true
+    }
 
     @Query("SELECT * FROM cells WHERE id = :cellId")
     abstract suspend fun cell(cellId: Long): CellEntity?

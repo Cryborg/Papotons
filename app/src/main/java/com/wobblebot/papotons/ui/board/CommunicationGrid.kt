@@ -1,55 +1,49 @@
 package com.wobblebot.papotons.ui.board
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.unit.toSize
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.TextUnit
-import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.offset
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.Cell
-import com.wobblebot.papotons.domain.Picture
 import com.wobblebot.papotons.domain.WordCategory
 import com.wobblebot.papotons.ui.theme.wordCategoryBackground
 import kotlinx.collections.immutable.ImmutableList
@@ -58,40 +52,17 @@ import kotlinx.collections.immutable.ImmutableList
 internal val GRID_PADDING = 8.dp
 // 8 dp au moins entre deux cibles : un appui qui tremble ne doit pas toucher la voisine.
 internal val CELL_SPACING = 8.dp
-private val CELL_CONTENT_PADDING = 6.dp
-private val PHOTO_SHAPE = RoundedCornerShape(6.dp)
 
-// Dossier : contour épais, et icône au-dessus du libellé (texte seul) ou marque dans le coin, au-dessus
-// du picto qui descend d'autant (une marque devant le libellé ne laissait rien au mot sur téléphone).
+// Glisser-déposer, en édition : la place d'origine de la case portée reste visible, en pâle.
+private const val LIFTED_ORIGIN_ALPHA = 0.35f
+
+// Dossier : contour épais (son icône ou sa marque sont dessinées par CellFace).
 private val FOLDER_BORDER_WIDTH = 3.dp
-private val FOLDER_ICON_SIZE = 20.dp
-private val FOLDER_MARK_SIZE = 16.dp
-
-// Picto et libellé : parts fixes de la case.
-private const val PICTOGRAM_WEIGHT = 0.68f
-private const val LABEL_WEIGHT = 0.32f
-
-// Libellé
-// Bas : un mot rapetissé reste un mot, un mot coupé (« finish… ») n'en est plus un. Le plancher grossit
-// avec la police système ; il n'est atteint que dans les cases étroites du téléphone (MVP-8).
-private val LABEL_MIN_FONT_SIZE = 8.sp
-internal val LABEL_MAX_FONT_SIZE = 40.sp
-// Sous un picto, un plafond bas : les mots courts ont tous la même taille (une grille régulière se
-// lit mieux), seuls les longs rapetissent.
-private val PICTOGRAM_LABEL_MAX_FONT_SIZE = 22.sp
-// Pas de 2 sp : deux fois moins de mesures de texte par case qu'au pas de 1 sp, à chaque changement de grille.
-private val LABEL_FONT_STEP = 2.sp
-private const val LABEL_MIN_LINES = 1
-private const val LABEL_MAX_LINES = 2
-private val LABEL_LINE_HEIGHT = 1.15.em
-
-/** Repères des tests : l'image d'un picto, la marque d'un dossier. */
-const val PICTOGRAM_TEST_TAG = "pictogram"
-const val FOLDER_MARK_TEST_TAG = "folder_mark"
 
 /**
  * Toutes les cases, à leur position, sans défilement. Forcée de gauche à droite : une langue
- * écrite de droite à gauche ne doit pas renverser les colonnes (invariant 3).
+ * écrite de droite à gauche ne doit pas renverser les colonnes (invariant 3). En édition, un appui
+ * long soulève une case, qui suit le doigt jusqu'à son nouvel emplacement ([onCellMoved]).
  */
 @Composable
 fun CommunicationGrid(
@@ -103,44 +74,94 @@ fun CommunicationGrid(
     onEmptySlotClick: (row: Int, column: Int) -> Unit = { _, _ -> },
     /** Appui long sur un verbe, hors édition : la page de ses formes. */
     onCellLongClick: (Cell) -> Unit = {},
+    /** En édition, une case lâchée sur un autre emplacement : une case déjà là prend sa place. */
+    onCellMoved: (cell: Cell, toRow: Int, toColumn: Int) -> Unit = { _, _, _ -> },
 ) {
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-        Column(
-            modifier = modifier.padding(GRID_PADDING),
-            verticalArrangement = Arrangement.spacedBy(CELL_SPACING),
-        ) {
-            for ((rowIndex, row) in grid.withIndex()) {
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(CELL_SPACING),
-                ) {
-                    for ((columnIndex, cell) in row.withIndex()) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight(),
-                        ) {
-                            when {
-                                cell != null -> CellButton(
-                                    cell = cell,
-                                    isEditing = isEditing,
-                                    onClick = { onCellClick(cell) },
-                                    onLongClick = { onCellLongClick(cell) },
-                                )
-                                isEditing -> AddSlot(rowIndex, columnIndex, onClick = { onEmptySlotClick(rowIndex, columnIndex) })
+        val density = LocalDensity.current
+        var gridSize by remember { mutableStateOf(Size.Zero) }
+        val rowCount = grid.size
+        val columnCount = grid.firstOrNull()?.size ?: 0
+        val geometry = remember(gridSize, rowCount, columnCount, density) {
+            with(density) { GridGeometry(gridSize, rowCount, columnCount, GRID_PADDING.toPx(), CELL_SPACING.toPx()) }
+        }
+        // Une édition terminée pendant un glisser retire les `pointerInput` : le geste s'annule, la case retombe.
+        val drag = remember { CellDrag() }
+        // Lu seulement par la couche du dessus : la grille ne se recompose pas à chaque emplacement franchi.
+        val hoveredSlot = remember(geometry) { derivedStateOf { if (drag.cell == null) null else geometry.slotAt(drag.pointer) } }
+        val moveLabels = MoveLabels(
+            left = stringResource(R.string.edit_move_left),
+            right = stringResource(R.string.edit_move_right),
+            up = stringResource(R.string.edit_move_up),
+            down = stringResource(R.string.edit_move_down),
+        )
+        Box(modifier = modifier.onSizeChanged { gridSize = it.toSize() }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(GRID_PADDING),
+                verticalArrangement = Arrangement.spacedBy(CELL_SPACING),
+            ) {
+                for ((rowIndex, row) in grid.withIndex()) {
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(CELL_SPACING),
+                    ) {
+                        for ((columnIndex, cell) in row.withIndex()) {
+                            val slot = GridSlot(rowIndex, columnIndex)
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
+                            ) {
+                                when {
+                                    cell != null -> CellButton(
+                                        cell = cell,
+                                        isEditing = isEditing,
+                                        onClick = { onCellClick(cell) },
+                                        onLongClick = { onCellLongClick(cell) },
+                                        isLifted = drag.cell?.id == cell.id,
+                                        drag = if (isEditing) drag else null,
+                                        slot = slot,
+                                        geometry = geometry,
+                                        onCellMoved = onCellMoved,
+                                        moveActions = if (isEditing) {
+                                            remember(cell, slot, rowCount, columnCount, moveLabels, onCellMoved) {
+                                                moveActions(slot, rowCount, columnCount, moveLabels) { target -> onCellMoved(cell, target.row, target.column) }
+                                            }
+                                        } else {
+                                            emptyList()
+                                        },
+                                    )
+                                    isEditing -> AddSlot(rowIndex, columnIndex, onClick = { onEmptySlotClick(rowIndex, columnIndex) })
+                                }
                             }
                         }
                     }
                 }
             }
+            val lifted = drag.cell
+            if (lifted != null) LiftedCell(lifted, geometry, drag, hoveredSlot)
         }
     }
 }
 
 @Composable
-private fun CellButton(cell: Cell, isEditing: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun CellButton(
+    cell: Cell,
+    isEditing: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    isLifted: Boolean = false,
+    /** En édition : le glisser partagé par la grille ; `null` hors édition (rien ne se déplace). */
+    drag: CellDrag? = null,
+    slot: GridSlot = GridSlot(cell.row, cell.column),
+    geometry: GridGeometry? = null,
+    onCellMoved: (Cell, Int, Int) -> Unit = { _, _, _ -> },
+    moveActions: List<CustomAccessibilityAction> = emptyList(),
+) {
     val isFolder = cell.linkedBoardId != null
     // Seul un verbe a des formes ; ailleurs (et en édition) un appui long reste un appui simple.
     val hasForms = cell.category == WordCategory.VERB && !isFolder && !isEditing
@@ -150,13 +171,8 @@ private fun CellButton(cell: Cell, isEditing: Boolean, onClick: () -> Unit, onLo
         isFolder -> stringResource(R.string.board_folder_description, cell.label)
         else -> null
     }
-    val category = cell.category
-    val background = when {
-        category != null -> wordCategoryBackground(category)
-        isFolder -> MaterialTheme.colorScheme.secondaryContainer
-        else -> MaterialTheme.colorScheme.surfaceVariant
-    }
-    Surface(
+    CellCard(
+        cell = cell,
         modifier = Modifier
             .fillMaxSize()
             // Comme Surface(onClick) : une case plus petite que 48 dp reçoit quand même le doigt.
@@ -169,7 +185,28 @@ private fun CellButton(cell: Cell, isEditing: Boolean, onClick: () -> Unit, onLo
                 onLongClickLabel = if (hasForms) stringResource(R.string.conjugation_long_click_label) else null,
                 role = Role.Button,
             )
-            .semantics { if (description != null) contentDescription = description },
+            .then(if (drag != null && geometry != null) Modifier.cellDrag(cell, slot, geometry, drag, onCellMoved) else Modifier)
+            // Soulevée : sa place d'origine reste visible, en pâle.
+            .then(if (isLifted) Modifier.alpha(LIFTED_ORIGIN_ALPHA) else Modifier)
+            .semantics {
+                if (description != null) contentDescription = description
+                if (moveActions.isNotEmpty()) customActions = moveActions
+            },
+    )
+}
+
+/** Le fond, le contour et le dessin d'une case : dans la grille, et sous le doigt pendant un glisser. */
+@Composable
+internal fun CellCard(cell: Cell, modifier: Modifier) {
+    val isFolder = cell.linkedBoardId != null
+    val category = cell.category
+    val background = when {
+        category != null -> wordCategoryBackground(category)
+        isFolder -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    Surface(
+        modifier = modifier,
         shape = BoardCardShape,
         color = background,
         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -181,49 +218,6 @@ private fun CellButton(cell: Cell, isEditing: Boolean, onClick: () -> Unit, onLo
         ),
     ) {
         CellFace(cell.label, cell.picture, isFolder)
-    }
-}
-
-/**
- * Le dessin d'une case, dans la grille comme dans la page des formes : picto (ou photo) et libellé à
- * leurs parts fixes, ou libellé seul. Un dossier y ajoute sa marque.
- */
-@Composable
-internal fun CellFace(label: String, picture: Picture?, isFolder: Boolean = false) {
-    // fillMaxSize : sans lui, le contenu d'une case en texte seul se colle en haut à gauche.
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(CELL_CONTENT_PADDING),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            if (picture != null) {
-                // Parts fixes : la taille adaptative du libellé ne peut pas écraser le picto,
-                // et la place est réservée avant même que l'image ne soit décodée.
-                CellPicture(
-                    picture,
-                    Modifier
-                        .weight(PICTOGRAM_WEIGHT)
-                        .fillMaxWidth()
-                        .then(if (isFolder) Modifier.clearOfFolderMark() else Modifier),
-                )
-                CellLabel(label, PICTOGRAM_LABEL_MAX_FONT_SIZE, Modifier.weight(LABEL_WEIGHT).fillMaxWidth())
-            } else {
-                if (isFolder) FolderIcon(Modifier.size(FOLDER_ICON_SIZE))
-                CellLabel(label, LABEL_MAX_FONT_SIZE, Modifier)
-            }
-        }
-        if (isFolder && picture != null) {
-            FolderIcon(
-                Modifier
-                    .align(Alignment.TopStart)
-                    .padding(CELL_CONTENT_PADDING)
-                    .size(FOLDER_MARK_SIZE)
-                    .testTag(FOLDER_MARK_TEST_TAG),
-            )
-        }
     }
 }
 
@@ -251,102 +245,3 @@ private fun AddSlot(row: Int, column: Int, onClick: () -> Unit) {
     }
 }
 
-/** L'image d'une case ou d'un mot : picto ARASAAC ou photo de l'adulte. */
-@Composable
-internal fun CellPicture(picture: Picture, modifier: Modifier) {
-    when (picture) {
-        is Picture.Pictogram -> Pictogram(picture.id, modifier)
-        is Picture.Photo -> Photo(picture.fileName, modifier)
-    }
-}
-
-/** Comme un picto : place tenue avant le décodage, décodée à la demande. */
-@Composable
-private fun Photo(fileName: String, modifier: Modifier) {
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        val image = LocalPhotoImages.current(fileName)
-        val load = LocalPhotoLoader.current
-        // Relancé si l'image sort du cache borné pendant qu'elle est à l'écran.
-        LaunchedEffect(fileName, image == null) { if (image == null) load(fileName) }
-        if (image != null) {
-            Image(
-                bitmap = image,
-                contentDescription = null,
-                modifier = Modifier
-                    .aspectRatio(1f)
-                    .clip(PHOTO_SHAPE),
-                contentScale = ContentScale.Fit,
-            )
-        }
-    }
-}
-
-/** Si [modifier] en fixe la taille, la place du picto est tenue avant le décodage : rien ne bouge à son arrivée. */
-@Composable
-internal fun Pictogram(pictogramId: Long, modifier: Modifier) {
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        // La table des images est un état Compose : le picto se recompose quand elle se remplit.
-        val image = LocalPictogramImages.current(pictogramId)
-        val load = LocalPictogramLoader.current
-        LaunchedEffect(pictogramId) { load(pictogramId) }
-        if (image != null) {
-            Image(
-                bitmap = image,
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .testTag(PICTOGRAM_TEST_TAG),
-                contentScale = ContentScale.Fit,
-            )
-        }
-    }
-}
-
-/**
- * Descend le picto d'un dossier sous la marque du coin, seulement s'il la toucherait : dans une case
- * plate (téléphone couché), le picto carré centré passe à côté, et le descendre l'effaçait presque.
- */
-private fun Modifier.clearOfFolderMark() = layout { measurable, constraints ->
-    val mark = FOLDER_MARK_SIZE.roundToPx()
-    val isClearOfMark = constraints.hasBoundedWidth && constraints.hasBoundedHeight && constraints.maxWidth >= constraints.maxHeight + 2 * mark
-    val top = if (isClearOfMark) 0 else mark
-    val placeable = measurable.measure(constraints.offset(vertical = -top))
-    layout(placeable.width, constraints.constrainHeight(placeable.height + top)) { placeable.place(0, top) }
-}
-
-@Composable
-private fun FolderIcon(modifier: Modifier) {
-    Icon(painter = painterResource(R.drawable.ic_folder), contentDescription = null, modifier = modifier)
-}
-
-@Composable
-internal fun CellLabel(label: String, maxFontSize: TextUnit, modifier: Modifier) {
-    val contentColor = LocalContentColor.current
-    val titleStyle = MaterialTheme.typography.titleLarge
-    // Interligne proportionnel : celui du style, fixe, ferait chevaucher les lignes agrandies.
-    val labelStyle = remember(titleStyle) {
-        titleStyle.copy(textAlign = TextAlign.Center, lineHeight = LABEL_LINE_HEIGHT)
-    }
-    // Autant de lignes que de mots (deux au plus) : un mot seul rapetisse au lieu
-    // d'être coupé en deux, ce que la taille adaptative ferait pour remplir la case. Seules les
-    // espaces ordinaires comptent : « quoi ? » porte une insécable et reste sur une ligne.
-    val maxLines = remember(label) {
-        label.split(' ').count { it.isNotBlank() }.coerceIn(LABEL_MIN_LINES, LABEL_MAX_LINES)
-    }
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        BasicText(
-            text = label,
-            style = labelStyle,
-            color = { contentColor },
-            maxLines = maxLines,
-            // Clip et pas Ellipsis : avec Ellipsis, la taille adaptative ne voit qu'un mot trop large,
-            // jamais un mot trop haut, et le bas des lettres sortait des cases basses de la tablette.
-            overflow = TextOverflow.Clip,
-            autoSize = TextAutoSize.StepBased(
-                minFontSize = LABEL_MIN_FONT_SIZE,
-                maxFontSize = maxFontSize,
-                stepSize = LABEL_FONT_STEP,
-            ),
-        )
-    }
-}

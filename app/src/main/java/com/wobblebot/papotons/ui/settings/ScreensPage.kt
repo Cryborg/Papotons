@@ -16,6 +16,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,18 +58,30 @@ private const val NEW_SCREEN = 0L
 @Composable
 fun ScreensPage(screens: ImmutableList<Screen>, state: ScreensUiState, newScreenSize: BoardSize, actions: ScreenActions) {
     var editedScreenId by remember { mutableLongStateOf(NO_SCREEN_EDITED) }
+    // L'ordre d'avant un « Monter » : les flèches attendent l'ordre relu, pas seulement la fin de l'écriture.
+    // Sinon un double appui tomberait sur la ligne voisine, déjà montée sous le doigt, et défairait le premier.
+    // Un échec n'a rien écrit : les flèches reviennent pour réessayer, même après deux échecs de suite.
+    var orderBeforeMove by remember { mutableStateOf<ImmutableList<Screen>?>(null) }
+    val canMove = !state.isWorking && (state.failure != null || orderBeforeMove != screens)
     PageExplanation(stringResource(R.string.settings_screens_explanation))
     SettingsCard {
         screens.forEachIndexed { index, screen ->
             if (index > 0) SettingsDivider()
-            ScreenRow(
-                screen = screen,
-                isFirst = index == 0,
-                isLast = index == screens.lastIndex,
-                isEnabled = !state.isWorking,
-                onMove = { offset -> actions.onMove(screen.id, offset) },
-                onEdit = { editedScreenId = screen.id },
-            )
+            // Par écran, pas par rang : après « Monter », le focus de TalkBack suit l'écran déplacé.
+            key(screen.id) {
+                ScreenRow(
+                    screen = screen,
+                    isFirst = index == 0,
+                    isLast = index == screens.lastIndex,
+                    isEnabled = !state.isWorking,
+                    canMove = canMove,
+                    onMove = { offset ->
+                        orderBeforeMove = screens
+                        actions.onMove(screen.id, offset)
+                    },
+                    onEdit = { editedScreenId = screen.id },
+                )
+            }
         }
     }
     val isFull = screens.size >= MAX_SCREENS
@@ -109,7 +122,7 @@ fun ScreensPage(screens: ImmutableList<Screen>, state: ScreensUiState, newScreen
 
 /** Le nom et la taille, puis trois boutons : monter et descendre (absents aux bouts, la place reste), modifier. */
 @Composable
-private fun ScreenRow(screen: Screen, isFirst: Boolean, isLast: Boolean, isEnabled: Boolean, onMove: (Int) -> Unit, onEdit: () -> Unit) {
+private fun ScreenRow(screen: Screen, isFirst: Boolean, isLast: Boolean, isEnabled: Boolean, canMove: Boolean, onMove: (Int) -> Unit, onEdit: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -132,14 +145,14 @@ private fun ScreenRow(screen: Screen, isFirst: Boolean, isLast: Boolean, isEnabl
         if (isFirst) {
             Spacer(modifier = Modifier.size(ICON_BUTTON_SIZE))
         } else {
-            IconButton(onClick = { onMove(-1) }, enabled = isEnabled) {
+            IconButton(onClick = { onMove(-1) }, enabled = canMove) {
                 Icon(painterResource(R.drawable.ic_arrow_upward), contentDescription = stringResource(R.string.screen_move_up_description, screen.name))
             }
         }
         if (isLast) {
             Spacer(modifier = Modifier.size(ICON_BUTTON_SIZE))
         } else {
-            IconButton(onClick = { onMove(1) }, enabled = isEnabled) {
+            IconButton(onClick = { onMove(1) }, enabled = canMove) {
                 Icon(painterResource(R.drawable.ic_arrow_downward), contentDescription = stringResource(R.string.screen_move_down_description, screen.name))
             }
         }

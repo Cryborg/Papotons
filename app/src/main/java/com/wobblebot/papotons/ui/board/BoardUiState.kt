@@ -42,6 +42,8 @@ data class BoardUiState(
     val isEditing: Boolean = false,
     /** La page des Réglages ouverte (par un adulte après le contrôle, ou depuis l'édition), `null` s'ils sont fermés. */
     val settingsPage: SettingsPage? = null,
+    /** Le dernier déplacement de case a échoué (en édition) : rien n'a bougé. */
+    val hasMoveFailed: Boolean = false,
     /** L'éditeur de case ouvert, en édition seulement. */
     val editor: CellEditorState? = null,
     /** La recherche de pictos ouverte depuis l'éditeur. */
@@ -54,6 +56,6 @@ data class BoardUiState(
     /** Une phrase, une modification, un réglage ou un choix de forme est en cours : rien ne doit interrompre (redémarrage de mise à jour). */
     val isBusy: Boolean get() = message.isNotEmpty() || isEditing || isSettingsOpen || verbForms != null
 
-    /** La taille de la grille ouverte, lue sur l'écran réellement ouvert (pas sur le réglage) ; `null` pour un autre écran. */
+    /** La taille des cases de l'écran ouvert, lue sur son accueil d'origine ; `null` pour un écran hors des tailles. */
     val boardSize: BoardSize? get() = BoardSize.withHome(board?.rootCoreBoardId)
 }

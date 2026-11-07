@@ -35,6 +35,7 @@ import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toPersistentList
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -69,12 +70,13 @@ private data class SecondaryState(
     val isVolumeLockedDialogOpen: Boolean,
     val isEditing: Boolean,
     val settingsPage: SettingsPage?,
+    val hasMoveFailed: Boolean,
     val editor: CellEditorState?,
     val pictogramSearch: PictogramSearchState?,
 )
 
 /** Les deux zones réservées aux adultes. */
-private data class AdultState(val isEditing: Boolean, val settingsPage: SettingsPage?)
+private data class AdultState(val isEditing: Boolean, val settingsPage: SettingsPage?, val hasMoveFailed: Boolean)
 internal const val NAVIGATION_KEY = "navigation"
 internal const val MESSAGE_KEY = "message"
 internal const val STOP_TIMEOUT_MS = 5_000L
@@ -95,7 +97,7 @@ class BoardViewModel @Inject constructor(
      */
     private val savedState: SavedStateHandle,
 ) : ViewModel() {
-    /** Pile des grilles ouvertes, l'écran de départ en bas. Vide tant qu'il n'est pas prêt. */
+    /** Pile des grilles ouvertes, un écran en bas. Vide tant qu'il n'est pas prêt. */
     private val navigation = MutableStateFlow<PersistentList<Long>>(persistentListOf())
     private val message = MutableStateFlow(restoredMessage())
 
@@ -115,6 +117,15 @@ class BoardViewModel @Inject constructor(
      * rotation, jamais après la mort du processus (un état sauvé non lu rouvrirait la page plus tard).
      */
     private val settingsPage = MutableStateFlow<SettingsPage?>(null)
+
+    /** Le dernier déplacement de case a échoué : dit dans le bandeau d'édition, jusqu'au suivant, à un changement de grille ou à la fin de l'édition. */
+    private val hasMoveFailed = MutableStateFlow(false)
+
+    /** Le déplacement en cours : un second, parti d'une case pas encore relue, est ignoré tant qu'il écrit. */
+    private var cellMove: Job? = null
+
+    /** Monte à chaque entrée en édition : l'échec d'un déplacement ne s'affiche que dans l'édition qui l'a lancé. */
+    private var editSession = 0L
     private val editor = MutableStateFlow<CellEditorState?>(null)
     private var writeCount = 0L
 
@@ -170,7 +181,7 @@ class BoardViewModel @Inject constructor(
             combine(
                 repository.observeBoard(stack.last()),
                 repository.observeCoreBoardId(stack.first()).distinctUntilChanged(),
-                repository.observeScreensBesides(stack.first()).distinctUntilChanged(),
+                repository.observeScreensOfOwner(stack.first()).distinctUntilChanged(),
             ) { board, rootCoreBoardId, screens -> Triple(board, rootCoreBoardId, screens) }
                 .mapNotNull { (board, rootCoreBoardId, screens) -> display(board, stack, rootCoreBoardId, screens) }
         }
@@ -186,7 +197,7 @@ class BoardViewModel @Inject constructor(
             combine(
                 mediaVolume.isMuted,
                 isVolumeLockedDialogOpen,
-                combine(isEditing, settingsPage, ::AdultState),
+                combine(isEditing, settingsPage, hasMoveFailed, ::AdultState),
                 editor,
                 pictogramSearch,
             ) { isMuted, isDialogOpen, adult, editor, search ->
@@ -195,6 +206,7 @@ class BoardViewModel @Inject constructor(
                     isVolumeLockedDialogOpen = isMuted && isDialogOpen,
                     isEditing = adult.isEditing,
                     settingsPage = adult.settingsPage,
+                    hasMoveFailed = adult.hasMoveFailed,
                     editor = editor,
                     pictogramSearch = search,
                 )
@@ -209,13 +221,14 @@ class BoardViewModel @Inject constructor(
                 isVolumeLockedDialogOpen = secondary.isVolumeLockedDialogOpen,
                 isEditing = secondary.isEditing,
                 settingsPage = secondary.settingsPage,
+                hasMoveFailed = secondary.hasMoveFailed,
                 editor = secondary.editor,
                 pictogramSearch = secondary.pictogramSearch,
             )
         }.combine(verbForms) { state, page -> state.copy(verbForms = page) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), BoardUiState())
 
-    /** L'ouverture de l'écran de départ en cours, pour ne pas la lancer deux fois. */
+    /** L'ouverture du premier écran en cours, pour ne pas la lancer deux fois. */
     private var homeOpening: Job? = null
 
     init {
@@ -241,7 +254,11 @@ class BoardViewModel @Inject constructor(
         viewModelScope.launch {
             // La page vaut pour la grille d'où elle a été ouverte : toute pile changée la referme
             // (grille affichée disparue, grilles remplacées).
-            navigation.drop(1).collect { verbForms.value = null }
+            navigation.drop(1).collect {
+                verbForms.value = null
+                // L'échec d'un déplacement parle de la grille quittée.
+                hasMoveFailed.value = false
+            }
         }
         viewModelScope.launch {
             mediaVolume.isMuted.collect { isMuted -> if (!isMuted) isVolumeLockedDialogOpen.value = false }
@@ -339,6 +356,11 @@ class BoardViewModel @Inject constructor(
     /** Après le contrôle parental. Les mots encore en file se taisent ; les Réglages se ferment sur la grille à modifier. */
     fun onStartEditing() {
         speaker.stop()
+        // Aussi appelé en pleine édition (Réglages > Modifier, Sauvegarde) : ce n'est pas une nouvelle édition.
+        if (!isEditing.value) {
+            editSession++
+            hasMoveFailed.value = false
+        }
         settingsPage.value = null
         verbForms.value = null
         isEditing.value = true
@@ -372,6 +394,7 @@ class BoardViewModel @Inject constructor(
     /** « Terminer », et tout départ de l'appli (`ON_STOP`) : la tablette rendue à l'enfant n'est jamais en édition. */
     fun onStopEditing() {
         isEditing.value = false
+        hasMoveFailed.value = false
         editor.value = null
         onSearchClose()
         chosenBytes = null
@@ -391,6 +414,7 @@ class BoardViewModel @Inject constructor(
      */
     private fun reopenFromStart() {
         editor.value = null
+        hasMoveFailed.value = false
         // Pas seulement le collecteur de pile : une pile qui revient à la même valeur ([1], [], [1]) peut lui échapper.
         verbForms.value = null
         onSearchClose()
@@ -401,6 +425,45 @@ class BoardViewModel @Inject constructor(
             navigation.value = persistentListOf()
             reopenHome()
         }
+    }
+
+    /**
+     * L'adulte a glissé [cell] jusqu'à ([toRow], [toColumn]) dans la grille affichée : en édition
+     * seulement. Une case déjà là prend sa place. Un geste parti pendant qu'un autre écrit est ignoré ;
+     * après l'écriture, le DAO refuse encore une case lue à son ancienne place.
+     */
+    fun onCellMoved(cell: Cell, toRow: Int, toColumn: Int) {
+        if (!isEditing.value || (cell.row == toRow && cell.column == toColumn)) return
+        if (cellMove?.isActive == true) {
+            Log.i(TAG, "Move of cell ${cell.id} ignored, another move is being written")
+            return
+        }
+        val boardId = uiState.value.board?.id ?: return
+        hasMoveFailed.value = false
+        val session = editSession
+        cellMove = viewModelScope.launch {
+            try {
+                repository.moveCell(boardId, cell, toRow, toColumn)
+            } catch (exception: CancellationException) {
+                // Une IllegalStateException elle aussi : un écran qui part n'est pas un échec.
+                throw exception
+            } catch (exception: SQLiteException) {
+                // Case déplacée ou supprimée entre-temps, disque plein : rien n'est écrit (transaction).
+                reportMoveFailure(cell, boardId, session, exception)
+            } catch (exception: IOException) {
+                // Marqueur des copies impossible à écrire : rien n'a été écrit en base.
+                reportMoveFailure(cell, boardId, session, exception)
+            } catch (exception: IllegalStateException) {
+                // Base fermée : un message, pas un plantage.
+                reportMoveFailure(cell, boardId, session, exception)
+            }
+        }
+    }
+
+    private fun reportMoveFailure(cell: Cell, boardId: Long, session: Long, exception: Exception) {
+        Log.e(TAG, "Cell ${cell.id} of board $boardId could not be moved", exception)
+        // Seulement dans l'édition qui l'a lancé : terminée entre-temps, ni elle ni la suivante ne l'affichent.
+        if (isEditing.value && session == editSession) hasMoveFailed.value = true
     }
 
     fun onEmptySlotClick(row: Int, column: Int) {

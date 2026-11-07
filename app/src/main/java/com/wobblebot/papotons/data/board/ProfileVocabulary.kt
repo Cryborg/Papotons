@@ -1,7 +1,7 @@
 package com.wobblebot.papotons.data.board
 
 /**
- * Le vocabulaire de base d'un utilisateur : [seed] (ids fixes de `CoreVocabulary`) renuméroté en ids
+ * Une copie du vocabulaire de base (nouvel utilisateur, nouvel écran) : [seed] (ids fixes de `CoreVocabulary`) renuméroté en ids
  * contigus à partir de [firstBoardId], dans l'ordre de la graine. Les dossiers suivent la
  * renumérotation, chaque grille retient son id d'origine (`coreBoardId`), les positions ne bougent
  * pas (invariant 3) et les cases repartent à l'id 0 (la base en donne de neufs).

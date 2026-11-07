@@ -110,6 +110,7 @@ data class BoardActions(
     val onVerbFormClick: (String) -> Unit = {},
     val onLeaveClick: () -> Unit = {},
     val onScreenChosen: (Long) -> Unit = {},
+    val onCellMoved: (cell: Cell, toRow: Int, toColumn: Int) -> Unit = { _, _, _ -> },
 )
 
 /** Ce qu'ouvre le contrôle des adultes (code d'un accompagnant, ou calcul) quand il est passé. */
@@ -203,6 +204,7 @@ fun BoardRoute(
                 if (isLeaveGated) gatedAction = GatedAction.LeaveApp else activity?.let(::leaveToHomeScreen)
             },
             onScreenChosen = viewModel::onScreenChosen,
+            onCellMoved = viewModel::onCellMoved,
         )
     }
     // Utilisateur pas encore lu : pas d'épinglage (il serait demandé à chaque lancement d'un utilisateur
@@ -474,6 +476,7 @@ fun BoardScreen(
                         onBackup = actions.onBackupClick,
                         hasUnsavedChanges = hasUnsavedChanges,
                         modifier = Modifier.weight(1f),
+                        hasMoveFailed = state.hasMoveFailed,
                     )
                 } else {
                     MessageBar(
@@ -523,6 +526,7 @@ private fun BoardContent(state: BoardUiState, actions: BoardActions, modifier: M
             isEditing = state.isEditing,
             onEmptySlotClick = actions.onEmptySlotClick,
             onCellLongClick = actions.onCellLongClick,
+            onCellMoved = actions.onCellMoved,
             // Nom de la grille, non affiché : porté en titre de volet pour TalkBack.
             modifier = modifier.semantics { paneTitle = board.name },
         )

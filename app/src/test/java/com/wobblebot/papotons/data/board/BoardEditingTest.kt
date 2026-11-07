@@ -202,4 +202,86 @@ class BoardEditingTest {
         val updated = dao.cells.value.single()
         assertEquals(Triple("Mamou", "m.jpg", "Mamie Jeanne"), Triple(updated.label, updated.photoFile, updated.spokenText))
     }
+
+    private fun placeOf(dao: FakeBoardDao, label: String) = dao.cells.value.single { it.label == label }.let { it.row to it.column }
+
+    private suspend fun BoardRepository.cellNamed(label: String) = checkNotNull(observeBoard(HOME_BOARD_ID).first()).cells.single { it.label == label }
+
+    @Test
+    fun `a cell moved to a free slot lands there and only there`() = runTest {
+        val dao = FakeBoardDao(listOf(home), listOf(cell(1, HOME_BOARD_ID, 0, 0, "je"), cell(2, HOME_BOARD_ID, 0, 1, "veux")))
+        val repository = repository(dao)
+
+        repository.moveCell(HOME_BOARD_ID, repository.cellNamed("je"), toRow = 1, toColumn = 2)
+
+        assertEquals(1 to 2, placeOf(dao, "je"))
+        assertEquals(0 to 1, placeOf(dao, "veux"))
+    }
+
+    /** Lignes et colonnes différentes : un échange qui les inverserait se verrait. */
+    @Test
+    fun `a cell dropped on another swaps places with it`() = runTest {
+        val dao = FakeBoardDao(listOf(home), listOf(cell(1, HOME_BOARD_ID, 1, 0, "je"), cell(2, HOME_BOARD_ID, 0, 2, "veux"), cell(3, HOME_BOARD_ID, 0, 1, "pas")))
+        val repository = repository(dao)
+
+        repository.moveCell(HOME_BOARD_ID, repository.cellNamed("je"), toRow = 0, toColumn = 2)
+
+        assertEquals(0 to 2, placeOf(dao, "je"))
+        assertEquals(1 to 0, placeOf(dao, "veux"))
+        assertEquals(0 to 1, placeOf(dao, "pas"))
+    }
+
+    /** La case lue au début du geste a déjà bougé (un autre déplacement), d'une ligne ou d'une colonne seulement : rien n'est écrit. */
+    @Test
+    fun `a cell that moved since it was read is not moved again`() = runTest {
+        for ((row, column) in listOf(1 to 0, 0 to 2)) {
+            val dao = FakeBoardDao(listOf(home), listOf(cell(1, HOME_BOARD_ID, 0, 0, "je"), cell(2, HOME_BOARD_ID, 0, 1, "veux")))
+            val repository = repository(dao)
+            val stale = repository.cellNamed("je")
+            repository.moveCell(HOME_BOARD_ID, stale, toRow = row, toColumn = column)
+
+            assertThrows("($row, $column)", CellChangedException::class.java) { runBlocking { repository.moveCell(HOME_BOARD_ID, stale, toRow = 1, toColumn = 1) } }
+            assertEquals(row to column, placeOf(dao, "je"))
+            assertEquals(0 to 1, placeOf(dao, "veux"))
+        }
+    }
+
+    @Test
+    fun `a move outside the grid or of a deleted cell is refused`() = runTest {
+        val dao = FakeBoardDao(listOf(home), listOf(cell(1, HOME_BOARD_ID, 0, 0, "je")))
+        val repository = repository(dao)
+        val je = repository.cellNamed("je")
+
+        for ((row, column) in listOf(2 to 0, -1 to 0, 0 to 3, 0 to -1)) {
+            assertThrows("($row, $column)", CellChangedException::class.java) { runBlocking { repository.moveCell(HOME_BOARD_ID, je, toRow = row, toColumn = column) } }
+        }
+        assertEquals(0 to 0, placeOf(dao, "je"))
+        dao.deleteCell(je.id)
+        assertThrows(CellNotFoundException::class.java) { runBlocking { repository.moveCell(HOME_BOARD_ID, je, toRow = 1, toColumn = 1) } }
+    }
+
+    /** La case d'une autre grille (grille affichée périmée) : rien n'est écrit. */
+    @Test
+    fun `a cell is only moved within its own board`() = runTest {
+        val other = BoardEntity(id = 2, name = "other", rowCount = 2, columnCount = 3)
+        val dao = FakeBoardDao(listOf(home, other), listOf(cell(1, HOME_BOARD_ID, 0, 0, "je")))
+        val repository = repository(dao)
+        val je = repository.cellNamed("je")
+
+        assertThrows(CellChangedException::class.java) { runBlocking { repository.moveCell(2, je, toRow = 1, toColumn = 1) } }
+        assertEquals(0 to 0, placeOf(dao, "je"))
+    }
+
+    /** Lâchée à sa place : aucune case n'est écrite. */
+    @Test
+    fun `a cell dropped on its own place writes nothing`() = runTest {
+        val dao = FakeBoardDao(listOf(home), listOf(cell(1, HOME_BOARD_ID, 0, 0, "je")))
+        val repository = repository(dao)
+        dao.cellPositionFailure = SQLiteConstraintException("no write expected")
+
+        repository.moveCell(HOME_BOARD_ID, repository.cellNamed("je"), toRow = 0, toColumn = 0)
+
+        assertEquals(0 to 0, placeOf(dao, "je"))
+    }
 }
+

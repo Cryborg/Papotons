@@ -168,4 +168,33 @@ class ProfileSwitchTest {
 
         assertEquals(homeOf(FIRST_PROFILE_ID), viewModel.state().board?.id)
     }
+
+    /** Une pile sauvée qui part d'un écran d'Anna ne s'ouvre pas sous Léo : il verrait les grilles d'une autre. */
+    @Test
+    fun `a saved stack starting at a screen of another profile is dropped`() = runTest(dispatcher) {
+        val anna = createAnna()
+        val savedState = SavedStateHandle(mapOf(NAVIGATION_KEY to longArrayOf(homeOf(anna))))
+        val viewModel = BoardViewModel(repository, speaker, FakeMediaVolume(), FakeArasaacClient(), FakePictogramStore(), FakePhotoStore(), FakeConjugations(), savedState)
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        assertEquals(homeOf(FIRST_PROFILE_ID), viewModel.state().board?.id)
+    }
+
+    /** Pendant le changement, jamais la grille d'Anna avec les onglets de Léo. */
+    @Test
+    fun `while switching, a board never shows the tabs of the other profile`() = runTest(dispatcher) {
+        val anna = createAnna()
+        repository.createScreen("École", BoardSize.LARGE_CELLS)
+        val viewModel = BoardViewModel(repository, speaker, FakeMediaVolume(), FakeArasaacClient(), FakePictogramStore(), FakePhotoStore(), FakeConjugations(), SavedStateHandle())
+        val shown = mutableListOf<DisplayedBoard>()
+        backgroundScope.launch { viewModel.uiState.collect { state -> state.board?.let(shown::add) } }
+
+        repository.switchProfile(anna)
+
+        val boardsOfAnna = dao.boards.value.filter { it.profileId == anna }.map { it.id }.toSet()
+        val shownForAnna = shown.filter { it.id in boardsOfAnna }
+        assertTrue(shownForAnna.isNotEmpty())
+        assertTrue(shownForAnna.all { board -> board.screens.map { it.id }.toSet().all { it in boardsOfAnna } })
+    }
 }
+

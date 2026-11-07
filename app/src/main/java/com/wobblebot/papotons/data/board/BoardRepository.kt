@@ -104,12 +104,12 @@ class BoardRepository @Inject constructor(
 
     private val replacementCount = MutableStateFlow(0)
 
-    /** Monte à chaque restauration : l'écran repart de l'écran de départ, la grille ouverte n'existe peut-être plus. */
+    /** Monte à chaque restauration : l'écran repart du premier écran, la grille ouverte n'existe peut-être plus. */
     val replacements: StateFlow<Int> = replacementCount.asStateFlow()
 
     private val profileSwitchCount = MutableStateFlow(0)
 
-    /** Monte à chaque changement d'utilisateur : l'écran repart de l'écran de départ du nouveau. */
+    /** Monte à chaque changement d'utilisateur : l'écran repart du premier écran du nouveau. */
     val profileSwitches: StateFlow<Int> = profileSwitchCount.asStateFlow()
 
     private val openProfile = MutableStateFlow<Long?>(null)
@@ -229,12 +229,12 @@ class BoardRepository @Inject constructor(
 
     /**
      * Ouvre [profileId] : écrit hors de [write] (l'utilisateur ouvert n'est pas dans la sauvegarde),
-     * puis l'écran repart de son écran de départ ([profileSwitches]). Un échec d'écriture remonte,
+     * puis l'écran repart de son premier écran ([profileSwitches]). Un échec d'écriture remonte,
      * rien ne change.
      */
     suspend fun switchProfile(profileId: Long) {
         preferences.edit { settings -> settings[CURRENT_PROFILE_ID] = profileId }
-        // Tout de suite, sans attendre la réouverture : une suppression ou un choix de taille qui suit
+        // Tout de suite, sans attendre la réouverture : une suppression ou un écran créé ensuite
         // vise le nouvel utilisateur.
         openProfile.value = profileId
         Log.i(TAG, "Switched to profile $profileId")
@@ -258,7 +258,7 @@ class BoardRepository @Inject constructor(
     }
 
     /** Les écrans de l'utilisateur à qui appartient [boardId], dans l'ordre des onglets. */
-    fun observeScreensBesides(boardId: Long): Flow<List<Screen>> = boardDao.observeScreensBesides(boardId).map { screens ->
+    fun observeScreensOfOwner(boardId: Long): Flow<List<Screen>> = boardDao.observeScreensOfOwner(boardId).map { screens ->
         screens.map { Screen(it.id, it.name, BoardSize.withHome(it.coreBoardId)) }
     }
 
@@ -296,8 +296,8 @@ class BoardRepository @Inject constructor(
     /** Un cran vers la fin des onglets ([offset] positif) ou vers le début ; sans voisin, rien. */
     suspend fun moveScreen(boardId: Long, offset: Int) {
         val profileId = checkNotNull(openProfile.value) { "No open profile before the home board" }
-        write { boardDao.moveScreen(profileId, boardId, offset) }
-        Log.i(TAG, "Screen $boardId of profile $profileId moved by $offset")
+        val isMoved = write { boardDao.moveScreen(profileId, boardId, offset) }
+        if (isMoved) Log.i(TAG, "Screen $boardId of profile $profileId moved by $offset")
     }
 
     /** `null` pour une grille de l'adulte : c'est par lui que l'écran connaît la taille de ses cases. */
@@ -333,6 +333,12 @@ class BoardRepository @Inject constructor(
     suspend fun addFolder(boardId: Long, row: Int, column: Int, content: CellContent, size: BoardSize) {
         val board = BoardEntity(name = content.label, rowCount = size.folderRowCount, columnCount = size.folderColumnCount)
         write { boardDao.insertFolder(board, content.toEntity(boardId, row, column, linkedBoardId = null)) }
+    }
+
+    /** [cell], de la grille [boardId], à ([toRow], [toColumn]) ; une case déjà là prend sa place. */
+    suspend fun moveCell(boardId: Long, cell: Cell, toRow: Int, toColumn: Int) {
+        val isMoved = write { boardDao.moveCell(cell.id, boardId, cell.row, cell.column, toRow, toColumn) }
+        if (isMoved) Log.i(TAG, "Cell ${cell.id} of board $boardId moved")
     }
 
     /** Le contenu seulement ; un dossier renommé renomme sa grille (titre lu par TalkBack). Rend la photo d'avant. */
@@ -427,7 +433,7 @@ class BoardRepository @Inject constructor(
     /**
      * Remplace tous les utilisateurs et leurs grilles par [content] (déjà validé), en une transaction :
      * un échec laisse la base d'avant. Puis l'alerte de perte est acquittée et l'écran repart de
-     * l'écran de départ (d'un autre utilisateur si l'ouvert n'existe plus).
+     * premier écran (d'un autre utilisateur si l'ouvert n'existe plus).
      */
     suspend fun replaceAll(content: BackupContent) {
         write { boardDao.replaceAll(content.profiles, content.boards, content.cells.map { it.copy(id = 0) }) }

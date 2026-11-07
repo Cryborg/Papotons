@@ -20,6 +20,7 @@ import com.wobblebot.papotons.domain.WordCategory
 import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import com.wobblebot.papotons.domain.Picture
+import com.wobblebot.papotons.domain.Screen
 import com.wobblebot.papotons.domain.SentenceWord
 import com.wobblebot.papotons.speech.SpeechStatus
 import com.wobblebot.papotons.ui.settings.SettingsPage
@@ -646,6 +647,7 @@ class BoardViewModelTest {
     )
     private val screenCells = cells + listOf(
         CellEntity(id = 20, boardId = BoardSize.LARGE_CELLS.homeBoardId, row = 0, column = 0, label = "food", linkedBoardId = 14, pictogramId = null, category = null),
+        CellEntity(id = 21, boardId = BoardSize.LARGE_CELLS.homeBoardId, row = 0, column = 1, label = "ai", linkedBoardId = null, category = "VERB", pictogramId = 80),
     )
 
     @Test
@@ -656,6 +658,37 @@ class BoardViewModelTest {
         assertEquals(listOf(HOME_BOARD_ID, BoardSize.LARGE_CELLS.homeBoardId), board.screens.map { it.id })
         assertEquals(listOf(BoardSize.STANDARD, BoardSize.LARGE_CELLS), board.screens.map { it.size })
         assertEquals(HOME_BOARD_ID, board.rootId)
+    }
+
+    /** Jamais une grille sans ses onglets : elle glisserait sous le doigt quand ils arrivent. */
+    @Test
+    fun `every shown board comes with its tabs, from the first one`() = runTest(dispatcher) {
+        val viewModel = BoardViewModel(
+            BoardRepository(FakeBoardDao(screenBoards, screenCells), preferences, context).also { it.fileDispatcher = dispatcher },
+            speaker, volume, arasaac, pictogramStore, photos, conjugations, SavedStateHandle(),
+        )
+        val shown = mutableListOf<DisplayedBoard>()
+        backgroundScope.launch { viewModel.uiState.collect { state -> state.board?.let(shown::add) } }
+
+        viewModel.tap("A")
+        viewModel.onScreenChosen(BoardSize.LARGE_CELLS.homeBoardId)
+
+        assertTrue(shown.isNotEmpty())
+        assertTrue(shown.all { it.screens.map(Screen::id) == listOf(HOME_BOARD_ID, BoardSize.LARGE_CELLS.homeBoardId) })
+    }
+
+    /** La page ouverte sur l'écran lui-même : la pile ne change pas, c'est le choix de l'onglet qui la ferme. */
+    @Test
+    fun `choosing the tab of the shown screen closes the forms of a verb`() = runTest(dispatcher) {
+        val viewModel = startViewModel(FakeBoardDao(screenBoards, screenCells))
+        viewModel.onScreenChosen(BoardSize.LARGE_CELLS.homeBoardId)
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+        assertNotNull(viewModel.state().verbForms)
+
+        viewModel.onScreenChosen(BoardSize.LARGE_CELLS.homeBoardId)
+
+        assertNull(viewModel.state().verbForms)
+        assertEquals(BoardSize.LARGE_CELLS.homeBoardId, viewModel.state().board?.id)
     }
 
     @Test
@@ -751,6 +784,113 @@ class BoardViewModelTest {
         val folder = dao.boards.value.single { it.name == "Animaux" }
         assertEquals(BoardSize.LARGE_CELLS.folderRowCount to BoardSize.LARGE_CELLS.folderColumnCount, folder.rowCount to folder.columnCount)
         assertNull(folder.screenPosition)
+    }
+
+    private fun BoardViewModel.labelAt(row: Int, column: Int) = checkNotNull(state().board).grid[row][column]?.label
+
+    @Test
+    fun `a cell moved in edit mode swaps places with the one it lands on`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.onStartEditing()
+
+        // De (1, 0) vers (0, 1) : une ligne ou une colonne inversée en chemin se verrait.
+        viewModel.onCellMoved(viewModel.cell("A"), 0, 1)
+
+        assertEquals("A", viewModel.labelAt(0, 1))
+        assertEquals("veux", viewModel.labelAt(1, 0))
+        assertEquals("je", viewModel.labelAt(0, 0))
+        assertFalse(viewModel.state().hasMoveFailed)
+    }
+
+    /** Hors édition, rien ne bouge : l'enfant ne déplace jamais une case (invariant 3). */
+    @Test
+    fun `outside the edit mode a move changes nothing`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(boards, cells)
+        val viewModel = startViewModel(dao)
+        val before = dao.cells.value
+
+        viewModel.onCellMoved(viewModel.cell("je"), 1, 1)
+
+        assertEquals(before, dao.cells.value)
+    }
+
+    /** Revenir des Réglages en pleine édition n'efface pas l'échec ; quitter la grille, si. */
+    @Test
+    fun `a move failure stays through the settings and goes with the board`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(boards, cells)
+        val viewModel = startViewModel(dao)
+        viewModel.onStartEditing()
+        dao.cellPositionFailure = SQLiteException("disk full")
+        viewModel.onCellMoved(viewModel.cell("je"), 1, 1)
+        assertTrue(viewModel.state().hasMoveFailed)
+
+        viewModel.onStartEditing()
+        assertTrue(viewModel.state().hasMoveFailed)
+
+        viewModel.onCellClick(viewModel.cell("A"))
+        viewModel.onEditorOpenFolder()
+        assertFalse(viewModel.state().hasMoveFailed)
+    }
+
+    /** Un second geste parti avant que la première case soit relue : ignoré, sans échec affiché. */
+    @Test
+    fun `a second move while the first is written is ignored`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(boards, cells)
+        val viewModel = startViewModel(dao)
+        viewModel.onStartEditing()
+        val je = viewModel.cell("je")
+        val slowWrite = CompletableDeferred<Unit>()
+        dao.cellPositionGate = slowWrite
+
+        viewModel.onCellMoved(je, 1, 1)
+        viewModel.onCellMoved(je, 0, 1)
+        slowWrite.complete(Unit)
+
+        assertEquals("je", viewModel.labelAt(1, 1))
+        assertEquals("veux", viewModel.labelAt(0, 1))
+        assertFalse(viewModel.state().hasMoveFailed)
+    }
+
+    /** Terminée pendant l'écriture qui échoue : l'édition suivante ne s'ouvre pas sur un échec. */
+    @Test
+    fun `a move that fails after the edit mode ended is not said in the next one`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(boards, cells)
+        val viewModel = startViewModel(dao)
+        viewModel.onStartEditing()
+        val slowWrite = CompletableDeferred<Unit>()
+        dao.cellPositionGate = slowWrite
+        dao.cellPositionFailure = SQLiteException("disk full")
+
+        viewModel.onCellMoved(viewModel.cell("je"), 1, 1)
+        viewModel.onStopEditing()
+        viewModel.onStartEditing()
+        // L'échec arrive dans une autre édition que celle qui a lancé le geste.
+        slowWrite.complete(Unit)
+
+        assertFalse(viewModel.state().hasMoveFailed)
+    }
+
+    @Test
+    fun `a move that cannot be written is said, until the next move or the end of the edit mode`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(boards, cells)
+        val viewModel = startViewModel(dao)
+        viewModel.onStartEditing()
+        dao.cellPositionFailure = SQLiteException("disk full")
+
+        viewModel.onCellMoved(viewModel.cell("je"), 1, 1)
+
+        assertTrue(viewModel.state().hasMoveFailed)
+        assertEquals("je", viewModel.labelAt(0, 0))
+        dao.cellPositionFailure = null
+        viewModel.onCellMoved(viewModel.cell("veux"), 1, 1)
+        assertFalse(viewModel.state().hasMoveFailed)
+        assertEquals("veux", viewModel.labelAt(1, 1))
+
+        dao.cellPositionFailure = SQLiteException("disk full")
+        viewModel.onCellMoved(viewModel.cell("je"), 0, 1)
+        assertTrue(viewModel.state().hasMoveFailed)
+        viewModel.onStopEditing()
+        assertFalse(viewModel.state().hasMoveFailed)
     }
 
     @Test

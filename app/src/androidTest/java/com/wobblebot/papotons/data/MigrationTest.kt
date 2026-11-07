@@ -129,15 +129,22 @@ class MigrationTest {
             execSQL(
                 "INSERT INTO boards (id, name, row_count, column_count, profile_id, core_board_id) VALUES " +
                     "(1, 'home', 2, 2, 1, 1), (2, 'food', 1, 1, 1, 2), (7, 'medium', 1, 1, 1, 7), " +
-                    "(1000, 'food', 1, 1, 2, 2), (1001, 'home', 2, 2, 2, 1), (1100, 'home', 1, 1, 3, 1)"
+                    "(1000, 'food', 1, 1, 2, 2), (1001, 'home', 2, 3, 2, 1), (1100, 'home', 1, 1, 3, 1)"
             )
             execSQL(
                 "INSERT INTO cells (id, board_id, grid_row, grid_column, label, linked_board_id) VALUES " +
-                    "(1, 1, 0, 0, 'manger', 2), (2, 7, 0, 0, 'je', NULL), (3, 1001, 1, 1, 'manger', 1000), (4, 1000, 0, 0, 'pomme', NULL)"
+                    "(1, 1, 0, 0, 'manger', 2), (2, 7, 0, 0, 'je', NULL), (3, 1001, 1, 2, 'manger', 1000), (4, 1000, 0, 0, 'pomme', NULL)"
             )
             close()
         }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+
+        val cellsBefore = listOf(
+            listOf<Any?>(1L, 1L, 0L, 0L, "manger", 2L),
+            listOf<Any?>(2L, 7L, 0L, 0L, "je", null),
+            listOf<Any?>(3L, 1001L, 1L, 2L, "manger", 1000L),
+            listOf<Any?>(4L, 1000L, 0L, 0L, "pomme", null),
+        )
 
         helper.runMigrationsAndValidate(DATABASE_NAME, 5, true, Migration4To5).apply {
             query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
@@ -149,8 +156,8 @@ class MigrationTest {
             val (_, boards, cells) = runBlocking { database.boardDao().snapshot() }
             assertEquals(listOf(1L, 2L, 7L, 1000L, 1001L, 1100L), boards.map { it.id })
             assertEquals(listOf(null, null, 0, null, 0, 0), boards.map { it.screenPosition })
-            assertEquals(4, cells.size)
-            assertEquals(mapOf(2L to 2L, 1000L to 1000L), cells.mapNotNull { it.linkedBoardId }.associateWith { it })
+            // Chaque case à sa place, avec son lien : la migration n'en touche aucune (invariants 3 et 4).
+            assertEquals(cellsBefore, cells.sortedBy { it.id }.map { listOf(it.id, it.boardId, it.row.toLong(), it.column.toLong(), it.label, it.linkedBoardId) })
             assertEquals(1001L, runBlocking { database.boardDao().firstScreenOf(2) })
         } finally {
             database.close()

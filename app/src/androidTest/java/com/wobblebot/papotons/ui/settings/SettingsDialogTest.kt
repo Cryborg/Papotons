@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
@@ -11,6 +12,12 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -42,7 +49,11 @@ class SettingsDialogTest {
     private val exitLockChanges = mutableListOf<Pair<Long, Boolean>>()
     private val leoAndAnna = persistentListOf(Profile(1, "Léo", isExitLocked = true), Profile(2, "Anna", isExitLocked = false))
     private val screenMoves = mutableListOf<Pair<Long, Int>>()
+    private val deletedScreens = mutableListOf<Long>()
+    private val createdScreens = mutableListOf<Pair<String, BoardSize>>()
     private val homeAndHouse = persistentListOf(Screen(1, "Accueil", BoardSize.STANDARD), Screen(1000, "Maison", BoardSize.LARGE_CELLS))
+    private var shownScreens by mutableStateOf<ImmutableList<Screen>>(homeAndHouse)
+    private var screensState by mutableStateOf(ScreensUiState())
 
     private fun show(
         caregivers: ImmutableList<Caregiver>? = persistentListOf(),
@@ -50,13 +61,14 @@ class SettingsDialogTest {
         profiles: ProfilesUiState = ProfilesUiState(leoAndAnna, openProfileId = 1),
         isAppPinned: Boolean = false,
     ) {
+        shownScreens = screens
         composeRule.setContent {
             PapotonsTheme {
                 SettingsDialog(
                     page = page,
                     content = SettingsContent(
-                        screens = screens,
-                        screensState = ScreensUiState(),
+                        screens = shownScreens,
+                        screensState = screensState,
                         newScreenSize = BoardSize.STANDARD,
                         profiles = profiles,
                         caregivers = CaregiversUiState(caregivers),
@@ -71,7 +83,7 @@ class SettingsDialogTest {
                         onExitLockChanged = { id, isLocked -> exitLockChanges += id to isLocked },
                     ),
                     caregiverActions = CaregiverActions(onSave = { _, _, _ -> }, onDelete = {}),
-                    screenActions = ScreenActions(onCreate = { _, _ -> }, onRename = { _, _ -> }, onDelete = {}, onMove = { id, offset -> screenMoves += id to offset }),
+                    screenActions = ScreenActions(onCreate = { name, size -> createdScreens += name to size }, onRename = { _, _ -> }, onDelete = { deletedScreens += it }, onMove = { id, offset -> screenMoves += id to offset }),
                     onPageChosen = { page = it },
                     onEditBoards = {},
                     onBackup = {},
@@ -218,6 +230,80 @@ class SettingsDialogTest {
 
         assertEquals(listOf(1000L to -1), screenMoves)
         composeRule.onNodeWithText(string(R.string.screen_first)).assertIsDisplayed()
+    }
+
+    /** Après « Monter », les flèches attendent le nouvel ordre : un double appui ne vise pas la ligne voisine. */
+    @Test
+    fun theArrowsWaitForTheNewOrderAfterAMove() {
+        page = SettingsPage.Screens
+        show()
+        val upHouse = string(R.string.screen_move_up_description, "Maison")
+
+        composeRule.onNodeWithContentDescription(upHouse).performClick()
+        composeRule.onNodeWithContentDescription(upHouse).assertIsNotEnabled().performClick()
+        assertEquals(listOf(1000L to -1), screenMoves)
+
+        shownScreens = persistentListOf(homeAndHouse[1], homeAndHouse[0])
+        val downHouse = string(R.string.screen_move_down_description, "Maison")
+        composeRule.onNodeWithContentDescription(downHouse).assertIsEnabled().performClick()
+
+        assertEquals(listOf(1000L to -1, 1000L to 1), screenMoves)
+    }
+
+    /** Un déplacement refusé ne change pas l'ordre : les flèches se rallument pour réessayer. */
+    @Test
+    fun theArrowsComeBackAfterAFailedMove() {
+        page = SettingsPage.Screens
+        show()
+        val upHouse = string(R.string.screen_move_up_description, "Maison")
+        composeRule.onNodeWithContentDescription(upHouse).performClick()
+        composeRule.onNodeWithContentDescription(upHouse).assertIsNotEnabled()
+
+        screensState = ScreensUiState(failure = ScreenFailure.NotMoved)
+
+        composeRule.onNodeWithContentDescription(upHouse).assertIsEnabled()
+        // Deuxième échec identique : l'état ne change pas d'une image à l'autre, les flèches restent là.
+        composeRule.onNodeWithContentDescription(upHouse).performClick()
+        composeRule.onNodeWithContentDescription(upHouse).assertIsEnabled()
+    }
+
+    /** Supprimer un écran passe par une confirmation : « Annuler » ne supprime rien. */
+    @Test
+    fun theDeletionOfAScreenWaitsForConfirmation() {
+        page = SettingsPage.Screens
+        show()
+        val confirmText = string(R.string.screen_delete_confirm_text)
+
+        composeRule.onNodeWithContentDescription(string(R.string.screen_edit_description, "Maison")).performClick()
+        composeRule.onNodeWithText(string(R.string.screen_delete)).performClick()
+        composeRule.onNodeWithText(confirmText).assertIsDisplayed()
+        assertEquals(emptyList<Long>(), deletedScreens)
+
+        composeRule.onNodeWithText(string(R.string.screen_cancel)).performClick()
+        assertEquals(emptyList<Long>(), deletedScreens)
+        composeRule.onNodeWithText(string(R.string.screen_delete)).performClick()
+        composeRule.onNodeWithText(confirmText).assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.screen_delete)).performClick()
+
+        assertEquals(listOf(1000L), deletedScreens)
+    }
+
+    /** La taille choisie dans la modale arrive à la création, pas la présélection ; Entrée ne crée rien. */
+    @Test
+    fun aNewScreenIsCreatedWithTheChosenSizeOnlyByCreate() {
+        page = SettingsPage.Screens
+        show()
+
+        composeRule.onNodeWithText(string(R.string.screen_add)).performClick()
+        composeRule.onNodeWithText(string(R.string.screen_name)).performTextInput("École")
+        composeRule.onNodeWithText(string(R.string.screen_name)).performImeAction()
+        assertEquals(emptyList<Pair<String, BoardSize>>(), createdScreens)
+        // La carte de la modale, pas la ligne « Maison, Grandes cases » de la liste derrière elle.
+        composeRule.onNode(hasText(string(R.string.board_size_large_cells)) and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton))
+            .performScrollTo().performClick()
+        composeRule.onNodeWithText(string(R.string.screen_create)).performClick()
+
+        assertEquals(listOf("École" to BoardSize.LARGE_CELLS), createdScreens)
     }
 
     /** Il faut un écran pour parler : le dernier ne propose pas « Supprimer ». */

@@ -360,13 +360,15 @@ class BoardScreenLayoutTest {
     fun twoScreensShowTheirTabsAndATabOpensItsScreen() {
         val chosen = mutableListOf<Long>()
         val screens = persistentListOf(Screen(1, "Accueil", BoardSize.STANDARD), Screen(1000, "Maison", BoardSize.LARGE_CELLS))
-        val twoScreens = homeState.copy(board = checkNotNull(homeState.board).copy(screens = screens))
-        composeRule.setContent { PapotonsTheme { BoardScreen(state = twoScreens, actions = noActions.copy(onScreenChosen = { chosen += it })) } }
+        // Dans un dossier (grille 2) de « Maison » : l'onglet marqué est celui de l'écran, pas de la grille.
+        val inHouseFolder = homeState.copy(board = checkNotNull(homeState.board).copy(id = 2, canGoBack = true, rootId = 1000, screens = screens))
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = inHouseFolder, actions = noActions.copy(onScreenChosen = { chosen += it })) } }
 
-        composeRule.onNodeWithText("Accueil").assertIsSelected()
-        composeRule.onNodeWithText("Maison").assertIsNotSelected().performClick()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.screen_tabs_description)).assertExists()
+        composeRule.onNodeWithText("Maison").assertIsSelected()
+        composeRule.onNodeWithText("Accueil").assertIsNotSelected().performClick()
 
-        assertEquals(listOf(1000L), chosen)
+        assertEquals(listOf(1L), chosen)
     }
 
     @Test
