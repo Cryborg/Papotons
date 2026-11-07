@@ -35,8 +35,8 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 
 ## Dette ouverte
 
-- **TODO-8** Récupérer dans l'appli les grilles d'une copie de base corrompue (`files/corrupted-databases/`) : `PRAGMA integrity_check` sur une copie recopiée à part, lecture des schémas 1 à 5, choix de la copie, puis la restauration commune (confirmation, transaction). Aujourd'hui les copies, et les images que plus aucune case ne vise, partent dans la sauvegarde `.obz` pour qu'un expert les récupère (M).
-  **Prérequis** : une vraie copie corrompue sous la main, pour savoir si une base déclarée corrompue passe jamais le contrôle.
+- **TODO-8** Récupérer dans l'appli les grilles d'une copie de base corrompue (`files/corrupted-databases/`) : copie recopiée à part et relue ligne par ligne par id, chaque ligne validée (grille retrouvée, position libre dans la grille, picto et photo présents, libellé lisible), lecture des schémas 1 à 5, choix de la copie, bilan montré à l'adulte (« 180 cases sur 224 »), puis la restauration commune (confirmation, transaction). Pas d'`integrity_check` comme contrôle : mesuré sur six pannes réelles (fixtures de `DatabaseCorruptionFixturesTest`), aucune copie ne le passe, alors que quatre se relisent presque entières ; et une ligne relue peut être brouillée sans erreur. Constats et plan : `docs/designs/TODO-8.md`. Aujourd'hui les copies, et les images que plus aucune case ne vise, partent dans la sauvegarde `.obz` pour qu'un expert les récupère (M).
+- **TODO-16** Une corruption vue en cours d'usage (page touchée par une requête après l'ouverture : quatre pannes sur six des fixtures du TODO-8) laisse l'instance de Room fermée jusqu'au relancement : la fabrique copie, le callback par défaut ferme et supprime la base, puis chaque requête lève `android.database.SQLException: connection is closed`, que les `catch (SQLiteException)` de l'appli n'attrapent pas. Ce que voit alors l'enfant (plantage, grille figée) n'est pas vérifié. Rouvrir une instance neuve, ou relancer l'appli, qui trouvera la base vide et lèvera l'alerte « Grilles perdues » (S).
 
 
 ## Feuille de route (MVP)
