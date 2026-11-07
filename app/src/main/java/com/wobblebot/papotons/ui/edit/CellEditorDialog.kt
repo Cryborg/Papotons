@@ -157,7 +157,10 @@ fun CellEditorDialog(
                 )
                 if (existing == null) {
                     Section(R.string.editor_kind) {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING)) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING),
+                            verticalArrangement = Arrangement.spacedBy(ITEM_SPACING),
+                        ) {
                             FilterChip(selected = !asFolder, onClick = { asFolder = false }, label = { Text(stringResource(R.string.editor_kind_word)) })
                             FilterChip(selected = asFolder, onClick = { asFolder = true }, label = { Text(stringResource(R.string.editor_kind_folder)) })
                         }
@@ -222,7 +225,10 @@ fun CellEditorDialog(
                     }
                 }
                 Section(R.string.editor_category) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING),
+                        verticalArrangement = Arrangement.spacedBy(ITEM_SPACING),
+                    ) {
                         FilterChip(
                             selected = categoryName == null,
                             onClick = { categoryName = null },

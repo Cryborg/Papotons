@@ -427,7 +427,7 @@ private fun BackupDialogs(
         RestoreConfirmDialog(
             fileName = pending.fileName,
             currentProfileNames = state.currentProfileNames,
-            restoredProfileNames = pending.profileNames.toImmutableList(),
+            restoredProfileNames = remember(pending) { pending.profileNames.toImmutableList() },
             boardCount = pending.boardCount,
             cellCount = pending.cellCount,
             onConfirm = onConfirmRestore,
