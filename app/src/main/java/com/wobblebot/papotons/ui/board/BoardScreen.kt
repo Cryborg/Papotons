@@ -13,29 +13,34 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.displayCutout
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.core.app.MultiWindowModeChangedInfo
+import androidx.core.app.OnMultiWindowModeChangedProvider
+import androidx.core.util.Consumer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -68,6 +73,7 @@ import com.wobblebot.papotons.ui.settings.ProfilesViewModel
 import com.wobblebot.papotons.ui.settings.SettingsContent
 import com.wobblebot.papotons.ui.settings.SettingsDialog
 import com.wobblebot.papotons.ui.settings.SettingsPage
+import com.wobblebot.papotons.ui.settings.openProfile
 import com.wobblebot.papotons.ui.settings.openProfileName
 import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import kotlinx.collections.immutable.persistentListOf
@@ -99,10 +105,11 @@ data class BoardActions(
     val onBackupClick: () -> Unit,
     val onCellLongClick: (Cell) -> Unit = {},
     val onVerbFormClick: (String) -> Unit = {},
+    val onLeaveClick: () -> Unit = {},
 )
 
 /** Ce qu'ouvre le contrôle des adultes (code d'un accompagnant, ou calcul) quand il est passé. */
-private enum class GatedAction { OpenSettings, AcknowledgeLostBoards, RestoreBackup }
+private enum class GatedAction { OpenSettings, AcknowledgeLostBoards, RestoreBackup, LeaveApp }
 
 /** Branche [BoardScreen] sur son ViewModel : retour arrière, premier plan, modale de la voix. */
 @Composable
@@ -127,6 +134,7 @@ fun BoardRoute(
             onCreate = profilesViewModel::onCreate,
             onRename = profilesViewModel::onRename,
             onDelete = profilesViewModel::onDelete,
+            onExitLockChanged = profilesViewModel::onExitLockChanged,
         )
     }
     val backupFileNamePattern = stringResource(R.string.backup_file_name)
@@ -146,6 +154,17 @@ fun BoardRoute(
     val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { document ->
         if (!backupViewModel.onRestoreDocument(document)) viewModel.onStopEditing()
     }
+    val isExitLocked = profilesState.openProfile()?.isExitLocked
+    // Suivi par l'écouteur d'Android : une fenêtre libre n'entraîne pas toujours la recréation de l'activité.
+    var isInMultiWindow by remember { mutableStateOf(activity?.isInMultiWindowMode == true) }
+    DisposableEffect(activity) {
+        val provider = activity as? OnMultiWindowModeChangedProvider
+        val listener = Consumer<MultiWindowModeChangedInfo> { isInMultiWindow = it.isInMultiWindowMode }
+        provider?.addOnMultiWindowModeChangedListener(listener)
+        onDispose { provider?.removeOnMultiWindowModeChangedListener(listener) }
+    }
+    // Lu à l'appui, pas capturé : les actions ne se recréent pas quand l'option change.
+    val isLeaveGated by rememberUpdatedState(needsGateToLeave(isExitLocked, state.isEditing))
     val actions = remember(viewModel) {
         BoardActions(
             onCellClick = viewModel::onCellClick,
@@ -166,8 +185,14 @@ fun BoardRoute(
             onBackupClick = backupViewModel::onOpen,
             onCellLongClick = viewModel::onCellLongClick,
             onVerbFormClick = viewModel::onVerbFormClick,
+            onLeaveClick = {
+                if (isLeaveGated) gatedAction = GatedAction.LeaveApp else activity?.let(::leaveToHomeScreen)
+            },
         )
     }
+    // Utilisateur pas encore lu : pas d'épinglage (il serait demandé à chaque lancement d'un utilisateur
+    // non protégé), mais Bureau reste derrière le contrôle.
+    ExitLockEffect(isExitLocked = isExitLocked == true)
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.recoverSpeech() }
     // Un vrai départ (écran éteint, autre appli) termine l'édition : la tablette rendue à l'enfant
     // n'y est jamais. Une rotation, qui passe aussi par ON_STOP, la garde.
@@ -191,7 +216,14 @@ fun BoardRoute(
     LaunchedEffect(state.isEditing) {
         if (!state.isEditing) backupViewModel.onEditingEnded()
     }
-    BoardScreen(state = state, actions = actions, hasUnsavedChanges = backupState.hasUnsavedChanges, profileName = profilesState.openProfileName())
+    BoardScreen(
+        state = state,
+        actions = actions,
+        hasUnsavedChanges = backupState.hasUnsavedChanges,
+        profileName = profilesState.openProfileName(),
+        isLeaveGated = isLeaveGated,
+        isInMultiWindow = isInMultiWindow,
+    )
     // Un échec d'une ouverture précédente ne s'affiche plus.
     LaunchedEffect(state.isSettingsOpen) {
         if (state.isSettingsOpen) {
@@ -209,6 +241,8 @@ fun BoardRoute(
                 caregivers = caregiversState,
                 hasUnsavedChanges = backupState.hasUnsavedChanges,
                 isBoardShown = state.board != null,
+                // Relu seulement Réglages ouverts.
+                isAppPinned = rememberIsPinned(),
             ),
             profileActions = profileActions,
             caregiverActions = caregiverActions,
@@ -240,6 +274,7 @@ fun BoardRoute(
                         viewModel.onStartEditing()
                         backupViewModel.onOpen()
                     }
+                    GatedAction.LeaveApp -> activity?.let(::leaveToHomeScreen)
                 }
             },
             onClose = { gatedAction = null },
@@ -393,52 +428,50 @@ fun BoardScreen(
     hasUnsavedChanges: Boolean = true,
     /** Le prénom de l'utilisateur ouvert, `null` tant qu'il n'est pas lu. */
     profileName: String? = null,
+    isLeaveGated: Boolean = true,
+    /** Écran partagé ou fenêtre : Android n'y masque pas la barre de navigation. */
+    isInMultiWindow: Boolean = false,
 ) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        BoxWithConstraints {
-            // En largeur, la barre des adultes passe en rail à droite : la hauteur reste aux cases.
-            val isRail = maxWidth > maxHeight
-            // Barres système et encoche seulement : le clavier (édition, MVP-3) ne doit pas rétrécir
-            // la grille et déplacer les cases. En hauteur, la barre du bas prend elle-même l'encart du
-            // bas, pour que son fond passe sous la barre de navigation.
-            val insets = WindowInsets.systemBars.union(WindowInsets.displayCutout)
-            Column(modifier = Modifier.windowInsetsPadding(if (isRail) insets else insets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
-                BoardTopBar(
-                    // La page des formes se referme par « Retour », même ouverte depuis l'accueil.
-                    canGoBack = state.board?.canGoBack == true || state.verbForms != null,
-                    speechStatus = state.speechStatus,
-                    hasLostBoards = state.hasLostBoards,
-                    isMuted = state.isMuted,
-                    onBack = actions.onBack,
-                    onHome = actions.onHome,
-                    onSpeechAlertClick = actions.onSpeechAlertClick,
-                    onMutedAlertClick = actions.onMutedAlertClick,
-                    onLostBoardsAlertClick = actions.onLostBoardsAlertClick,
-                ) {
-                    if (state.isEditing) {
-                        EditBanner(
-                            onDone = actions.onStopEditing,
-                            onBackup = actions.onBackupClick,
-                            hasUnsavedChanges = hasUnsavedChanges,
-                            modifier = Modifier.weight(1f),
-                        )
-                    } else {
-                        MessageBar(
-                            words = state.message,
-                            onSpeak = actions.onSpeakMessage,
-                            onDeleteLastWord = actions.onDeleteLastWord,
-                            onClear = actions.onClearMessage,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
+        // Barre d'état, barre de titre d'une fenêtre libre et encoche seulement. Ni le clavier (édition, MVP-3) ni la barre de navigation,
+        // masquée mais qui revient par-dessus (glissement, modale), ne doivent rétrécir la grille.
+        // En écran partagé ou en fenêtre, Android ne la masque pas : elle couvrirait la barre des
+        // adultes, sa place est réservée.
+        val navigationInsets = if (isInMultiWindow) WindowInsets.navigationBars else WindowInsets(0)
+        val insets = WindowInsets.statusBars.union(WindowInsets.captionBar).union(WindowInsets.displayCutout).only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+        Column(modifier = Modifier.windowInsetsPadding(insets.union(navigationInsets))) {
+            BoardTopBar(
+                // La page des formes se referme par « Retour », même ouverte depuis l'accueil.
+                canGoBack = state.board?.canGoBack == true || state.verbForms != null,
+                speechStatus = state.speechStatus,
+                hasLostBoards = state.hasLostBoards,
+                isMuted = state.isMuted,
+                onBack = actions.onBack,
+                onHome = actions.onHome,
+                onSpeechAlertClick = actions.onSpeechAlertClick,
+                onMutedAlertClick = actions.onMutedAlertClick,
+                onLostBoardsAlertClick = actions.onLostBoardsAlertClick,
+            ) {
+                if (state.isEditing) {
+                    EditBanner(
+                        onDone = actions.onStopEditing,
+                        onBackup = actions.onBackupClick,
+                        hasUnsavedChanges = hasUnsavedChanges,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    MessageBar(
+                        words = state.message,
+                        onSpeak = actions.onSpeakMessage,
+                        onDeleteLastWord = actions.onDeleteLastWord,
+                        onClear = actions.onClearMessage,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
-                Row(modifier = Modifier.weight(1f)) {
-                    BoardContent(state, actions, Modifier.weight(1f).fillMaxHeight())
-                    // Toujours là, même pendant le chargement : les Réglages restent atteignables.
-                    if (isRail) BoardAdultBar(profileName, isRail = true, onSettingsClick = actions.onSettingsClick)
-                }
-                if (!isRail) BoardAdultBar(profileName, isRail = false, onSettingsClick = actions.onSettingsClick)
             }
+            BoardContent(state, actions, Modifier.weight(1f).fillMaxWidth())
+            // Toujours là, même pendant le chargement : les Réglages restent atteignables.
+            BoardAdultBar(profileName, isLeaveGated, onLeaveClick = actions.onLeaveClick, onSettingsClick = actions.onSettingsClick)
         }
     }
 }

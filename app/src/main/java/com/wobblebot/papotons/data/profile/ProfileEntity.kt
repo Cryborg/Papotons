@@ -28,11 +28,14 @@ fun isValidProfileName(name: String): Boolean = name.isNotBlank() && name.length
 /**
  * Un utilisateur : la personne qui communique, avec ses propres grilles (`boards.profile_id`).
  * [startBoardId] est l'écran de départ choisi (l'accueil d'une taille), sans clé étrangère : il est
- * revalidé à chaque lancement, et `null` ouvre l'accueil standard de l'utilisateur.
+ * revalidé à chaque lancement, et `null` ouvre l'accueil standard de l'utilisateur. [isExitLocked] :
+ * le bouton Bureau (quitter vers le bureau de la tablette) demande le contrôle des adultes ; vrai par
+ * défaut, un enfant ne quitte pas l'appli par erreur.
  */
 @Entity(tableName = "profiles")
 data class ProfileEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     @ColumnInfo(name = "start_board_id") val startBoardId: Long?,
+    @ColumnInfo(name = "is_exit_locked", defaultValue = "1") val isExitLocked: Boolean = true,
 )

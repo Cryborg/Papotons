@@ -26,7 +26,7 @@ import javax.inject.Inject
 private const val TAG = "ProfilesViewModel"
 
 /** Une action sur les utilisateurs qui n'a rien changé. */
-enum class ProfileFailure { NotCreated, NotRenamed, NotDeleted, NotSwitched }
+enum class ProfileFailure { NotCreated, NotRenamed, NotDeleted, NotSwitched, ExitLockNotSaved }
 
 @Immutable
 data class ProfilesUiState(
@@ -69,6 +69,9 @@ class ProfilesViewModel @Inject constructor(
     fun onDelete(profileId: Long) = work(ProfileFailure.NotDeleted, profileId) {
         repository.deleteProfile(profileId).forEach { photos.delete(it) }
     }
+
+    fun onExitLockChanged(profileId: Long, isLocked: Boolean) =
+        work(ProfileFailure.ExitLockNotSaved, profileId) { repository.setExitLocked(profileId, isLocked) }
 
     /** Toucher l'utilisateur déjà ouvert ne fait rien : la phrase de l'enfant ne se vide pas pour rien. */
     fun onSwitch(profileId: Long) {

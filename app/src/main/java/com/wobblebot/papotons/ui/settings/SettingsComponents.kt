@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -22,6 +23,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -144,6 +146,37 @@ fun SettingsRow(
     }
 }
 
+/** Une option à cocher : toute la ligne bascule l'interrupteur, lue d'un bloc par TalkBack. */
+@Composable
+fun SettingsSwitchRow(
+    @DrawableRes icon: Int,
+    badgeColors: BadgeColors,
+    title: String,
+    summary: String,
+    isChecked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = ROW_MIN_HEIGHT)
+            .toggleable(value = isChecked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)
+            .padding(horizontal = ROW_HORIZONTAL_PADDING, vertical = ROW_VERTICAL_PADDING),
+    ) {
+        IconBadge(icon, badgeColors)
+        Spacer(modifier = Modifier.width(ROW_ICON_SPACING))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.bodyLarge)
+            Text(text = summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(modifier = Modifier.width(ROW_ICON_SPACING))
+        // Sans action propre : la ligne entière porte la bascule (une seule cible, un seul arrêt).
+        Switch(checked = isChecked, onCheckedChange = null, enabled = enabled)
+    }
+}
+
 @Composable
 fun SettingsDivider() {
     HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.padding(start = DIVIDER_START))
@@ -198,22 +231,22 @@ fun AddButton(text: String, enabled: Boolean, onClick: () -> Unit) {
 
 /** Un texte d'explication sous l'en-tête d'une page. */
 @Composable
-fun PageExplanation(text: String) {
+fun PageExplanation(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = ROW_HORIZONTAL_PADDING),
+        modifier = modifier.padding(horizontal = ROW_HORIZONTAL_PADDING),
     )
 }
 
 /** Un échec annoncé dès qu'il apparaît. */
 @Composable
-fun FailureText(text: String) {
+fun FailureText(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
         color = MaterialTheme.colorScheme.error,
-        modifier = Modifier
+        modifier = modifier
             .padding(horizontal = ROW_HORIZONTAL_PADDING)
             .semantics { liveRegion = LiveRegionMode.Assertive },
     )

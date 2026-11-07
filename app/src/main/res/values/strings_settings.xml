@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Roue dentée de la barre des adultes (en bas, ou à droite en largeur) : le contrôle, puis les Réglages. -->
+    <!-- Roue dentée de la barre des adultes (en bas) : le contrôle, puis les Réglages. -->
     <string name="settings_open">Réglages</string>
     <string name="settings_title">Réglages</string>
     <string name="settings_close">Fermer</string>
@@ -11,6 +11,11 @@
     <string name="settings_change_profile_description">Changer d\'utilisateur</string>
     <!-- Barre des adultes, lu par TalkBack : %1$s est le prénom. -->
     <string name="adult_bar_profile_description">Utilisateur ouvert : %1$s</string>
+    <string name="adult_bar_leave">Quitter Papotons pour le bureau</string>
+    <string name="adult_bar_leave_gated">Quitter Papotons pour le bureau, réservé aux adultes</string>
+    <string name="settings_exit_lock">Protéger la sortie de l\'appli</string>
+    <string name="settings_exit_lock_not_pinned">L\'appli n\'est pas épinglée pour l\'instant : Android le demande à chaque ouverture de Papotons.</string>
+    <string name="settings_exit_lock_description">Quitter Papotons passe par le contrôle des adultes, et l\'appli demande à s\'épingler à l\'écran</string>
     <!-- %1$s : le prénom de l'utilisateur ouvert. -->
     <string name="settings_section_grids_of">Pour %1$s</string>
     <string name="settings_section_grids">Grilles</string>

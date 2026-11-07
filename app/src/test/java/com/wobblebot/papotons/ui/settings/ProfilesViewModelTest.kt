@@ -130,6 +130,19 @@ class ProfilesViewModelTest {
     }
 
     @Test
+    fun `the exit lock is saved, and a refused write is reported`() = runTest(dispatcher) {
+        repository.ensureHomeBoard()
+        val viewModel = viewModel()
+
+        viewModel.onExitLockChanged(FIRST_PROFILE_ID, isLocked = false)
+        assertFalse(viewModel.uiState.value.profiles.single().isExitLocked)
+
+        viewModel.onExitLockChanged(42, isLocked = true)
+        assertEquals(ProfileFailure.ExitLockNotSaved, viewModel.uiState.value.failure)
+        assertFalse(viewModel.uiState.value.isWorking)
+    }
+
+    @Test
     fun `a name the repository refuses is reported, not a crash`() = runTest(dispatcher) {
         repository.ensureHomeBoard()
         val viewModel = viewModel()

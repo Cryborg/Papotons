@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.view.WindowCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wobblebot.papotons.data.pictogram.PictogramImages
@@ -26,6 +27,7 @@ import com.wobblebot.papotons.ui.board.LocalPhotoImages
 import com.wobblebot.papotons.ui.board.LocalPhotoLoader
 import com.wobblebot.papotons.ui.board.LocalPictogramImages
 import com.wobblebot.papotons.ui.board.LocalPictogramLoader
+import com.wobblebot.papotons.ui.hideNavigationBar
 import com.wobblebot.papotons.ui.splash.StudioSplashScreen
 import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import com.wobblebot.papotons.update.InAppUpdateManager
@@ -56,8 +58,9 @@ class MainActivity : ComponentActivity() {
         // AVANT super.onCreate, sinon le thème de splash reste en place.
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        // Chaque écran consomme ensuite ses insets (la grille : barres système et encoche, pas le clavier).
+        // Chaque écran consomme ensuite ses insets (la grille : barre d'état et encoche seulement).
         enableEdgeToEdge()
+        hideSystemNavigationBar()
         // Les touches de volume règlent la voix (flux média), pas la sonnerie, même quand rien ne joue.
         volumeControlStream = AudioManager.STREAM_MUSIC
         inAppUpdateManager = InAppUpdateManager(this)
@@ -84,6 +87,14 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         inAppUpdateManager.resumeUpdateIfNeeded(updateResultLauncher)
     }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Avant Android 11, la barre masquée revient pour de bon au retour d'une autre fenêtre.
+        if (hasFocus) hideSystemNavigationBar()
+    }
+
+    private fun hideSystemNavigationBar() = hideNavigationBar(WindowCompat.getInsetsController(window, window.decorView))
 
     override fun onDestroy() {
         super.onDestroy()

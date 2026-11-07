@@ -57,6 +57,7 @@ import com.wobblebot.papotons.domain.Caregiver
 import com.wobblebot.papotons.domain.Profile
 import com.wobblebot.papotons.ui.about.AboutDialog
 import com.wobblebot.papotons.ui.board.SettingFailure
+import com.wobblebot.papotons.ui.hideNavigationBar
 import kotlinx.collections.immutable.persistentListOf
 
 private const val TAG = "SettingsDialog"
@@ -86,6 +87,8 @@ data class SettingsContent(
     val hasUnsavedChanges: Boolean,
     /** Une grille est affichée : sa taille est connue (ou reconnue comme hors des tailles). */
     val isBoardShown: Boolean,
+    /** L'appli est épinglée en ce moment (l'option cochée ne fait que le demander). */
+    val isAppPinned: Boolean,
 )
 
 /**
@@ -134,6 +137,8 @@ fun SettingsDialog(
                 val controller = WindowCompat.getInsetsController(dialogWindow, view)
                 controller.isAppearanceLightStatusBars = true
                 controller.isAppearanceLightNavigationBars = true
+                // Fenêtre à part : le masquage de l'activité ne vaut pas pour elle.
+                hideNavigationBar(controller)
             }
         }
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceVariant) {
@@ -152,7 +157,14 @@ fun SettingsDialog(
                         verticalArrangement = pageArrangement,
                     ) {
                         when (page) {
-                            SettingsPage.Home -> SettingsHome(content, onPageChosen, onEditBoards, onBackup, onAbout = { isAboutOpen = true })
+                            SettingsPage.Home -> SettingsHome(
+                                content = content,
+                                onPageChosen = onPageChosen,
+                                onEditBoards = onEditBoards,
+                                onExitLockChanged = profileActions.onExitLockChanged,
+                                onBackup = onBackup,
+                                onAbout = { isAboutOpen = true },
+                            )
                             SettingsPage.Profiles -> ProfilesPage(content.profiles, profileActions)
                             SettingsPage.Caregivers -> CaregiversPage(content.caregivers, caregiverActions)
                             SettingsPage.BoardSize -> BoardSizePage(content.boardSize, content.settingFailure, onBoardSizeChosen)
@@ -212,10 +224,12 @@ private fun ColumnScope.SettingsHome(
     content: SettingsContent,
     onPageChosen: (SettingsPage) -> Unit,
     onEditBoards: () -> Unit,
+    onExitLockChanged: (profileId: Long, isLocked: Boolean) -> Unit,
     onBackup: () -> Unit,
     onAbout: () -> Unit,
 ) {
-    val openName = content.profiles.openProfileName()
+    val openProfile = content.profiles.openProfile()
+    val openName = openProfile?.name
     if (openName != null) OpenProfileCard(openName, onChange = { onPageChosen(SettingsPage.Profiles) })
     SettingsSection(if (openName != null) stringResource(R.string.settings_section_grids_of, openName) else stringResource(R.string.settings_section_grids)) {
         SettingsRow(R.drawable.ic_edit, gridBadgeColors(), stringResource(R.string.edit_open), stringResource(R.string.settings_edit_description), onEditBoards)
@@ -232,6 +246,24 @@ private fun ColumnScope.SettingsHome(
             },
             onClick = { onPageChosen(SettingsPage.BoardSize) },
         )
+        if (openProfile != null) {
+            SettingsDivider()
+            SettingsSwitchRow(
+                icon = R.drawable.ic_exit_to_app,
+                badgeColors = gridBadgeColors(),
+                title = stringResource(R.string.settings_exit_lock),
+                summary = stringResource(R.string.settings_exit_lock_description),
+                isChecked = openProfile.isExitLocked,
+                enabled = !content.profiles.isWorking,
+                onCheckedChange = { onExitLockChanged(openProfile.id, it) },
+            )
+            // Coché ne veut pas dire épinglé : la confirmation d'Android a pu être refusée, souvent par l'enfant.
+            if (openProfile.isExitLocked && !content.isAppPinned) {
+                PageExplanation(stringResource(R.string.settings_exit_lock_not_pinned), Modifier.padding(bottom = ROW_VERTICAL_PADDING))
+            }
+            // Seul échec qui naît sur l'accueil ; les autres restent sur la page des utilisateurs.
+            if (content.profiles.failure == ProfileFailure.ExitLockNotSaved) FailureText(stringResource(ProfileFailure.ExitLockNotSaved.message), Modifier.padding(bottom = ROW_VERTICAL_PADDING))
+        }
     }
     SettingsSection(stringResource(R.string.settings_section_people)) {
         SettingsRow(
@@ -326,8 +358,11 @@ private fun ChangeProfileButton(colors: BadgeColors, onChange: () -> Unit) {
     }
 }
 
+/** L'utilisateur ouvert, `null` tant qu'il n'est pas connu. */
+internal fun ProfilesUiState.openProfile(): Profile? = profiles.firstOrNull { it.id == openProfileId }
+
 /** Le prénom de l'utilisateur ouvert, `null` tant qu'il n'est pas connu. */
-internal fun ProfilesUiState.openProfileName(): String? = profiles.firstOrNull { it.id == openProfileId }?.name
+internal fun ProfilesUiState.openProfileName(): String? = openProfile()?.name
 
 @Preview
 @Composable
@@ -337,12 +372,13 @@ private fun SettingsDialogPreview() {
         content = SettingsContent(
             boardSize = BoardSize.STANDARD,
             settingFailure = null,
-            profiles = ProfilesUiState(persistentListOf(Profile(1, "Léo"), Profile(2, "Anna")), openProfileId = 1),
+            profiles = ProfilesUiState(persistentListOf(Profile(1, "Léo", isExitLocked = true), Profile(2, "Anna", isExitLocked = false)), openProfileId = 1),
             caregivers = CaregiversUiState(persistentListOf(Caregiver(1, "Marie", codeResetAtMs = null))),
             hasUnsavedChanges = true,
             isBoardShown = true,
+            isAppPinned = false,
         ),
-        profileActions = ProfileActions(onChosen = {}, onCreate = {}, onRename = { _, _ -> }, onDelete = {}),
+        profileActions = ProfileActions(onChosen = {}, onCreate = {}, onRename = { _, _ -> }, onDelete = {}, onExitLockChanged = { _, _ -> }),
         caregiverActions = CaregiverActions(onSave = { _, _, _ -> }, onDelete = {}),
         onPageChosen = {},
         onBoardSizeChosen = {},

@@ -104,7 +104,8 @@ class MigrationTest {
         val database = buildDatabase(context, DATABASE_NAME)
         try {
             val (profiles, boards, cells) = runBlocking { database.boardDao().snapshot() }
-            assertEquals(listOf(ProfileEntity(1, context.getString(R.string.profile_default_name), startBoardId = null)), profiles)
+            // Protégé par la valeur par défaut de la colonne, comme un nouvel utilisateur.
+            assertEquals(listOf(ProfileEntity(1, context.getString(R.string.profile_default_name), startBoardId = null, isExitLocked = true)), profiles)
             assertEquals(listOf(1L, 2L, 7L, 13L, 1000L), boards.map { it.id })
             assertTrue(boards.all { it.profileId == 1L })
             assertEquals(listOf(1L, 2L, 7L, null, null), boards.map { it.coreBoardId })

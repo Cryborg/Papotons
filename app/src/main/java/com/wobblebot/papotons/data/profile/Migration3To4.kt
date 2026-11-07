@@ -14,7 +14,7 @@ class Migration3To4(private val firstProfileName: String) : Migration(3, 4) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS `profiles` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
-                "`name` TEXT NOT NULL, `start_board_id` INTEGER)"
+                "`name` TEXT NOT NULL, `start_board_id` INTEGER, `is_exit_locked` INTEGER NOT NULL DEFAULT 1)"
         )
         db.execSQL("INSERT INTO `profiles` (`id`, `name`, `start_board_id`) VALUES (?, ?, NULL)", arrayOf<Any>(FIRST_PROFILE_ID, firstProfileName))
         // Valeur par défaut non nulle avec REFERENCES : SQLite ne l'accepte que clés étrangères

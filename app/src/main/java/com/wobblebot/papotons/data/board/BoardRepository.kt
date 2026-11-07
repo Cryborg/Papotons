@@ -209,7 +209,7 @@ class BoardRepository @Inject constructor(
         null
     }
 
-    fun observeProfiles(): Flow<List<Profile>> = boardDao.observeProfiles().map { profiles -> profiles.map { Profile(it.id, it.name) } }
+    fun observeProfiles(): Flow<List<Profile>> = boardDao.observeProfiles().map { profiles -> profiles.map { Profile(it.id, it.name, it.isExitLocked) } }
 
     /** Un nouvel utilisateur avec un vocabulaire de base neuf, en taille standard ; il ne devient pas l'utilisateur ouvert. */
     suspend fun createProfile(name: String): Long {
@@ -218,6 +218,12 @@ class BoardRepository @Inject constructor(
         val profileId = write { boardDao.insertProfileWithCoreVocabulary(name, seed) }
         Log.i(TAG, "Profile $profileId created with ${seed.boards.size} boards")
         return profileId
+    }
+
+    /** Une écriture de grilles : l'option part dans la sauvegarde. */
+    suspend fun setExitLocked(profileId: Long, isLocked: Boolean) {
+        val count = write { boardDao.setExitLocked(profileId, isLocked) }
+        if (count == 0) throw ProfileNotFoundException(profileId)
     }
 
     suspend fun renameProfile(profileId: Long, name: String) {

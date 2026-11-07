@@ -214,6 +214,25 @@ class BoardProfilesTest {
         assertFalse(repository.observeUnsavedChanges().first())
     }
 
+    /** Protégé par défaut : un utilisateur ajouté ne sort jamais librement vers le bureau. */
+    @Test
+    fun `the exit lock is on by default and changes only the profile it targets`() = runTest {
+        val dao = FakeBoardDao()
+        val repository = freshRepository(dao)
+        val anna = repository.createProfile("Anna")
+        val (_, count) = repository.snapshot()
+        repository.markSaved(count)
+        assertTrue(repository.observeProfiles().first().all { it.isExitLocked })
+        assertFalse(repository.observeUnsavedChanges().first())
+
+        repository.setExitLocked(anna, isLocked = false)
+
+        assertEquals(mapOf(FIRST_PROFILE_ID to true, anna to false), repository.observeProfiles().first().associate { it.id to it.isExitLocked })
+        // L'option part dans la sauvegarde : elle est un changement à sauvegarder.
+        assertTrue(repository.observeUnsavedChanges().first())
+        assertThrows(ProfileNotFoundException::class.java) { runBlocking { repository.setExitLocked(42, isLocked = false) } }
+    }
+
     /** Grilles perdues, utilisateurs restés : le vocabulaire revient chez le plus petit, les autres partent. */
     @Test
     fun `reseeding a database without boards drops the profiles left without boards`() = runTest {

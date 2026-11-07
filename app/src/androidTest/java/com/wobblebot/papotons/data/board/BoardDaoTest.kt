@@ -302,6 +302,18 @@ class BoardDaoTest {
     }
 
     @Test
+    fun theExitLockIsWrittenForTheTargetedProfileOnly() = runBlocking {
+        val anna = ProfileEntity(id = 5, name = "Anna", startBoardId = null)
+        boardDao.insertProfile(anna)
+
+        assertEquals(1, boardDao.setExitLocked(anna.id, isLocked = false))
+
+        assertEquals(listOf(LEO, anna.copy(isExitLocked = false)), boardDao.allProfiles())
+        // Un id absent n'écrit rien : le dépôt en fait un échec.
+        assertEquals(0, boardDao.setExitLocked(42, isLocked = false))
+    }
+
+    @Test
     fun reseedingRemovesOnlyTheProfilesLeftWithoutBoards() = runBlocking {
         boardDao.insertProfile(ProfileEntity(id = 5, name = "Anna", startBoardId = null))
 

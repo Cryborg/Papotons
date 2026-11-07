@@ -224,6 +224,8 @@ class FakeBoardDao(
 
     override suspend fun renameProfile(profileId: Long, name: String): Int = updateProfile(profileId) { it.copy(name = name) }
 
+    override suspend fun setExitLocked(profileId: Long, isLocked: Boolean): Int = updateProfile(profileId) { it.copy(isExitLocked = isLocked) }
+
     override suspend fun setStartBoard(profileId: Long, boardId: Long): Int {
         startBoardWriteFailure?.let { throw it }
         return updateProfile(profileId) { it.copy(startBoardId = boardId) }

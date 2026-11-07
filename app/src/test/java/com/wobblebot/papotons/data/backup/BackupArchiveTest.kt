@@ -285,8 +285,9 @@ class BackupArchiveTest {
     }
 
     @Test
-    fun `every profile comes back with its boards, origins and start board`() {
-        val anna = ProfileEntity(id = 4, name = "Anna", startBoardId = null)
+    fun `every profile comes back with its boards, origins, start board and exit lock`() {
+        // Léo protégé, Anna non : un aller-retour qui perdrait l'option la remettrait à protégé.
+        val anna = ProfileEntity(id = 4, name = "Anna", startBoardId = null, isExitLocked = false)
         val annaHome = BoardEntity(id = 1000, name = "Accueil", rowCount = 2, columnCount = 3, profileId = 4, coreBoardId = 1)
         val twoProfiles = content.copy(profiles = listOf(leo, anna), boards = content.boards + annaHome, cells = cells + cell(20, 1000, 0, 0, "moi"))
 
@@ -295,6 +296,31 @@ class BackupArchiveTest {
         assertEquals(twoProfiles.profiles, restored.profiles)
         assertEquals(twoProfiles.boards.toSet(), restored.boards.toSet())
         assertEquals(listOf(1L, 1L, 1L, 4L), restored.boards.sortedBy { it.id }.map { it.profileId })
+    }
+
+    private fun withExitLockOfFirstProfile(change: (JSONObject) -> Unit): Map<String, String> {
+        val archive = entries().toMutableMap()
+        val manifest = JSONObject(checkNotNull(archive[MANIFEST_PATH]))
+        change(manifest.getJSONArray("ext_papotons_profiles").getJSONObject(0))
+        archive[MANIFEST_PATH] = manifest.toString()
+        return archive
+    }
+
+    /** Sauvegarde d'avant l'option : protégé, comme un nouvel utilisateur. */
+    @Test
+    fun `a profile without exit lock comes back locked`() {
+        val absent = withExitLockOfFirstProfile { it.remove("ext_papotons_exit_locked") }
+        val written = withExitLockOfFirstProfile { it.put("ext_papotons_exit_locked", JSONObject.NULL) }
+
+        assertTrue(restore(absent).profiles.single().isExitLocked)
+        assertTrue(restore(written).profiles.single().isExitLocked)
+    }
+
+    @Test
+    fun `an exit lock that is not a boolean is refused, never read as missing`() {
+        val archive = withExitLockOfFirstProfile { it.put("ext_papotons_exit_locked", "false") }
+
+        assertRefused(RefusalReason.Invalid) { restore(archive) }
     }
 
     @Test

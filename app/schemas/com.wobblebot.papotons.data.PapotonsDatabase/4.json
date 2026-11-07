@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 4,
-    "identityHash": "dc772e84944a0281a595d02f35b4c159",
+    "identityHash": "05f160b66ff3a4fa4308b1bd2d4d58e6",
     "entities": [
       {
         "tableName": "profiles",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `start_board_id` INTEGER)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `start_board_id` INTEGER, `is_exit_locked` INTEGER NOT NULL DEFAULT 1)",
         "fields": [
           {
             "fieldPath": "id",
@@ -24,6 +24,13 @@
             "fieldPath": "startBoardId",
             "columnName": "start_board_id",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "isExitLocked",
+            "columnName": "is_exit_locked",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
           }
         ],
         "primaryKey": {
@@ -220,7 +227,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'dc772e84944a0281a595d02f35b4c159')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '05f160b66ff3a4fa4308b1bd2d4d58e6')"
     ]
   }
 }

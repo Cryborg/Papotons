@@ -1,5 +1,10 @@
 package com.wobblebot.papotons.ui.board
 
+import android.view.View
+import androidx.compose.ui.platform.LocalView
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import android.graphics.BitmapFactory
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -22,6 +27,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.test.ForcedSize
 import androidx.compose.ui.test.DeviceConfigurationOverride
@@ -75,6 +81,9 @@ private val LANDSCAPE_PHONE_WIDTH = 740.dp
 private val LANDSCAPE_PHONE_HEIGHT = 360.dp
 private const val LARGE_CELLS_ROWS = 3
 private const val LARGE_CELLS_COLUMNS = 4
+// Une barre de navigation à trois boutons, ou plus.
+private const val NAVIGATION_BAR_HEIGHT_PX = 200
+private const val INSET_TOLERANCE_DP = 0.5f
 
 /**
  * Invariant 3 à l'écran : ce qui change autour de la grille (alerte de voix, message,
@@ -102,10 +111,11 @@ class BoardScreenLayoutTest {
     private fun assertCellsStayPut(fontScale: Float) {
         var state by mutableStateOf(homeState)
         var profileName by mutableStateOf<String?>(null)
+        var isLeaveGated by mutableStateOf(true)
         composeRule.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
-                PapotonsTheme { BoardScreen(state = state, actions = noActions, profileName = profileName) }
+                PapotonsTheme { BoardScreen(state = state, actions = noActions, profileName = profileName, isLeaveGated = isLeaveGated) }
             }
         }
         val original = cellBounds("Manger")
@@ -116,6 +126,10 @@ class BoardScreenLayoutTest {
         assertEquals("profile name", original, cellBounds("Manger"))
         profileName = "Marie-Charlotte Bernadette de la Fontaine"
         assertEquals("long profile name", original, cellBounds("Manger"))
+        // L'option de sortie décochée change le bouton Bureau, pas la barre.
+        isLeaveGated = false
+        composeRule.onNodeWithContentDescription(context.getString(R.string.adult_bar_leave)).assertIsDisplayed()
+        assertEquals("exit lock", original, cellBounds("Manger"))
 
         state = homeState.copy(speechStatus = SpeechStatus.Unavailable)
         // Écrite sur un écran large, réduite à son icône sur un écran étroit.
@@ -484,26 +498,20 @@ class BoardScreenLayoutTest {
     }
 
     @Test
-    fun inPortraitTheSettingsAreInTheAdultBarBelowTheGrid() {
-        // Taille forcée : sur un émulateur couché ou une tablette, la barre passerait en rail.
+    fun inPortraitTheAdultBarIsBelowTheGrid() {
         composeRule.setContent {
             DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(DpSize(PORTRAIT_PHONE_WIDTH, PORTRAIT_PHONE_HEIGHT))) {
                 PapotonsTheme { BoardScreen(state = homeState, actions = noActions, profileName = "Léo") }
             }
         }
 
-        val settings = composeRule.onNodeWithContentDescription(context.getString(R.string.settings_open)).getBoundsInRoot()
-        assertTrue("settings top ${settings.top}, grid bottom ${cellBounds("Manger").bottom}", settings.top >= cellBounds("Manger").bottom)
+        assertAdultBarBelow(cellBounds("Manger"))
         composeRule.onNodeWithContentDescription(context.getString(R.string.adult_bar_profile_description, "Léo")).assertIsDisplayed()
     }
 
-    /**
-     * Téléphone couché : la barre passe en rail à droite de la grille, sans lui prendre de hauteur
-     * (en bas, les grandes cases passeraient sous 48 dp). Assertion de structure : la taille forcée
-     * change la densité, donc les encarts système, et un seuil chiffré ne serait pas fiable.
-     */
+    /** Téléphone couché, grandes cases : la barre reste en bas (plus de rail), sous la dernière ligne. */
     @Test
-    fun inLandscapeTheAdultBarIsARailBesideTheGrid() {
+    fun inLandscapeTheAdultBarStaysBelowTheGrid() {
         val largeCells = (0 until LARGE_CELLS_ROWS * LARGE_CELLS_COLUMNS).map { index ->
             Cell(id = index + 1L, row = index / LARGE_CELLS_COLUMNS, column = index % LARGE_CELLS_COLUMNS, label = "c$index", linkedBoardId = null)
         }
@@ -514,11 +522,65 @@ class BoardScreenLayoutTest {
             }
         }
 
+        assertAdultBarBelow(cellBounds("c${LARGE_CELLS_ROWS * LARGE_CELLS_COLUMNS - 1}"))
+    }
+
+    private fun assertAdultBarBelow(lastCell: DpRect) {
         val settings = composeRule.onNodeWithContentDescription(context.getString(R.string.settings_open)).getBoundsInRoot()
-        val lastCell = cellBounds("c${LARGE_CELLS_ROWS * LARGE_CELLS_COLUMNS - 1}")
-        assertTrue("settings left ${settings.left}, last cell right ${lastCell.right}", settings.left >= lastCell.right)
-        // À côté de la dernière ligne, pas dessous : la grille garde toute la hauteur.
-        assertTrue("settings top ${settings.top}, last cell bottom ${lastCell.bottom}", settings.top < lastCell.bottom)
+        val leave = composeRule.onNodeWithContentDescription(context.getString(R.string.adult_bar_leave_gated)).getBoundsInRoot()
+        assertTrue("settings top ${settings.top}, last cell bottom ${lastCell.bottom}", settings.top >= lastCell.bottom)
+        assertTrue("leave top ${leave.top}, last cell bottom ${lastCell.bottom}", leave.top >= lastCell.bottom)
+        assertTrue("leave right ${leave.right}, settings left ${settings.left}", leave.right <= settings.left)
+    }
+
+    /** Le bouton Bureau appelle sa propre action, protégé (grisé mais touchable) ou non : le contrôle se décide plus haut. */
+    @Test
+    fun theLeaveButtonCallsItsActionEvenWhenGated() {
+        var leaveClicks = 0
+        var settingsClicks = 0
+        var isLeaveGated by mutableStateOf(true)
+        val actions = noActions.copy(onLeaveClick = { leaveClicks++ }, onSettingsClick = { settingsClicks++ })
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = homeState, actions = actions, isLeaveGated = isLeaveGated) } }
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.adult_bar_leave_gated)).performClick()
+        isLeaveGated = false
+        composeRule.onNodeWithContentDescription(context.getString(R.string.adult_bar_leave)).performClick()
+
+        assertEquals(2, leaveClicks)
+        assertEquals(0, settingsClicks)
+    }
+
+    /**
+     * La barre de navigation masquée revient par-dessus (glissement, modale, clavier) : son encart ne
+     * déplace aucune case. En écran partagé, Android ne la masque pas : sa place est réservée.
+     */
+    @Test
+    fun theNavigationBarComingBackMovesNoCell() {
+        lateinit var view: View
+        var isInMultiWindow by mutableStateOf(false)
+        composeRule.setContent {
+            view = LocalView.current
+            PapotonsTheme { BoardScreen(state = homeState, actions = noActions, isInMultiWindow = isInMultiWindow) }
+        }
+        val original = cellBounds("Manger")
+        val settings = composeRule.onNodeWithContentDescription(context.getString(R.string.settings_open)).getBoundsInRoot()
+        // Les encarts du moment (barre d'état, encoche), plus la barre de navigation.
+        val navigationBar = WindowInsetsCompat.Builder(checkNotNull(ViewCompat.getRootWindowInsets(view)))
+            // En bas comme sur une tablette ; sur le côté comme sur un téléphone couché à trois boutons.
+            .setInsets(WindowInsetsCompat.Type.navigationBars(), Insets.of(0, 0, NAVIGATION_BAR_HEIGHT_PX, NAVIGATION_BAR_HEIGHT_PX))
+            .setVisible(WindowInsetsCompat.Type.navigationBars(), true)
+            .build()
+
+        composeRule.runOnUiThread { ViewCompat.dispatchApplyWindowInsets(view, navigationBar) }
+        composeRule.waitForIdle()
+        assertEquals("navigation bar shown", original, cellBounds("Manger"))
+
+        isInMultiWindow = true
+        composeRule.waitForIdle()
+        val reservedSettings = composeRule.onNodeWithContentDescription(context.getString(R.string.settings_open)).getBoundsInRoot()
+        // Exactement la barre injectée : preuve qu'elle est bien arrivée jusqu'à l'écran.
+        val navigationBarHeight = with(composeRule.density) { NAVIGATION_BAR_HEIGHT_PX.toDp() }
+        assertEquals(navigationBarHeight.value, (settings.bottom - reservedSettings.bottom).value, INSET_TOLERANCE_DP)
     }
 
     /** Une grille qui ne se charge pas ne doit pas fermer l'accès aux Réglages (sauvegarde, utilisateurs). */

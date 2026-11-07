@@ -37,6 +37,7 @@ data class ProfileActions(
     val onCreate: (String) -> Unit,
     val onRename: (Long, String) -> Unit,
     val onDelete: (Long) -> Unit,
+    val onExitLockChanged: (profileId: Long, isLocked: Boolean) -> Unit,
 )
 
 /** Pas de modale ouverte. */
@@ -69,7 +70,8 @@ fun ProfilesPage(state: ProfilesUiState, actions: ProfileActions) {
     val isFull = state.profiles.size >= MAX_PROFILES
     AddButton(stringResource(R.string.profile_add), enabled = !state.isWorking && !isFull) { editedProfileId = NEW_PROFILE }
     if (isFull) PageExplanation(stringResource(R.string.profile_limit_reached, MAX_PROFILES))
-    state.failure?.let { failure -> FailureText(stringResource(failure.message)) }
+    // L'option de sortie a son message sur l'accueil des Réglages, où elle se coche.
+    state.failure?.takeIf { it != ProfileFailure.ExitLockNotSaved }?.let { failure -> FailureText(stringResource(failure.message)) }
     if (editedProfileId == NEW_PROFILE) {
         ProfileDialog(
             initialName = null,
@@ -143,10 +145,11 @@ private fun ProfileRow(profile: Profile, isOpen: Boolean, isEnabled: Boolean, on
     }
 }
 
-private val ProfileFailure.message: Int
+internal val ProfileFailure.message: Int
     get() = when (this) {
         ProfileFailure.NotCreated -> R.string.profile_not_created
         ProfileFailure.NotRenamed -> R.string.profile_not_renamed
         ProfileFailure.NotDeleted -> R.string.profile_not_deleted
         ProfileFailure.NotSwitched -> R.string.profile_not_switched
+        ProfileFailure.ExitLockNotSaved -> R.string.profile_exit_lock_not_saved
     }

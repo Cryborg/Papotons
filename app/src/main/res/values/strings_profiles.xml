@@ -24,6 +24,7 @@
     <string name="profile_not_created">L\'utilisateur n\'a pas pu être créé. Réessayez.</string>
     <string name="profile_not_renamed">Le prénom n\'a pas pu être changé. Réessayez.</string>
     <string name="profile_not_deleted">L\'utilisateur n\'a pas pu être supprimé. Réessayez.</string>
+    <string name="profile_exit_lock_not_saved">L\'option n\'a pas pu être enregistrée. Réessayez.</string>
     <string name="profile_not_switched">L\'utilisateur n\'a pas pu être ouvert. Réessayez.</string>
     <!-- Entre deux prénoms d'une liste (confirmation de restauration). -->
     <string name="names_separator">", "</string>

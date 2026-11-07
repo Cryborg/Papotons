@@ -76,6 +76,7 @@ private const val KEY_PHOTO = "ext_papotons_photo"
 private const val KEY_ARASAAC_ID = "ext_papotons_arasaac_id"
 private const val KEY_PROFILES = "ext_papotons_profiles"
 private const val KEY_START_BOARD_ID = "ext_papotons_start_board_id"
+private const val KEY_EXIT_LOCKED = "ext_papotons_exit_locked"
 private const val KEY_PROFILE_ID = "ext_papotons_profile_id"
 private const val KEY_CORE_BOARD_ID = "ext_papotons_core_board_id"
 
@@ -237,6 +238,7 @@ fun backupEntries(content: BackupContent, pictogramsInArchive: Set<Long>, photos
         .put(KEY_PROFILES, JSONArray(content.profiles.map { profile ->
             JSONObject().put(KEY_ID, profile.id).put(KEY_NAME, profile.name).also { json ->
                 profile.startBoardId?.let { json.put(KEY_START_BOARD_ID, it) }
+                json.put(KEY_EXIT_LOCKED, profile.isExitLocked)
             }
         }))
     val all = linkedMapOf(MANIFEST_PATH to manifest.toString()) + entries
@@ -278,6 +280,8 @@ fun readManifest(text: String): BackupManifest = parse {
             id = profile.longOrNull(KEY_ID) ?: refuse(RefusalReason.Invalid, "Profile $index without id"),
             name = profile.stringOrNull(KEY_NAME) ?: refuse(RefusalReason.Invalid, "Profile $index without name"),
             startBoardId = profile.longOrNull(KEY_START_BOARD_ID),
+            // Absent (sauvegarde d'avant l'option) : protégé, comme un nouvel utilisateur.
+            isExitLocked = profile.booleanOrNull(KEY_EXIT_LOCKED) ?: true,
         )
     })
 }
@@ -362,6 +366,13 @@ private fun JSONObject.longOrNull(key: String): Long? {
     if (value == null || value == JSONObject.NULL) return null
     val number = (value as? Int)?.toLong() ?: value as? Long ?: (value as? String)?.toLongOrNull()
     return number ?: refuse(RefusalReason.Invalid, "$key is not a whole number")
+}
+
+/** Absent : `null` ; présent mais pas un booléen : refusé. */
+private fun JSONObject.booleanOrNull(key: String): Boolean? {
+    val value = opt(key)
+    if (value == null || value == JSONObject.NULL) return null
+    return value as? Boolean ?: refuse(RefusalReason.Invalid, "$key is not a boolean")
 }
 
 private fun JSONObject.intOrNull(key: String): Int? = longOrNull(key)?.let { value ->

@@ -1,5 +1,7 @@
 package com.wobblebot.papotons.ui.edit
 
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -114,7 +116,9 @@ class EditEntryTest {
     fun theBackupEntryOpensTheBackupInEditMode() {
         openSettings()
 
-        composeRule.onNodeWithText(string(R.string.backup_open)).performScrollTo().performClick()
+        // Action d'accessibilité plutôt qu'un appui : le clavier du contrôle se referme pendant le
+        // défilement, la page bouge sous le doigt et l'appui tomberait à côté.
+        composeRule.onNodeWithText(string(R.string.backup_open)).performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
 
         assertTrue(isEditing())
         assertFalse(isSettingsOpen())
@@ -126,7 +130,7 @@ class EditEntryTest {
     fun theAboutEntryShowsTheArasaacCredit() {
         openSettings()
 
-        composeRule.onNodeWithText(string(R.string.about_open)).performScrollTo().performClick()
+        composeRule.onNodeWithText(string(R.string.about_open)).performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
 
         composeRule.onNodeWithText(string(R.string.about_arasaac_credit)).assertIsDisplayed()
     }

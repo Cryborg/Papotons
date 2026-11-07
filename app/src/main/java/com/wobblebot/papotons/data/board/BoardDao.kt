@@ -112,6 +112,9 @@ abstract class BoardDao {
     @Query("UPDATE profiles SET name = :name WHERE id = :profileId")
     abstract suspend fun renameProfile(profileId: Long, name: String): Int
 
+    @Query("UPDATE profiles SET is_exit_locked = :isLocked WHERE id = :profileId")
+    abstract suspend fun setExitLocked(profileId: Long, isLocked: Boolean): Int
+
     @Query("UPDATE profiles SET start_board_id = :boardId WHERE id = :profileId")
     abstract suspend fun setStartBoard(profileId: Long, boardId: Long): Int
 
