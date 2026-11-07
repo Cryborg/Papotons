@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.wobblebot.papotons.R
+import com.wobblebot.papotons.domain.Caregiver
 import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.Profile
 import com.wobblebot.papotons.ui.about.AboutDialog
@@ -59,6 +60,8 @@ fun SettingsDialog(
     settingFailure: SettingFailure?,
     profiles: ProfilesUiState,
     profileActions: ProfileActions,
+    caregivers: CaregiversUiState,
+    caregiverActions: CaregiverActions,
     onBoardSizeChosen: (BoardSize) -> Unit,
     onEditBoards: () -> Unit,
     onBackup: () -> Unit,
@@ -107,6 +110,8 @@ fun SettingsDialog(
                     HorizontalDivider()
                     val openProfileName = profiles.profiles.firstOrNull { it.id == profiles.openProfileId }?.name
                     BoardSizeChoice(boardSize, openProfileName, settingFailure, onBoardSizeChosen)
+                    HorizontalDivider()
+                    CaregiversSection(caregivers, caregiverActions, SETTINGS_PADDING)
                     HorizontalDivider()
                     SettingsEntry(R.string.backup_open, R.string.settings_backup_description, onBackup)
                     HorizontalDivider()
@@ -197,6 +202,8 @@ private fun SettingsDialogPreview() {
         settingFailure = null,
         profiles = ProfilesUiState(persistentListOf(Profile(1, "Léo"), Profile(2, "Anna")), openProfileId = 1),
         profileActions = ProfileActions(onChosen = {}, onCreate = {}, onRename = { _, _ -> }, onDelete = {}),
+        caregivers = CaregiversUiState(persistentListOf(Caregiver(1, "Marie", codeResetAtMs = null))),
+        caregiverActions = CaregiverActions(onSave = { _, _, _ -> }, onDelete = {}),
         onBoardSizeChosen = {},
         onEditBoards = {},
         onBackup = {},

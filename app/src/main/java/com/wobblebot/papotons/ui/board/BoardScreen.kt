@@ -54,8 +54,10 @@ import com.wobblebot.papotons.ui.backup.BackupUiState
 import com.wobblebot.papotons.ui.backup.BackupViewModel
 import com.wobblebot.papotons.ui.backup.RestoreConfirmDialog
 import com.wobblebot.papotons.ui.edit.CellEditorDialog
-import com.wobblebot.papotons.ui.edit.ParentalGateDialog
+import com.wobblebot.papotons.ui.edit.AdultGateDialog
 import com.wobblebot.papotons.ui.edit.PictogramSearchDialog
+import com.wobblebot.papotons.ui.settings.CaregiverActions
+import com.wobblebot.papotons.ui.settings.CaregiversViewModel
 import com.wobblebot.papotons.ui.settings.ProfileActions
 import com.wobblebot.papotons.ui.settings.ProfilesViewModel
 import com.wobblebot.papotons.ui.settings.SettingsDialog
@@ -89,7 +91,7 @@ data class BoardActions(
     val onBackupClick: () -> Unit,
 )
 
-/** Ce qu'ouvre le contrôle parental quand il est passé. */
+/** Ce qu'ouvre le contrôle des adultes (code d'un accompagnant, ou calcul) quand il est passé. */
 private enum class GatedAction { OpenSettings, AcknowledgeLostBoards, RestoreBackup }
 
 /** Branche [BoardScreen] sur son ViewModel : retour arrière, premier plan, modale de la voix. */
@@ -99,10 +101,16 @@ fun BoardRoute(
     state: BoardUiState,
     backupViewModel: BackupViewModel = hiltViewModel(),
     profilesViewModel: ProfilesViewModel = hiltViewModel(),
+    caregiversViewModel: CaregiversViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
     val backupState by backupViewModel.uiState.collectAsStateWithLifecycle()
     val profilesState by profilesViewModel.uiState.collectAsStateWithLifecycle()
+    // Collecté dès l'écran affiché : le contrôle ne doit pas attendre la lecture au moment de l'appui.
+    val caregiversState by caregiversViewModel.uiState.collectAsStateWithLifecycle()
+    val caregiverActions = remember(caregiversViewModel) {
+        CaregiverActions(onSave = caregiversViewModel::onSave, onDelete = caregiversViewModel::onDelete)
+    }
     val profileActions = remember(profilesViewModel) {
         ProfileActions(
             onChosen = profilesViewModel::onSwitch,
@@ -156,8 +164,12 @@ fun BoardRoute(
         val isAwaitingOtherApp = viewModel.isAwaitingPhoto || backupViewModel.isAwaitingDocument
         val isLeaving = activity?.isChangingConfigurations != true
         if (isLeaving && !isAwaitingOtherApp) viewModel.onStopEditing()
-        // Même en attente d'une autre appli : les Réglages n'en ouvrent aucune.
-        if (isLeaving) viewModel.onCloseSettings()
+        // Même en attente d'une autre appli : les Réglages n'en ouvrent aucune. Le contrôle non plus :
+        // passé la multiplication de « Code oublié ? », il ouvrirait l'accès à qui reprend la tablette.
+        if (isLeaving) {
+            viewModel.onCloseSettings()
+            gatedAction = null
+        }
     }
     // À l'accueil, le retour arrière garde son sens habituel (quitter l'appli) ; en édition, il la termine.
     BackHandler(enabled = state.board?.canGoBack == true, onBack = viewModel::onBack)
@@ -169,7 +181,10 @@ fun BoardRoute(
     BoardScreen(state = state, actions = actions, hasUnsavedChanges = backupState.hasUnsavedChanges)
     // Un échec d'une ouverture précédente ne s'affiche plus.
     LaunchedEffect(state.isSettingsOpen) {
-        if (state.isSettingsOpen) profilesViewModel.onShown()
+        if (state.isSettingsOpen) {
+            profilesViewModel.onShown()
+            caregiversViewModel.onShown()
+        }
     }
     if (state.isSettingsOpen) {
         SettingsDialog(
@@ -177,6 +192,8 @@ fun BoardRoute(
             settingFailure = state.settingFailure,
             profiles = profilesState,
             profileActions = profileActions,
+            caregivers = caregiversState,
+            caregiverActions = caregiverActions,
             onBoardSizeChosen = viewModel::onBoardSizeChosen,
             onEditBoards = viewModel::onStartEditing,
             // La sauvegarde n'existe qu'en édition : on y entre, comme « Restaurer » des grilles perdues.
@@ -188,8 +205,14 @@ fun BoardRoute(
         )
     }
     gatedAction?.let { action ->
-        ParentalGateDialog(
-            onPassed = {
+        AdultGateDialog(
+            state = caregiversState,
+            onVerify = caregiversViewModel::verify,
+            onRecover = caregiversViewModel::recover,
+            onPassed = passed@{
+                // Relu à l'appel : une vérification finie juste après un départ (ON_STOP a fermé le
+                // contrôle, la recomposition n'est pas encore passée) n'ouvre rien.
+                if (gatedAction != action) return@passed
                 gatedAction = null
                 when (action) {
                     GatedAction.OpenSettings -> viewModel.onOpenSettings()

@@ -40,7 +40,7 @@ Lu par les skills et agents du plugin `socle` (review-and-fix, lessons, push-own
 - R15 du scan mécanique sur `ui/board/SpeechUnavailableDialog.kt`, `ui/board/LostBoardsDialog.kt`, `ui/board/VolumeLockedDialog.kt`, `ui/board/EditBanner.kt`, `ui/edit/ParentalGateDialog.kt`, `ui/about/AboutDialog.kt`, `ui/backup/BackupDialog.kt`, `ui/backup/RestoreConfirmDialog.kt`, `ui/settings/SettingsDialog.kt` et `ui/settings/ProfileDialog.kt` : leurs boutons portent un texte, qui leur sert de description.
 - R9 du scan mécanique sur `data/photo/CellPhotos.kt` : ensembles concurrents d'un singleton (photos absentes déjà signalées, photos illisibles), jamais un état Compose.
 - R12 du scan mécanique sur `data/pictogram/ArasaacClient.kt` : le `launch` est le gardien qui ferme la connexion à l'annulation, enfant structuré du `withContext` qui l'attend.
-- R10 du scan mécanique sur `ui/edit/ParentalGateDialog.kt` : le toast « Réponse incorrecte » est voulu, TalkBack le lit et il survit à la fermeture du contrôle (une snackbar disparaîtrait avec lui).
+- R10 du scan mécanique sur `ui/edit/ParentalGateDialog.kt` et `ui/edit/CaregiverGateDialog.kt` : le toast « Réponse incorrecte » (ou « Code incorrect ») est voulu, TalkBack le lit et il survit à la fermeture du contrôle (une snackbar disparaîtrait avec lui).
 
 ## Plan
 
