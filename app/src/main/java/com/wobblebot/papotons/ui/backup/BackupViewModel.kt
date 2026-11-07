@@ -106,7 +106,7 @@ class BackupViewModel @Inject constructor(
 
     /**
      * Le document créé pour la sauvegarde. Faux s'il revient plus de [PHOTO_REQUEST_TIMEOUT_MS] après
-     * la demande : l'adulte est parti, l'édition doit se terminer, et le document vide est supprimé.
+     * la demande : l'adulte est parti, l'édition doit se terminer, et le document est supprimé s'il est vide.
      */
     fun onSaveDocument(document: Uri?): Boolean {
         // Aucune demande dans ce processus : il est mort pendant le créateur de document, que l'adulte
@@ -114,7 +114,7 @@ class BackupViewModel @Inject constructor(
         val isInTime = takeRequestInTime() ?: true
         // Trop tard, même annulé : l'adulte est parti, l'édition se termine.
         if (!isInTime) {
-            if (document != null) viewModelScope.launch { store.deleteDocument(document) }
+            if (document != null) viewModelScope.launch { store.deleteEmptyDocument(document) }
             return false
         }
         if (document == null) return true

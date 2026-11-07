@@ -42,7 +42,7 @@ private val HAS_UNSAVED_CHANGES = booleanPreferencesKey("has_unsaved_changes")
 class FakeBackupStore : BackupStore {
     val exported = mutableListOf<Uri>()
     val restored = mutableListOf<PendingRestore>()
-    val deletedDocuments = mutableListOf<Uri>()
+    val documentsOfferedForDeletion = mutableListOf<Uri>()
     var discardCount = 0
     var exportFailure: Exception? = null
     var restoreFailure: Exception? = null
@@ -77,8 +77,8 @@ class FakeBackupStore : BackupStore {
         discardCount++
     }
 
-    override suspend fun deleteDocument(document: Uri) {
-        deletedDocuments += document
+    override suspend fun deleteEmptyDocument(document: Uri) {
+        documentsOfferedForDeletion += document
     }
 }
 
@@ -142,7 +142,7 @@ class BackupViewModelTest {
     }
 
     @Test
-    fun `a document coming back too late is deleted and ends the edit`() = runTest(dispatcher) {
+    fun `a document coming back too late is offered for deletion if empty and ends the edit`() = runTest(dispatcher) {
         val viewModel = viewModel()
         viewModel.onSaveRequested("%1\$s")
         nowMs += PHOTO_REQUEST_TIMEOUT_MS + 1
@@ -150,7 +150,7 @@ class BackupViewModelTest {
         assertFalse(viewModel.onSaveDocument(document))
 
         assertTrue(store.exported.isEmpty())
-        assertEquals(listOf(document), store.deletedDocuments)
+        assertEquals(listOf(document), store.documentsOfferedForDeletion)
     }
 
     @Test
@@ -160,7 +160,7 @@ class BackupViewModelTest {
         assertTrue(viewModel.onSaveDocument(document))
 
         assertEquals(listOf(document), store.exported)
-        assertTrue(store.deletedDocuments.isEmpty())
+        assertTrue(store.documentsOfferedForDeletion.isEmpty())
     }
 
     @Test
@@ -181,7 +181,7 @@ class BackupViewModelTest {
         assertTrue(viewModel.onSaveDocument(null))
 
         assertFalse(viewModel.isAwaitingDocument)
-        assertTrue(store.exported.isEmpty() && store.deletedDocuments.isEmpty())
+        assertTrue(store.exported.isEmpty() && store.documentsOfferedForDeletion.isEmpty())
         assertNull(viewModel.uiState.value.message)
     }
 

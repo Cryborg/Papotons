@@ -1,5 +1,6 @@
 package com.wobblebot.papotons.data.backup
 
+import android.content.ContentResolver
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -40,6 +41,8 @@ import javax.inject.Singleton
 
 private const val TAG = "BoardBackup"
 private const val RESTORE_FILE = "restore.obz"
+private const val TRUNCATING_WRITE_MODE = "wt"
+private const val WRITE_MODE = "w"
 
 /** Une copie de base corrompue (quelques centaines de Ko en pratique) lue en mémoire avant d'être écrite. */
 private const val MAX_RECOVERY_FILE_BYTES = 64L * 1024 * 1024
@@ -68,9 +71,11 @@ data class PendingRestore(val fileName: String?, val content: BackupContent) {
  */
 interface BackupStore {
     /**
-     * Écrit toutes les grilles dans [destination] ; en cas d'échec, le document est supprimé. Rend le
-     * nombre d'images présentes sur l'appareil mais laissées de côté parce qu'abîmées (leurs cases
-     * gardent la référence) : la sauvegarde n'est alors pas complète.
+     * Écrit toutes les grilles dans [destination]. Un échec avant de l'ouvrir laisse le document tel
+     * quel (sauf vide : il passerait pour une sauvegarde, il est supprimé) ; un échec après l'avoir
+     * ouvert, donc tronqué, le supprime, au mieux. Rend le nombre d'images présentes sur l'appareil
+     * mais laissées de côté parce qu'abîmées (leurs cases gardent la référence) : la sauvegarde
+     * n'est alors pas complète.
      */
     suspend fun export(destination: Uri): Int
 
@@ -83,8 +88,11 @@ interface BackupStore {
     /** Oublie la sauvegarde lue et pas restaurée. */
     suspend fun discard()
 
-    /** Un document créé pour rien (sauvegarde revenue trop tard) : supprimé, au mieux. */
-    suspend fun deleteDocument(document: Uri)
+    /**
+     * Un document revenu trop tard : supprimé s'il est vide (créé pour rien). S'il a un contenu, ou
+     * qu'on ne sait pas le lire, c'est peut-être la sauvegarde que l'adulte voulait remplacer : il reste.
+     */
+    suspend fun deleteEmptyDocument(document: Uri)
 }
 
 /**
@@ -107,9 +115,13 @@ class BoardBackup @Inject constructor(
     /** Une lecture, une restauration ou un oubli à la fois : jamais `restore.obz` effacé pendant qu'on le lit. */
     private val restoreFileLock = Mutex()
 
+    /** Le mode qui tronque le document. Remplaçable dans les tests, pour imiter un fournisseur qui le refuse. */
+    internal var truncatingMode = TRUNCATING_WRITE_MODE
+
     // NonCancellable : un retour arrière qui détruit l'écran ne laisse pas une archive tronquée.
     override suspend fun export(destination: Uri): Int = withContext(NonCancellable + Dispatchers.IO) {
         var writeCount = 0L
+        var isDocumentOpened = false
         val leftOut = try {
             // Dans le `try` : une base illisible ne laisse pas un document vide nommé comme une sauvegarde.
             val (content, countAtSnapshot) = repository.snapshot()
@@ -155,11 +167,15 @@ class BoardBackup @Inject constructor(
             if (imageBytes > MAX_IMAGE_BYTES) refuse(RefusalReason.TooLarge, "$imageBytes bytes of images")
             // Valide aussi : une sauvegarde que la restauration refuserait n'est pas écrite.
             val entries = backupEntries(content, pictogramsToWrite, photosToWrite)
+            // L'ouverture tronque le document : ce qui peut se refuser d'avance se refuse ici, où un échec le garde intact.
+            if (pictogramsToWrite.size + photosToWrite.size + entries.size > MAX_ENTRIES) refuse(RefusalReason.TooLarge, "Too many entries")
+            val entriesBytes = entries.values.sumOf { it.toByteArray(Charsets.UTF_8).size.toLong() }
             val output = CountingOutputStream(openForWriting(destination))
-            val budget = ArchiveBudget(output)
-            // La place des grilles et du manifeste, écrits après le secours, est gardée d'avance.
-            budget.reserve(entries.values.sumOf { it.toByteArray(Charsets.UTF_8).size.toLong() }, entries.size)
+            isDocumentOpened = true
             output.use {
+                val budget = ArchiveBudget(output)
+                // La place des grilles et du manifeste, écrits après le secours, est gardée d'avance.
+                budget.reserve(entriesBytes, entries.size)
                 ZipOutputStream(output).use { zip ->
                     for (id in pictogramsToWrite) {
                         val image = pictograms.open(id) ?: throw FileNotFoundException("Pictogram vanished")
@@ -179,8 +195,7 @@ class BoardBackup @Inject constructor(
             if (damaged > 0) Log.e(TAG, "$damaged damaged images left out of the backup")
             damaged
         } catch (throwable: Throwable) {
-            // Jamais une archive partielle que l'adulte prendrait pour une sauvegarde, quoi qu'il arrive.
-            deleteDocument(destination)
+            cleanUpAfterFailure(destination, isDocumentOpened, throwable)
             if (throwable is OutOfMemoryError) throw OutOfMemoryWhileWriting()
             throw throwable
         }
@@ -188,6 +203,26 @@ class BoardBackup @Inject constructor(
         // laissée de côté manque à la sauvegarde : les grilles ne se disent pas sauvegardées.
         if (leftOut == 0) repository.markSaved(writeCount)
         leftOut
+    }
+
+    /**
+     * Jamais une archive partielle prise pour une sauvegarde, jamais une sauvegarde effacée pour rien.
+     * Ouvert, le document est tronqué : l'ancien contenu est perdu, il ne reste qu'une archive partielle.
+     * Pas encore ouvert, il n'a pas changé : c'est peut-être la sauvegarde que l'adulte voulait remplacer.
+     */
+    private fun cleanUpAfterFailure(destination: Uri, isDocumentOpened: Boolean, cause: Throwable) {
+        try {
+            if (isDocumentOpened) {
+                // Tronqué (ou vide, par le repli) : le seul cas où une ancienne sauvegarde peut être perdue, il doit se voir.
+                val outcome = if (delete(destination)) "deleted" else "not deleted"
+                Log.e(TAG, "Backup failed while writing (${cause.javaClass.simpleName}), document $outcome")
+            } else {
+                deleteIfEmpty(destination)
+            }
+        } catch (throwable: Throwable) {
+            // Le ménage ne masque jamais l'échec d'origine, même un second manque de mémoire.
+            Log.w(TAG, "Backup clean-up failed: ${throwable.javaClass.simpleName}")
+        }
     }
 
     /** Un manque de mémoire passager n'est pas une sauvegarde trop grosse : on peut réessayer. */
@@ -217,17 +252,78 @@ class BoardBackup @Inject constructor(
         return if (pictograms.decode(bytes) == null) RefusalReason.Unreadable else null
     }
 
-    /** `"wt"` tronque un document existant ; certains fournisseurs ne le connaissent pas, et il vient d'être créé. */
+    /**
+     * `"wt"` tronque un document existant (« Remplacer » dans le créateur de document). Certains
+     * fournisseurs ne le connaissent pas ; `"w"` ne tronque pas, et la queue d'une ancienne sauvegarde
+     * plus longue rendrait la nouvelle illisible : ce repli n'écrit que dans un document vide.
+     */
     private fun openForWriting(destination: Uri): OutputStream {
-        val resolver = context.contentResolver
         val stream = try {
-            resolver.openOutputStream(destination, "wt")
+            context.contentResolver.openOutputStream(destination, truncatingMode)
         } catch (exception: IllegalArgumentException) {
-            resolver.openOutputStream(destination, "w")
+            openWithoutTruncating(destination, exception)
         } catch (exception: FileNotFoundException) {
-            resolver.openOutputStream(destination, "w")
+            openWithoutTruncating(destination, exception)
         }
         return stream ?: throw FileNotFoundException("No output stream")
+    }
+
+    private fun openWithoutTruncating(destination: Uri, refusal: Exception): OutputStream? {
+        val isEmpty = isEmpty(destination)
+        Log.w(TAG, "Truncating open failed (${refusal.javaClass.simpleName}) on ${destination.authority}, document empty: $isEmpty")
+        return when (isEmpty) {
+            true -> context.contentResolver.openOutputStream(destination, WRITE_MODE)
+            false -> throw IOException("Cannot replace a backup without truncating it", refusal)
+            null -> throw IOException("Backup document unreadable, not written", refusal)
+        }
+    }
+
+    /**
+     * `null` quand on ne sait pas. Lit un octet ; la taille annoncée par le fournisseur ne sert qu'à
+     * dire « non vide » : elle peut manquer (et `getLong` sur une colonne nulle rend 0), et le flux d'un
+     * fournisseur en ligne coupé finit sans erreur, comme un document vide.
+     */
+    private fun isEmpty(document: Uri): Boolean? = try {
+        if ((announcedSize(document) ?: 0L) > 0L) false else context.contentResolver.openInputStream(document)?.use { it.read() < 0 }
+    } catch (exception: IOException) {
+        null
+    } catch (exception: RuntimeException) {
+        null
+    }
+
+    /** `null` si le fournisseur ne la donne pas : la lecture d'un octet décide alors. */
+    private fun announcedSize(document: Uri): Long? = try {
+        context.contentResolver.query(document, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            val column = cursor.getColumnIndex(OpenableColumns.SIZE)
+            if (cursor.moveToFirst() && column >= 0 && !cursor.isNull(column)) cursor.getLong(column) else null
+        }
+    } catch (exception: RuntimeException) {
+        null
+    }
+
+    /** Un document qu'on ne sait pas vide n'est jamais supprimé. */
+    private fun deleteIfEmpty(document: Uri) {
+        when (isEmpty(document)) {
+            true -> if (delete(document)) Log.i(TAG, "Empty backup document deleted")
+            false -> Log.w(TAG, "Backup document not empty, kept")
+            null -> Log.w(TAG, "Backup document unreadable, kept")
+        }
+    }
+
+    /** Au mieux : faux si on ne l'a pas supprimé (il peut être resté). */
+    private fun delete(document: Uri): Boolean = try {
+        val isDeleted = if (document.scheme == ContentResolver.SCHEME_FILE) {
+            // Un `file://` (les tests) n'a pas de fournisseur : `DocumentsContract.deleteDocument` le refuse.
+            document.path?.let { File(it).delete() } == true
+        } else {
+            DocumentsContract.deleteDocument(context.contentResolver, document)
+        }
+        if (!isDeleted) Log.w(TAG, "Backup document not deleted")
+        isDeleted
+    } catch (exception: Exception) {
+        // Fournisseur sans suppression, document déjà parti : on aura essayé.
+        Log.w(TAG, "Backup document could not be deleted: ${exception.javaClass.simpleName}")
+        false
     }
 
     /**
@@ -387,15 +483,8 @@ class BoardBackup @Inject constructor(
     override suspend fun discard(): Unit = withContext(Dispatchers.IO) { restoreFileLock.withLock { discardFile() } }
 
     // NonCancellable : un écran détruit ne laisse pas un document vide pris pour une sauvegarde.
-    override suspend fun deleteDocument(document: Uri) {
-        withContext(NonCancellable + Dispatchers.IO) {
-            try {
-                if (!DocumentsContract.deleteDocument(context.contentResolver, document)) Log.w(TAG, "Backup document not deleted")
-            } catch (exception: Exception) {
-                // Fournisseur sans suppression, document déjà parti : on aura essayé.
-                Log.w(TAG, "Backup document could not be deleted: ${exception.javaClass.simpleName}")
-            }
-        }
+    override suspend fun deleteEmptyDocument(document: Uri) {
+        withContext(NonCancellable + Dispatchers.IO) { deleteIfEmpty(document) }
     }
 
     private fun discardFile() {

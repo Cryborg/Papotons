@@ -33,6 +33,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
@@ -243,6 +244,98 @@ class BoardBackupTest {
         }
 
         assertTrue(repository.observeUnsavedChanges().first())
+    }
+
+    private suspend inline fun <reified T : Throwable> exportFails(document: File) {
+        try {
+            backup.export(Uri.fromFile(document))
+            fail("The backup should fail")
+        } catch (throwable: Throwable) {
+            if (throwable !is T) throw throwable
+        }
+    }
+
+    @Test
+    fun aFailedBackupKeepsTheBackupItWasToReplace() = runBlocking {
+        backup.export(Uri.fromFile(archive))
+        val previous = archive.readBytes()
+        // Échoue au `snapshot()`, avant l'ouverture du document.
+        database.close()
+
+        exportFails<IllegalStateException>(archive)
+
+        assertArrayEquals(previous, archive.readBytes())
+    }
+
+    @Test
+    fun aFailedBackupDeletesTheEmptyDocumentItWasGiven() = runBlocking {
+        archive.writeBytes(ByteArray(0))
+        database.close()
+
+        exportFails<IllegalStateException>(archive)
+
+        assertFalse(archive.exists())
+    }
+
+    @Test
+    fun aDocumentThatCannotBeOpenedKeepsItsBackup() = runBlocking {
+        backup.export(Uri.fromFile(archive))
+        val previous = archive.readBytes()
+        // Le propriétaire n'écrit plus dans son fichier (les tests ne tournent pas en root).
+        archive.setWritable(false)
+
+        exportFails<IOException>(archive)
+
+        assertArrayEquals(previous, archive.readBytes())
+    }
+
+    @Test
+    fun withoutTruncationOnlyAnEmptyDocumentIsWritten() = runBlocking {
+        backup.export(Uri.fromFile(archive))
+        // Une queue que l'export ne réécrirait pas à l'identique : un `"w"` qui ne tronque pas se verrait.
+        val previous = archive.readBytes() + ByteArray(1024) { 7 }
+        archive.writeBytes(previous)
+        // Un fournisseur qui ne connaît pas le mode qui tronque.
+        backup.truncatingMode = "refused"
+
+        exportFails<IOException>(archive)
+        assertArrayEquals(previous, archive.readBytes())
+
+        crafted.writeBytes(ByteArray(0))
+        backup.export(Uri.fromFile(crafted))
+        assertEquals(content().withoutCellIds(), backup.analyze(Uri.fromFile(crafted)).content.withoutCellIds())
+    }
+
+    @Test
+    fun withoutTruncationADocumentThatCannotBeReadIsNotWritten() = runBlocking {
+        archive.writeBytes(ByteArray(0))
+        archive.setReadable(false)
+        backup.truncatingMode = "refused"
+
+        exportFails<IOException>(archive)
+
+        archive.setReadable(true)
+        assertTrue(archive.exists())
+        assertEquals(0L, archive.length())
+    }
+
+    @Test
+    fun onlyAnEmptyReadableDocumentComingBackTooLateIsDeleted() = runBlocking {
+        val empty = File(context.cacheDir, "test-empty.obz").apply { writeBytes(ByteArray(0)) }
+        val unreadable = File(context.cacheDir, "test-unreadable.obz").apply { writeBytes(ByteArray(0)) }
+        archive.writeBytes(byteArrayOf(1, 2, 3))
+        try {
+            unreadable.setReadable(false)
+
+            for (document in listOf(empty, archive, unreadable)) backup.deleteEmptyDocument(Uri.fromFile(document))
+
+            assertFalse("empty document", empty.exists())
+            assertTrue("document with a content", archive.exists())
+            assertTrue("document that cannot be read", unreadable.exists())
+        } finally {
+            empty.delete()
+            unreadable.delete()
+        }
     }
 
     @Test
