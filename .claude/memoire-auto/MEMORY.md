@@ -1,1 +1,1 @@
-- [Tests instrumentés sur l'émulateur seul](tests-instrumentes-emulateur-seul.md) — ANDROID_SERIAL=emulator-5554, le téléphone de Franck peut être branché
+- [Tests instrumentés sur l'émulateur seul](tests-instrumentes-emulateur-seul.md) — ANDROID_SERIAL=emulator-5554 ; tablette et téléphone de Franck : essai visuel par adb install -r seulement
