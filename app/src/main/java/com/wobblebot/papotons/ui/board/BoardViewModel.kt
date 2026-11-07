@@ -1,12 +1,16 @@
 package com.wobblebot.papotons.ui.board
 
+import android.database.sqlite.SQLiteConstraintException
+import android.database.sqlite.SQLiteException
 import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wobblebot.papotons.data.board.BoardRepository
+import com.wobblebot.papotons.data.board.CellNotFoundException
 import com.wobblebot.papotons.domain.Board
 import com.wobblebot.papotons.domain.Cell
+import com.wobblebot.papotons.domain.CellContent
 import com.wobblebot.papotons.domain.SentenceWord
 import com.wobblebot.papotons.domain.layoutGrid
 import com.wobblebot.papotons.domain.sentenceTokens
@@ -31,9 +35,18 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.IOException
 import javax.inject.Inject
 
 private const val TAG = "BoardViewModel"
+
+/** Ce que l'écran lit en plus de la grille et de la phrase, regroupé pour tenir dans un `combine`. */
+private data class SecondaryState(
+    val isMuted: Boolean,
+    val isVolumeLockedDialogOpen: Boolean,
+    val isEditing: Boolean,
+    val editor: CellEditorState?,
+)
 internal const val NAVIGATION_KEY = "navigation"
 internal const val MESSAGE_KEY = "message"
 internal const val STOP_TIMEOUT_MS = 5_000L
@@ -61,6 +74,14 @@ class BoardViewModel @Inject constructor(
     private val isVolumeLockedDialogOpen = MutableStateFlow(false)
 
     /**
+     * Le mode édition et son éditeur, derrière le contrôle parental : jamais dans [savedState], pour
+     * qu'aucun ne se rouvre sans contrôle après la mort du processus.
+     */
+    private val isEditing = MutableStateFlow(false)
+    private val editor = MutableStateFlow<CellEditorState?>(null)
+    private var writeCount = 0L
+
+    /**
      * La grille affichée reste la précédente tant que la suivante n'est pas lue : une grille
      * introuvable n'émet rien (pas d'écran vide en passant), elle fait seulement revenir d'un cran.
      * `null` seulement avant que l'accueil ne soit connu : à la reprise de la collecte (écran
@@ -81,15 +102,19 @@ class BoardViewModel @Inject constructor(
             speaker.status,
             // Faux d'ici la première lecture : l'écran n'attend pas l'alerte pour s'afficher.
             repository.observeLostBoards().onStart { emit(false) },
-            combine(mediaVolume.isMuted, isVolumeLockedDialogOpen) { isMuted, isDialogOpen -> isMuted to (isMuted && isDialogOpen) },
-        ) { board, words, speechStatus, hasLostBoards, (isMuted, isVolumeLocked) ->
+            combine(mediaVolume.isMuted, isVolumeLockedDialogOpen, isEditing, editor) { isMuted, isDialogOpen, isEditing, editor ->
+                SecondaryState(isMuted = isMuted, isVolumeLockedDialogOpen = isMuted && isDialogOpen, isEditing = isEditing, editor = editor)
+            },
+        ) { board, words, speechStatus, hasLostBoards, secondary ->
             BoardUiState(
                 board = board,
                 message = sentenceTokens(words).toImmutableList(),
                 speechStatus = speechStatus,
                 hasLostBoards = hasLostBoards,
-                isMuted = isMuted,
-                isVolumeLockedDialogOpen = isVolumeLocked,
+                isMuted = secondary.isMuted,
+                isVolumeLockedDialogOpen = secondary.isVolumeLockedDialogOpen,
+                isEditing = secondary.isEditing,
+                editor = secondary.editor,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), BoardUiState())
 
@@ -113,6 +138,12 @@ class BoardViewModel @Inject constructor(
     }
 
     fun onCellClick(cell: Cell) {
+        // En édition, rien ne parle et aucun dossier ne s'ouvre : la case s'ouvre dans l'éditeur.
+        if (isEditing.value) {
+            val boardId = uiState.value.board?.id ?: return
+            editor.value = CellEditorState(EditTarget.ExistingCell(boardId, cell))
+            return
+        }
         val linkedBoardId = cell.linkedBoardId
         if (linkedBoardId != null) {
             // Un second appui pendant que la grille suivante se charge viserait encore l'ancienne
@@ -149,6 +180,91 @@ class BoardViewModel @Inject constructor(
         // Des mots touchés en rafale peuvent encore attendre leur tour : effacer les fait taire.
         speaker.stop()
         message.value = persistentListOf()
+    }
+
+    /** Après le contrôle parental. Les mots encore en file se taisent. */
+    fun onStartEditing() {
+        speaker.stop()
+        isEditing.value = true
+    }
+
+    /** « Terminer », et tout départ de l'appli (`ON_STOP`) : la tablette rendue à l'enfant n'est jamais en édition. */
+    fun onStopEditing() {
+        isEditing.value = false
+        editor.value = null
+    }
+
+    fun onEmptySlotClick(row: Int, column: Int) {
+        if (!isEditing.value) return
+        val boardId = uiState.value.board?.id ?: return
+        editor.value = CellEditorState(EditTarget.NewCell(boardId, row, column))
+    }
+
+    fun onEditorClose() {
+        editor.update { current -> if (current?.isWriting == true) current else null }
+    }
+
+    /** [asFolder] ne compte que pour une nouvelle case : une case existante garde son type. */
+    fun onEditorSave(content: CellContent, asFolder: Boolean) {
+        writeFromEditor { target ->
+            when (target) {
+                is EditTarget.NewCell ->
+                    if (asFolder) {
+                        repository.addFolder(target.boardId, target.row, target.column, content)
+                    } else {
+                        repository.addWord(target.boardId, target.row, target.column, content)
+                    }
+                is EditTarget.ExistingCell -> repository.updateCell(target.cell, content)
+            }
+        }
+    }
+
+    fun onEditorDelete() {
+        writeFromEditor { target ->
+            if (target is EditTarget.ExistingCell) {
+                repository.deleteCell(target.cell, target.boardId, openRootBoardId = navigation.value.first())
+            }
+        }
+    }
+
+    /** Pour modifier le contenu d'un dossier : on y entre, toujours en édition. */
+    fun onEditorOpenFolder() {
+        val target = editor.value?.target as? EditTarget.ExistingCell ?: return
+        val linkedBoardId = target.cell.linkedBoardId ?: return
+        editor.value = null
+        navigation.update { stack -> if (isShowingTopOf(stack)) stack.adding(linkedBoardId) else stack }
+    }
+
+    private fun writeFromEditor(write: suspend (EditTarget) -> Unit) {
+        val current = editor.value ?: return
+        if (current.isWriting) return
+        val writing = current.copy(isWriting = true, failure = null, writeToken = ++writeCount)
+        editor.value = writing
+        viewModelScope.launch {
+            // Le résultat ne touche que l'éditeur qui l'a lancé : fermé (Terminer, départ) ou rouvert
+            // entre-temps, un autre éditeur ne se referme pas et n'affiche pas l'échec d'un autre.
+            try {
+                write(current.target)
+                editor.compareAndSet(writing, null)
+            } catch (exception: SQLiteConstraintException) {
+                // Emplacement pris entre-temps (un « + » pas encore rafraîchi) : rien n'est écrit.
+                reportEditFailure(current, writing, EditFailure.SlotTakenOrCellGone, exception)
+            } catch (exception: CellNotFoundException) {
+                reportEditFailure(current, writing, EditFailure.SlotTakenOrCellGone, exception)
+            } catch (exception: SQLiteException) {
+                // Disque plein : rien n'est écrit à moitié (transactions).
+                reportEditFailure(current, writing, EditFailure.Storage, exception)
+            } catch (exception: IOException) {
+                // Marqueur des copies impossible à écrire : rien n'a été écrit en base.
+                reportEditFailure(current, writing, EditFailure.Storage, exception)
+            }
+        }
+    }
+
+    private fun reportEditFailure(current: CellEditorState, writing: CellEditorState, failure: EditFailure, exception: Exception) {
+        // Ni libellé ni contenu dans le journal : ce sont les mots de l'utilisateur.
+        Log.e(TAG, "Edit on board ${current.target.boardId} failed ($failure)", exception)
+        editor.compareAndSet(writing, current.copy(isWriting = false, failure = failure))
     }
 
     fun onAcknowledgeLostBoards() {

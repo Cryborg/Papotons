@@ -7,6 +7,7 @@ import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -43,6 +44,8 @@ import com.wobblebot.papotons.domain.SentenceToken
 import com.wobblebot.papotons.domain.layoutGrid
 import com.wobblebot.papotons.speech.SpeechStatus
 import com.wobblebot.papotons.ui.about.AboutDialog
+import com.wobblebot.papotons.ui.edit.CellEditorDialog
+import com.wobblebot.papotons.ui.edit.ParentalGateDialog
 import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import kotlinx.collections.immutable.persistentListOf
 
@@ -63,7 +66,12 @@ data class BoardActions(
     val onMutedAlertClick: () -> Unit,
     val onLostBoardsAlertClick: () -> Unit,
     val onAboutClick: () -> Unit,
+    val onEmptySlotClick: (row: Int, column: Int) -> Unit,
+    val onStopEditing: () -> Unit,
 )
+
+/** Ce qu'ouvre le contrôle parental quand il est passé. */
+private enum class GatedAction { StartEditing, AcknowledgeLostBoards }
 
 /** Branche [BoardScreen] sur son ViewModel : retour arrière, premier plan, modale de la voix. */
 @Composable
@@ -73,6 +81,9 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
     var areSettingsUnreachable by rememberSaveable { mutableStateOf(false) }
     var isAboutOpen by rememberSaveable { mutableStateOf(false) }
     var isLostBoardsDialogOpen by rememberSaveable { mutableStateOf(false) }
+    // Devant le contrôle, pas derrière : le restaurer ne fait que redemander la réponse.
+    var gatedAction by rememberSaveable { mutableStateOf<GatedAction?>(null) }
+    val activity = LocalActivity.current
     val actions = remember(viewModel) {
         BoardActions(
             onCellClick = viewModel::onCellClick,
@@ -88,13 +99,50 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
             onMutedAlertClick = viewModel::onMutedAlertClick,
             onLostBoardsAlertClick = { isLostBoardsDialogOpen = true },
             onAboutClick = { isAboutOpen = true },
+            onEmptySlotClick = viewModel::onEmptySlotClick,
+            onStopEditing = viewModel::onStopEditing,
         )
     }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.recoverSpeech() }
-    // À l'accueil, le retour arrière garde son sens habituel (quitter l'appli).
+    // Un vrai départ (écran éteint, autre appli) termine l'édition : la tablette rendue à l'enfant
+    // n'y est jamais. Une rotation, qui passe aussi par ON_STOP, la garde.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        if (activity?.isChangingConfigurations != true) viewModel.onStopEditing()
+    }
+    // À l'accueil, le retour arrière garde son sens habituel (quitter l'appli) ; en édition, il la termine.
     BackHandler(enabled = state.board?.canGoBack == true, onBack = viewModel::onBack)
+    BackHandler(enabled = state.isEditing && state.board?.canGoBack != true, onBack = viewModel::onStopEditing)
     BoardScreen(state = state, actions = actions)
-    if (isAboutOpen) AboutDialog(onClose = { isAboutOpen = false })
+    if (isAboutOpen) {
+        AboutDialog(
+            onClose = { isAboutOpen = false },
+            onEditBoards = {
+                isAboutOpen = false
+                gatedAction = GatedAction.StartEditing
+            },
+        )
+    }
+    gatedAction?.let { action ->
+        ParentalGateDialog(
+            onPassed = {
+                gatedAction = null
+                when (action) {
+                    GatedAction.StartEditing -> viewModel.onStartEditing()
+                    GatedAction.AcknowledgeLostBoards -> viewModel.onAcknowledgeLostBoards()
+                }
+            },
+            onClose = { gatedAction = null },
+        )
+    }
+    state.editor?.let { editor ->
+        CellEditorDialog(
+            state = editor,
+            onSave = viewModel::onEditorSave,
+            onDelete = viewModel::onEditorDelete,
+            onOpenFolder = viewModel::onEditorOpenFolder,
+            onClose = viewModel::onEditorClose,
+        )
+    }
     if (state.isVolumeLockedDialogOpen) {
         VolumeLockedDialog(
             onOpenSettings = {
@@ -106,9 +154,10 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
     }
     if (isLostBoardsDialogOpen && state.hasLostBoards) {
         LostBoardsDialog(
+            // Derrière le contrôle parental : c'est souvent la personne elle-même qui ouvre la modale.
             onAcknowledge = {
                 isLostBoardsDialogOpen = false
-                viewModel.onAcknowledgeLostBoards()
+                gatedAction = GatedAction.AcknowledgeLostBoards
             },
             onClose = { isLostBoardsDialogOpen = false },
         )
@@ -156,13 +205,17 @@ fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier =
                 onLostBoardsAlertClick = actions.onLostBoardsAlertClick,
                 onAboutClick = actions.onAboutClick,
             ) {
-                MessageBar(
-                    words = state.message,
-                    onSpeak = actions.onSpeakMessage,
-                    onDeleteLastWord = actions.onDeleteLastWord,
-                    onClear = actions.onClearMessage,
-                    modifier = Modifier.weight(1f),
-                )
+                if (state.isEditing) {
+                    EditBanner(onDone = actions.onStopEditing, modifier = Modifier.weight(1f))
+                } else {
+                    MessageBar(
+                        words = state.message,
+                        onSpeak = actions.onSpeakMessage,
+                        onDeleteLastWord = actions.onDeleteLastWord,
+                        onClear = actions.onClearMessage,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
             if (board == null) {
                 val loadingDescription = stringResource(R.string.board_loading)
@@ -178,6 +231,8 @@ fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier =
                 CommunicationGrid(
                     grid = board.grid,
                     onCellClick = actions.onCellClick,
+                    isEditing = state.isEditing,
+                    onEmptySlotClick = actions.onEmptySlotClick,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
@@ -232,7 +287,7 @@ private fun BoardScreenPreview() {
                 message = persistentListOf(SentenceToken("je", persistentListOf()), SentenceToken("veux", persistentListOf())),
                 speechStatus = SpeechStatus.LanguageMissing,
             ),
-            actions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {}),
+            actions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, {}),
         )
     }
 }

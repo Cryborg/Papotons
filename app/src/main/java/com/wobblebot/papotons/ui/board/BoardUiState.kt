@@ -29,7 +29,11 @@ data class BoardUiState(
     val isMuted: Boolean = false,
     /** Un appui sur « Son coupé » n'a pas pu monter le son : modale pour l'adulte. */
     val isVolumeLockedDialogOpen: Boolean = false,
+    /** Mode édition, ouvert par un adulte après le contrôle parental. */
+    val isEditing: Boolean = false,
+    /** L'éditeur de case ouvert, en édition seulement. */
+    val editor: CellEditorState? = null,
 ) {
-    /** Une phrase est en cours : rien ne doit interrompre (redémarrage de mise à jour). */
-    val isComposingMessage: Boolean get() = message.isNotEmpty()
+    /** Une phrase ou une modification est en cours : rien ne doit interrompre (redémarrage de mise à jour). */
+    val isBusy: Boolean get() = message.isNotEmpty() || isEditing
 }

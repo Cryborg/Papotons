@@ -52,3 +52,11 @@ fun layoutGrid(rowCount: Int, columnCount: Int, cells: List<Cell>): ImmutableLis
     }
     return slots.map { it.toList().toImmutableList() }.toImmutableList()
 }
+
+/** Ce qu'un adulte règle dans une case : jamais sa position (invariant 3). */
+@Immutable
+data class CellContent(
+    val label: String,
+    val pictogramId: Long?,
+    val category: WordCategory?,
+)

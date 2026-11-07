@@ -1,0 +1,254 @@
+package com.wobblebot.papotons.ui.edit
+
+import androidx.annotation.StringRes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.wobblebot.papotons.R
+import com.wobblebot.papotons.domain.CellContent
+import com.wobblebot.papotons.domain.WordCategory
+import com.wobblebot.papotons.ui.board.CellEditorState
+import com.wobblebot.papotons.ui.board.EditFailure
+import com.wobblebot.papotons.ui.board.EditTarget
+import com.wobblebot.papotons.ui.board.Pictogram
+import com.wobblebot.papotons.ui.theme.wordCategoryBackground
+
+private val EDITOR_PADDING = 16.dp
+private val SECTION_SPACING = 16.dp
+private val ITEM_SPACING = 8.dp
+private val PICTOGRAM_PREVIEW_SIZE = 96.dp
+private val CATEGORY_SWATCH_SIZE = 16.dp
+
+/**
+ * L'éditeur d'une case, en plein écran. Le brouillon survit à la rotation (`rememberSaveable`) ;
+ * son ouverture, elle, vient du ViewModel (jamais restaurée sans contrôle parental).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun CellEditorDialog(
+    state: CellEditorState,
+    onSave: (CellContent, asFolder: Boolean) -> Unit,
+    onDelete: () -> Unit,
+    onOpenFolder: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val existing = (state.target as? EditTarget.ExistingCell)?.cell
+    var label by rememberSaveable(state.target) { mutableStateOf(existing?.label.orEmpty()) }
+    var pictogramId by rememberSaveable(state.target) { mutableStateOf(existing?.pictogramId) }
+    var categoryName by rememberSaveable(state.target) { mutableStateOf(existing?.category?.name) }
+    var asFolder by rememberSaveable(state.target) { mutableStateOf(false) }
+    var isLabelMissing by rememberSaveable(state.target) { mutableStateOf(false) }
+    var isDeleteConfirmOpen by rememberSaveable(state.target) { mutableStateOf(false) }
+    val isFolder = existing?.linkedBoardId != null || (existing == null && asFolder)
+    val labelFocus = remember { FocusRequester() }
+
+    Dialog(
+        onDismissRequest = onClose,
+        // Bord à bord : safeDrawingPadding tient lui-même compte des barres et du clavier.
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false, decorFitsSystemWindows = false),
+    ) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .safeDrawingPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(EDITOR_PADDING),
+                verticalArrangement = Arrangement.spacedBy(SECTION_SPACING),
+            ) {
+                Text(
+                    text = stringResource(if (existing == null) R.string.editor_new_title else R.string.editor_edit_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.semantics { heading() },
+                )
+                OutlinedTextField(
+                    value = label,
+                    // Une ligne : la case ne coupe ses mots qu'aux espaces.
+                    onValueChange = { typed ->
+                        label = typed.replace('\n', ' ')
+                        isLabelMissing = false
+                    },
+                    label = { Text(stringResource(R.string.editor_label)) },
+                    singleLine = true,
+                    isError = isLabelMissing,
+                    supportingText = if (isLabelMissing) {
+                        { Text(stringResource(R.string.editor_label_required), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive }) }
+                    } else {
+                        null
+                    },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, imeAction = ImeAction.Done),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(labelFocus),
+                )
+                if (existing == null) {
+                    Section(R.string.editor_kind) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING)) {
+                            FilterChip(selected = !asFolder, onClick = { asFolder = false }, label = { Text(stringResource(R.string.editor_kind_word)) })
+                            FilterChip(selected = asFolder, onClick = { asFolder = true }, label = { Text(stringResource(R.string.editor_kind_folder)) })
+                        }
+                    }
+                }
+                Section(R.string.editor_pictogram) {
+                    val currentPictogram = pictogramId
+                    if (currentPictogram == null) {
+                        Text(stringResource(R.string.editor_no_pictogram))
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING)) {
+                            Pictogram(currentPictogram, Modifier.size(PICTOGRAM_PREVIEW_SIZE))
+                            TextButton(onClick = { pictogramId = null }) { Text(stringResource(R.string.editor_remove_pictogram)) }
+                        }
+                    }
+                }
+                Section(R.string.editor_category) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING)) {
+                        FilterChip(
+                            selected = categoryName == null,
+                            onClick = { categoryName = null },
+                            label = { Text(stringResource(R.string.editor_category_none)) },
+                        )
+                        for (category in WordCategory.entries) {
+                            FilterChip(
+                                selected = categoryName == category.name,
+                                onClick = { categoryName = category.name },
+                                label = { Text(stringResource(category.displayName())) },
+                                leadingIcon = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(CATEGORY_SWATCH_SIZE)
+                                            .background(wordCategoryBackground(category), CircleShape),
+                                    )
+                                },
+                            )
+                        }
+                    }
+                }
+                state.failure?.let { failure ->
+                    Text(
+                        stringResource(if (failure == EditFailure.Storage) R.string.editor_failed_storage else R.string.editor_failed_conflict),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
+                    )
+                }
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING),
+                    verticalArrangement = Arrangement.spacedBy(ITEM_SPACING),
+                ) {
+                    if (existing != null) {
+                        TextButton(onClick = { isDeleteConfirmOpen = true }, enabled = !state.isWriting) {
+                            Text(stringResource(R.string.editor_delete), color = MaterialTheme.colorScheme.error)
+                        }
+                        if (existing.linkedBoardId != null) {
+                            // Seulement sans modification en cours : ouvrir le dossier ferme l'éditeur et
+                            // jetterait le brouillon sans le dire.
+                            val isUnchanged = label == existing.label && pictogramId == existing.pictogramId && categoryName == existing.category?.name
+                            OutlinedButton(onClick = onOpenFolder, enabled = !state.isWriting && isUnchanged) {
+                                Text(stringResource(R.string.editor_open_folder))
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    TextButton(onClick = onClose, enabled = !state.isWriting) { Text(stringResource(R.string.editor_cancel)) }
+                    Button(
+                        onClick = {
+                            val trimmed = label.trim().replace(Regex("\\s+"), " ")
+                            isLabelMissing = trimmed.isEmpty()
+                            if (isLabelMissing) {
+                                labelFocus.requestFocus()
+                            } else {
+                                onSave(CellContent(trimmed, pictogramId, WordCategory.fromStoredName(categoryName)), isFolder)
+                            }
+                        },
+                        enabled = !state.isWriting,
+                    ) {
+                        Text(stringResource(R.string.editor_save))
+                    }
+                }
+            }
+        }
+    }
+    if (isDeleteConfirmOpen && existing != null) {
+        val confirmText = if (existing.linkedBoardId != null) R.string.editor_delete_folder_confirm else R.string.editor_delete_word_confirm
+        AlertDialog(
+            onDismissRequest = { isDeleteConfirmOpen = false },
+            properties = DialogProperties(dismissOnClickOutside = false),
+            text = { Text(stringResource(confirmText, existing.label)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        isDeleteConfirmOpen = false
+                        onDelete()
+                    },
+                ) {
+                    Text(stringResource(R.string.editor_delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { isDeleteConfirmOpen = false }) { Text(stringResource(R.string.editor_cancel)) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun Section(@StringRes title: Int, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(ITEM_SPACING)) {
+        Text(stringResource(title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+        content()
+    }
+}
+
+@StringRes
+private fun WordCategory.displayName(): Int = when (this) {
+    WordCategory.PEOPLE -> R.string.category_people
+    WordCategory.VERB -> R.string.category_verb
+    WordCategory.DESCRIPTOR -> R.string.category_descriptor
+    WordCategory.NOUN -> R.string.category_noun
+    WordCategory.SOCIAL -> R.string.category_social
+    WordCategory.QUESTION -> R.string.category_question
+    WordCategory.NEGATION -> R.string.category_negation
+    WordCategory.LITTLE_WORD -> R.string.category_little_word
+}

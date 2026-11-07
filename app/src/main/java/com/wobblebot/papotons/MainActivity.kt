@@ -88,8 +88,8 @@ private fun PapotonsApp(inAppUpdateManager: InAppUpdateManager) {
     var isUpdatePostponed by rememberSaveable { mutableStateOf(false) }
     val boardViewModel: BoardViewModel = hiltViewModel()
     val boardState by boardViewModel.uiState.collectAsStateWithLifecycle()
-    // Le redémarrage de l'installation ne doit jamais couper quelqu'un au milieu d'une phrase.
-    val isComposingMessage = boardState.isComposingMessage
+    // Le redémarrage de l'installation ne doit jamais couper une phrase ni une modification en cours.
+    val isBusy = boardState.isBusy
 
     Box {
         BoardRoute(viewModel = boardViewModel, state = boardState)
@@ -97,7 +97,7 @@ private fun PapotonsApp(inAppUpdateManager: InAppUpdateManager) {
         if (!isSplashFinished) {
             StudioSplashScreen(onFinished = { isSplashFinished = true })
         }
-        if (isSplashFinished && isUpdateReady && !isUpdatePostponed && !isComposingMessage) {
+        if (isSplashFinished && isUpdateReady && !isUpdatePostponed && !isBusy) {
             UpdateReadyDialog(
                 onInstall = inAppUpdateManager::completeUpdate,
                 onLater = { isUpdatePostponed = true }

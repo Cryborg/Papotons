@@ -11,23 +11,6 @@ import java.util.UUID
 
 private const val TAG = "CorruptionCopying"
 
-/** Dossier de `files/` où atterrissent les copies, une par corruption. */
-const val CORRUPTED_DATABASES_DIRECTORY = "corrupted-databases"
-
-/**
- * Les copies partent dans la sauvegarde Android, plafonnée à 25 Mo (au-delà, elle échoue en
- * entier) : sur un stockage qui flanche, une copie par lancement finirait par la bloquer. On garde
- * la première, la seule à porter les grilles d'avant la première perte (les suivantes ne
- * contiennent que ce qui a été refait depuis), et les plus récentes.
- */
-private const val MAX_KEPT_COPIES = 3
-
-/** Numéro d'ordre en tête du nom, complété de zéros : l'ordre des noms est l'ordre des copies. */
-private const val SEQUENCE_DIGITS = 6
-
-/** Nom d'une copie en cours, jamais comptée parmi les gardées. */
-private const val PENDING_PREFIX = ".pending-"
-
 /** Ce que `SQLiteDatabase.deleteDatabase` efface avec la base (hors `-mj*`, transitoires). */
 private val COMPANION_SUFFIXES = listOf("", "-wal", "-shm", "-journal")
 
@@ -94,15 +77,14 @@ class CorruptionCopyingOpenHelperFactory(
      * copie des fichiers ouverts, donc peut-être incohérents.
      */
     private fun keepCopy(databasePath: String) {
-        val copies = File(context.filesDir, CORRUPTED_DATABASES_DIRECTORY)
+        val copies = CorruptedDatabaseCopies(context.filesDir)
         // Le numéro, pas l'heure : une horloge qui recule (batterie vidée) ne doit pas faire passer
         // une copie neuve pour la première. Le suffixe départage deux corruptions simultanées.
-        val sequence = (highestSequence(copies) + 1).toString().padStart(SEQUENCE_DIGITS, '0')
         val suffix = UUID.randomUUID()
-        val target = File(copies, "$sequence-$suffix")
+        val target = File(copies.directory, copies.nextName(suffix.toString()))
         // Copiée sous un nom provisoire puis renommée : une copie interrompue (processus tué) ne
         // prend jamais la place de la première.
-        val pending = File(copies, "$PENDING_PREFIX$suffix")
+        val pending = File(copies.directory, "$PENDING_COPY_PREFIX$suffix")
         val sources = COMPANION_SUFFIXES.map { File(databasePath + it) }.filter { it.isFile }
         if (sources.isEmpty()) {
             Log.e(TAG, "Corrupted database $databasePath: no file found to copy")
@@ -115,7 +97,7 @@ class CorruptionCopyingOpenHelperFactory(
             return
         }
         Log.e(TAG, "Corrupted database $databasePath: ${copied.size} of ${sources.size} files kept in $target")
-        keepFirstAndNewestCopies(copies)
+        copies.prune()
     }
 
     /** Vrai quand [destination] est une copie complète ; un fichier tronqué est supprimé. */
@@ -131,18 +113,4 @@ class CorruptionCopyingOpenHelperFactory(
         false
     }
 
-    private fun highestSequence(copies: File): Int = copies.list().orEmpty().maxOfOrNull(::sequenceOf) ?: 0
-
-    /** Supprime les copies intermédiaires, jamais la première ni les dernières (ordre des numéros). */
-    private fun keepFirstAndNewestCopies(copies: File) {
-        val ordered = copies.listFiles().orEmpty()
-            .filterNot { it.name.startsWith(PENDING_PREFIX) }
-            .sortedWith(compareBy({ sequenceOf(it.name) }, { it.name }))
-        for (copy in ordered.drop(1).dropLast(MAX_KEPT_COPIES - 1)) {
-            if (copy.deleteRecursively()) Log.w(TAG, "Intermediate copy $copy deleted") else Log.w(TAG, "Intermediate copy $copy could not be deleted")
-        }
-    }
-
-    /** Un nom sans numéro (reste d'une version de développement) compte comme le plus ancien. */
-    private fun sequenceOf(name: String): Int = name.substringBefore('-').toIntOrNull() ?: 0
 }

@@ -1,5 +1,6 @@
 package com.wobblebot.papotons.data.board
 
+import android.database.sqlite.SQLiteConstraintException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -8,7 +9,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
 
-/** Hérite de la vraie `seedIfEmpty`. N'applique ni index ni clés étrangères (voir BoardDaoTest). */
+/**
+ * Hérite des corps des transactions (`seedIfEmpty`, `insertFolder`, `deleteCellAndOrphanBoards`),
+ * sans leur annulation en cas d'échec.
+ * Imite l'index unique des positions, la CASCADE et le RESTRICT des cases uniquement sur les
+ * nouvelles écritures ; la vraie Room se teste dans BoardDaoTest.
+ */
 class FakeBoardDao(
     boards: List<BoardEntity> = emptyList(),
     cells: List<CellEntity> = emptyList(),
@@ -59,5 +65,52 @@ class FakeBoardDao(
                 }
             }
         }
+    }
+
+    override suspend fun insertCell(cell: CellEntity): Long {
+        insertGate?.await()
+        if (cells.value.any { it.boardId == cell.boardId && it.row == cell.row && it.column == cell.column }) {
+            throw SQLiteConstraintException("UNIQUE constraint failed")
+        }
+        val id = (cells.value.maxOfOrNull { it.id } ?: 0) + 1
+        cells.value += cell.copy(id = id)
+        return id
+    }
+
+    override suspend fun insertBoard(board: BoardEntity): Long {
+        val id = (boards.value.maxOfOrNull { it.id } ?: 0) + 1
+        boards.value += board.copy(id = id)
+        return id
+    }
+
+    override suspend fun updateCellContent(cellId: Long, label: String, pictogramId: Long?, category: String?): Int {
+        val before = cells.value
+        cells.value = before.map { if (it.id == cellId) it.copy(label = label, pictogramId = pictogramId, category = category) else it }
+        return before.count { it.id == cellId }
+    }
+
+    override suspend fun renameBoard(boardId: Long, name: String) {
+        boards.value = boards.value.map { if (it.id == boardId) it.copy(name = name) else it }
+    }
+
+    override suspend fun cell(cellId: Long): CellEntity? = cells.value.firstOrNull { it.id == cellId }
+
+    override suspend fun deleteCell(cellId: Long): Int {
+        val before = cells.value.size
+        cells.value = cells.value.filterNot { it.id == cellId }
+        return before - cells.value.size
+    }
+
+    override suspend fun linkedBoardIds(boardId: Long): List<Long> =
+        cells.value.filter { it.boardId == boardId }.mapNotNull { it.linkedBoardId }
+
+    override suspend fun countLinksTo(boardId: Long): Int = cells.value.count { it.linkedBoardId == boardId }
+
+    override suspend fun deleteBoard(boardId: Long): Int {
+        if (countLinksTo(boardId) != 0) throw SQLiteConstraintException("FOREIGN KEY constraint failed (RESTRICT)")
+        val before = boards.value.size
+        boards.value = boards.value.filterNot { it.id == boardId }
+        cells.value = cells.value.filterNot { it.boardId == boardId }
+        return before - boards.value.size
     }
 }

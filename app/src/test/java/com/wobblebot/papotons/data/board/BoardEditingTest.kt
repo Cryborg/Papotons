@@ -1,0 +1,174 @@
+package com.wobblebot.papotons.data.board
+
+import android.content.Context
+import com.wobblebot.papotons.data.FakePreferences
+import com.wobblebot.papotons.domain.CellContent
+import com.wobblebot.papotons.domain.HOME_BOARD_ID
+import com.wobblebot.papotons.domain.WordCategory
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
+import android.database.sqlite.SQLiteConstraintException
+import com.wobblebot.papotons.data.CORRUPTED_DATABASES_DIRECTORY
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
+import java.io.IOException
+
+/** Ce que l'adulte fait des grilles en mode édition (MVP-3). */
+class BoardEditingTest {
+    @get:Rule
+    val folder = TemporaryFolder()
+
+    private val context = mockk<Context> {
+        every { getString(any()) } answers { "label${firstArg<Int>()}" }
+        every { filesDir } answers { folder.root }
+    }
+    private val home = BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 2, columnCount = 3)
+
+    private fun cell(id: Long, boardId: Long, row: Int, column: Int, label: String, linkedBoardId: Long? = null) =
+        CellEntity(id = id, boardId = boardId, row = row, column = column, label = label, linkedBoardId = linkedBoardId, pictogramId = null, category = null)
+
+    private fun repository(dao: FakeBoardDao) = BoardRepository(dao, FakePreferences(), context)
+
+    @Test
+    fun `a word lands exactly where it was asked, never on a taken slot`() = runTest {
+        val dao = FakeBoardDao(listOf(home), listOf(cell(1, HOME_BOARD_ID, 0, 0, "je")))
+        val repository = repository(dao)
+
+        repository.addWord(HOME_BOARD_ID, 1, 2, CellContent("eau", 32464, WordCategory.NOUN))
+
+        val added = dao.cells.value.single { it.label == "eau" }
+        assertEquals(Triple(HOME_BOARD_ID, 1, 2), Triple(added.boardId, added.row, added.column))
+        assertEquals(32464L, added.pictogramId)
+        assertEquals("NOUN", added.category)
+        assertThrows(SQLiteConstraintException::class.java) { runBlocking { repository.addWord(HOME_BOARD_ID, 0, 0, CellContent("x", null, null)) } }
+        assertEquals(listOf("je", "eau"), dao.cells.value.map { it.label })
+    }
+
+    @Test
+    fun `a folder brings its own empty board named after it`() = runTest {
+        val dao = FakeBoardDao(listOf(home))
+
+        repository(dao).addFolder(HOME_BOARD_ID, 1, 0, CellContent("Animaux", null, WordCategory.NOUN))
+
+        val folderCell = dao.cells.value.single()
+        val folderBoard = dao.boards.value.single { it.id == folderCell.linkedBoardId }
+        assertEquals("Animaux", folderBoard.name)
+        assertEquals(4 to 6, folderBoard.rowCount to folderBoard.columnCount)
+        assertEquals(1 to 0, folderCell.row to folderCell.column)
+    }
+
+    @Test
+    fun `an edit changes the content, never the position, and renames a folder board`() = runTest {
+        val dao = FakeBoardDao(listOf(home, BoardEntity(2, "old", 1, 1)), listOf(cell(5, HOME_BOARD_ID, 1, 2, "old", linkedBoardId = 2)))
+        val repository = repository(dao)
+        val folderCell = checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.single()
+
+        repository.updateCell(folderCell, CellContent("new", 7, WordCategory.VERB))
+
+        val updated = dao.cells.value.single()
+        assertEquals(Triple("new", 7L, "VERB"), Triple(updated.label, updated.pictogramId, updated.category))
+        assertEquals(1 to 2, updated.row to updated.column)
+        assertEquals("new", dao.boards.value.single { it.id == 2L }.name)
+    }
+
+    @Test
+    fun `deleting a folder removes its subtree but never home or the open root`() = runTest {
+        // Accueil → A (9) → B (3). La racine ouverte (ici 9 elle-même, cas d'un accueil perdu) reste.
+        val dao = FakeBoardDao(
+            listOf(home, BoardEntity(9, "A", 1, 1), BoardEntity(3, "B", 1, 1)),
+            listOf(cell(1, HOME_BOARD_ID, 0, 0, "A", linkedBoardId = 9), cell(2, 9, 0, 0, "B", linkedBoardId = 3)),
+        )
+        val repository = repository(dao)
+        val folderCell = checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.single()
+
+        repository.deleteCell(folderCell, boardId = HOME_BOARD_ID, openRootBoardId = HOME_BOARD_ID)
+        assertEquals(listOf(HOME_BOARD_ID), dao.boards.value.map { it.id })
+
+        val other = FakeBoardDao(
+            listOf(home, BoardEntity(9, "A", 1, 1), BoardEntity(3, "B", 1, 1)),
+            listOf(cell(1, HOME_BOARD_ID, 0, 0, "A", linkedBoardId = 9), cell(2, 9, 0, 0, "B", linkedBoardId = 3)),
+        )
+        repository(other).deleteCell(checkNotNull(repository(other).observeBoard(HOME_BOARD_ID).first()).cells.single(), HOME_BOARD_ID, openRootBoardId = 9)
+        // A protégée garde B, qu'elle vise encore.
+        assertEquals(setOf(HOME_BOARD_ID, 9L, 3L), other.boards.value.map { it.id }.toSet())
+    }
+
+    @Test
+    fun `deleting a word removes only that cell`() = runTest {
+        val dao = FakeBoardDao(listOf(home), listOf(cell(1, HOME_BOARD_ID, 0, 0, "je"), cell(2, HOME_BOARD_ID, 0, 1, "veux")))
+        val repository = repository(dao)
+        val word = checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.single { it.label == "je" }
+
+        repository.deleteCell(word, HOME_BOARD_ID, HOME_BOARD_ID)
+
+        assertEquals(listOf("veux"), dao.cells.value.map { it.label })
+        assertEquals(listOf(HOME_BOARD_ID), dao.boards.value.map { it.id })
+    }
+
+    @Test
+    fun `the board holding the cell is never deleted, even when the folder leads back to it`() = runTest {
+        // Grille 9 (atteinte par un import, sans lien depuis l'accueil) : un dossier qui la vise
+        // elle-même. Sa suppression la rendrait orpheline ; elle porte la case, elle reste.
+        val dao = FakeBoardDao(
+            listOf(home, BoardEntity(9, "A", 1, 2)),
+            listOf(cell(2, 9, 0, 0, "self", linkedBoardId = 9)),
+        )
+        val repository = repository(dao)
+        val selfLink = checkNotNull(repository.observeBoard(9).first()).cells.single()
+
+        repository.deleteCell(selfLink, boardId = 9, openRootBoardId = HOME_BOARD_ID)
+
+        assertTrue(dao.boards.value.any { it.id == 9L })
+    }
+
+    @Test
+    fun `editing a word renames no board`() = runTest {
+        val dao = FakeBoardDao(listOf(home, BoardEntity(2, "keep", 1, 1)), listOf(cell(2, HOME_BOARD_ID, 0, 0, "je")))
+        val repository = repository(dao)
+
+        repository.updateCell(checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.single(), CellContent("moi", null, null))
+
+        assertEquals("keep", dao.boards.value.single { it.id == 2L }.name)
+    }
+
+    @Test
+    fun `every kind of edit marks the copies made before it`() = runTest {
+        val marker = File(folder.root, "$CORRUPTED_DATABASES_DIRECTORY.edited")
+        val dao = FakeBoardDao(listOf(home), listOf(cell(1, HOME_BOARD_ID, 0, 0, "je")))
+        val repository = repository(dao)
+        val edits = listOf<suspend () -> Unit>(
+            { repository.addWord(HOME_BOARD_ID, 0, 1, CellContent("eau", null, null)) },
+            { repository.addFolder(HOME_BOARD_ID, 0, 2, CellContent("Jeux", null, null)) },
+            { repository.updateCell(checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.first(), CellContent("moi", null, null)) },
+            { repository.deleteCell(checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.first(), HOME_BOARD_ID, HOME_BOARD_ID) },
+        )
+        for ((index, edit) in edits.withIndex()) {
+            val copy = index + 1
+            File(folder.root, "$CORRUPTED_DATABASES_DIRECTORY/00000$copy-x").mkdirs()
+
+            edit()
+
+            assertEquals("edit $index", "$copy", marker.readText())
+        }
+    }
+
+    @Test
+    fun `an edit marker that cannot be written stops the edit before the database`() = runTest {
+        File(folder.root, "$CORRUPTED_DATABASES_DIRECTORY/000001-x").mkdirs()
+        // Un dossier à la place du marqueur : le renommage échoue.
+        File(folder.root, "$CORRUPTED_DATABASES_DIRECTORY.edited/occupied").mkdirs()
+        val dao = FakeBoardDao(listOf(home))
+
+        assertThrows(IOException::class.java) { runBlocking { repository(dao).addWord(HOME_BOARD_ID, 0, 0, CellContent("eau", null, null)) } }
+
+        assertEquals(emptyList<CellEntity>(), dao.cells.value)
+    }
+}

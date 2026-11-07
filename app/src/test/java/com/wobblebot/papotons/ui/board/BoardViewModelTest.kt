@@ -10,6 +10,8 @@ import com.wobblebot.papotons.data.board.BoardRepository
 import com.wobblebot.papotons.data.board.CellEntity
 import com.wobblebot.papotons.data.board.FakeBoardDao
 import com.wobblebot.papotons.domain.Cell
+import com.wobblebot.papotons.domain.CellContent
+import com.wobblebot.papotons.domain.WordCategory
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import com.wobblebot.papotons.speech.SpeechStatus
 import io.mockk.every
@@ -41,11 +43,12 @@ class BoardViewModelTest {
     private val dispatcher = UnconfinedTestDispatcher()
     private val speaker = FakeSpeaker()
     private val volume = FakeMediaVolume()
+    private var filesDirectory = File("build/tmp/no-files")
     private val preferences = FakePreferences()
     private val context = mockk<Context> {
         every { getString(any()) } answers { "label${firstArg<Int>()}" }
-        // Aucune copie de base corrompue.
-        every { filesDir } returns File("build/tmp/no-files")
+        // Aucune copie de base corrompue, sauf dans un test qui en pose.
+        every { filesDir } answers { filesDirectory }
     }
 
     // Accueil → dossier « A » (grille 2) → dossier « B » (grille 3) : une pile de trois
@@ -204,7 +207,7 @@ class BoardViewModelTest {
         assertEquals(listOf("veux", "je"), viewModel.messageTexts())
         // Chaque mot garde le picto de sa case ; « veux » est en texte seul.
         assertEquals(listOf(emptyList(), listOf(10L)), viewModel.state().message.map { it.pictogramIds })
-        assertTrue(viewModel.state().isComposingMessage)
+        assertTrue(viewModel.state().isBusy)
     }
 
     @Test
@@ -392,7 +395,7 @@ class BoardViewModelTest {
         viewModel.onClearMessage()
 
         assertTrue(viewModel.state().message.isEmpty())
-        assertFalse(viewModel.state().isComposingMessage)
+        assertFalse(viewModel.state().isBusy)
         // Les mots touchés en rafale qui attendent encore leur tour se taisent avec le message.
         assertEquals(1, speaker.stopCount)
     }
@@ -583,5 +586,187 @@ class BoardViewModelTest {
         ViewModelStore().apply { put("board", viewModel) }.clear()
 
         assertTrue(volume.isReleased)
+    }
+
+    private fun BoardViewModel.cellNamed(label: String): Cell = checkNotNull(state().board).grid.flatten().filterNotNull().first { it.label == label }
+
+    @Test
+    fun `while editing a tap opens the editor, never speaks nor opens a folder`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.onStartEditing()
+
+        viewModel.tap("je")
+        assertEquals(EditTarget.ExistingCell(HOME_BOARD_ID, viewModel.cellNamed("je")), viewModel.state().editor?.target)
+        viewModel.onEditorClose()
+        viewModel.tap("A")
+
+        assertEquals(emptyList<String>(), speaker.spoken)
+        assertEquals(emptyList<String>(), viewModel.messageTexts())
+        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
+        assertEquals("A", (viewModel.state().editor?.target as? EditTarget.ExistingCell)?.cell?.label)
+    }
+
+    @Test
+    fun `an empty slot opens a new cell editor only while editing`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 2, columnCount = 3)), emptyList())
+        val viewModel = startViewModel(dao)
+
+        viewModel.onEmptySlotClick(1, 2)
+        assertNull(viewModel.state().editor)
+
+        viewModel.onStartEditing()
+        viewModel.onEmptySlotClick(1, 2)
+        viewModel.onEditorSave(CellContent("eau", null, WordCategory.NOUN), asFolder = false)
+
+        assertNull(viewModel.state().editor)
+        val word = viewModel.state().board?.grid?.get(1)?.get(2)
+        assertEquals("eau", word?.label)
+        assertNull(word?.linkedBoardId)
+
+        viewModel.onEmptySlotClick(0, 0)
+        viewModel.onEditorSave(CellContent("Animaux", null, null), asFolder = true)
+        val folder = checkNotNull(viewModel.state().board?.grid?.get(0)?.get(0))
+        assertEquals("Animaux", dao.boards.value.single { it.id == folder.linkedBoardId }.name)
+    }
+
+    @Test
+    fun `a double tap on save writes once`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 2, columnCount = 3)), emptyList())
+        val viewModel = startViewModel(dao)
+        viewModel.onStartEditing()
+        viewModel.onEmptySlotClick(0, 0)
+        dao.insertGate = CompletableDeferred()
+
+        viewModel.onEditorSave(CellContent("eau", null, null), asFolder = false)
+        viewModel.onEditorSave(CellContent("eau", null, null), asFolder = false)
+        // Fermer pendant l'écriture ne la perd pas de vue.
+        viewModel.onEditorClose()
+        assertTrue(viewModel.state().editor?.isWriting == true)
+        checkNotNull(dao.insertGate).complete(Unit)
+
+        assertEquals(1, dao.cells.value.size)
+        assertNull(viewModel.state().editor)
+    }
+
+    @Test
+    fun `editing an existing cell changes it in place, deleting a folder removes its board`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(boards, cells)
+        val viewModel = startViewModel(dao)
+        viewModel.onStartEditing()
+        viewModel.tap("veux")
+        // Une case existante garde son type, quoi que dise asFolder.
+        viewModel.onEditorSave(CellContent("voudrais", null, WordCategory.VERB), asFolder = true)
+        assertEquals("voudrais", viewModel.state().board?.grid?.get(0)?.get(1)?.label)
+        assertNull(viewModel.state().board?.grid?.get(0)?.get(1)?.linkedBoardId)
+
+        viewModel.tap("A")
+        viewModel.onEditorOpenFolder()
+        viewModel.tap("B")
+        viewModel.onEditorDelete()
+
+        // B (grille 3) part ; A (grille 2, ouverte et porteuse de la case) reste.
+        assertFalse(dao.boards.value.any { it.id == 3L })
+        assertEquals(2L, viewModel.state().board?.id)
+    }
+
+    @Test
+    fun `a cell deleted meanwhile makes the save fail visibly`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(boards, cells)
+        val viewModel = startViewModel(dao)
+        viewModel.onStartEditing()
+        viewModel.tap("veux")
+        dao.cells.value = dao.cells.value.filterNot { it.label == "veux" }
+
+        viewModel.onEditorSave(CellContent("voudrais", null, null), asFolder = false)
+
+        assertEquals(EditFailure.SlotTakenOrCellGone, viewModel.state().editor?.failure)
+    }
+
+    @Test
+    fun `a write that fails keeps the editor open with the failure`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.onStartEditing()
+        // (1, 1) est déjà pris (« lost ») : un « + » affiché avant que la grille ne soit relue.
+        viewModel.onEmptySlotClick(1, 1)
+        viewModel.onEditorSave(CellContent("y", null, null), asFolder = false)
+
+        assertEquals(EditFailure.SlotTakenOrCellGone, viewModel.state().editor?.failure)
+        assertEquals("lost", viewModel.state().board?.grid?.get(1)?.get(1)?.label)
+        assertFalse(viewModel.state().editor?.isWriting == true)
+    }
+
+    @Test
+    fun `a write finishing after the editor was left touches no other editor`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 2, columnCount = 3)), emptyList())
+        val viewModel = startViewModel(dao)
+        viewModel.onStartEditing()
+        dao.insertGate = CompletableDeferred()
+        viewModel.onEmptySlotClick(0, 0)
+        viewModel.onEditorSave(CellContent("lent", null, null), asFolder = false)
+
+        viewModel.onStopEditing()
+        viewModel.onStartEditing()
+        viewModel.onEmptySlotClick(1, 1)
+        checkNotNull(dao.insertGate).complete(Unit)
+
+        assertEquals(EditTarget.NewCell(HOME_BOARD_ID, 1, 1), viewModel.state().editor?.target)
+    }
+
+    @Test
+    fun `stopping the edit closes everything, and starting it silences the voice`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.onStartEditing()
+        assertEquals(1, speaker.stopCount)
+        assertTrue(viewModel.state().isBusy)
+        viewModel.tap("je")
+
+        viewModel.onStopEditing()
+
+        assertFalse(viewModel.state().isEditing)
+        assertNull(viewModel.state().editor)
+    }
+
+    @Test
+    fun `neither the edit mode nor the editor come back after the process death`() = runTest(dispatcher) {
+        val savedState = SavedStateHandle()
+        val first = startViewModel(savedState = savedState)
+        first.onStartEditing()
+        first.tap("je")
+
+        val second = startViewModel(savedState = first.dieAndKeep(savedState), voice = FakeSpeaker())
+
+        assertFalse(second.state().isEditing)
+        assertNull(second.state().editor)
+    }
+
+    @Test
+    fun `a folder opened from the editor stays in edit mode`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.onStartEditing()
+        viewModel.tap("A")
+
+        viewModel.onEditorOpenFolder()
+
+        assertEquals(2L, viewModel.state().board?.id)
+        assertTrue(viewModel.state().isEditing)
+        assertNull(viewModel.state().editor)
+    }
+
+    @Test
+    fun `a storage failure keeps the editor open with its own message`() = runTest(dispatcher) {
+        filesDirectory = kotlin.io.path.createTempDirectory("papotons").toFile()
+        File(filesDirectory, "corrupted-databases/000001-x").mkdirs()
+        File(filesDirectory, "corrupted-databases.edited/occupied").mkdirs()
+        val dao = FakeBoardDao(listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 2, columnCount = 3)), emptyList())
+        val viewModel = startViewModel(dao)
+        viewModel.onStartEditing()
+        viewModel.onEmptySlotClick(0, 0)
+
+        viewModel.onEditorSave(CellContent("eau", null, null), asFolder = false)
+
+        assertEquals(EditFailure.Storage, viewModel.state().editor?.failure)
+        assertFalse(viewModel.state().editor?.isWriting == true)
+        assertEquals(emptyList<CellEntity>(), dao.cells.value)
+        filesDirectory.deleteRecursively()
     }
 }

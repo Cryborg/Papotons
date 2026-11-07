@@ -105,4 +105,65 @@ class BoardDaoTest {
         val stored = checkNotNull(boardDao.observeBoard(home.id).first())
         assertEquals(folderBoard.id, stored.cells.single().linkedBoardId)
     }
+
+    @Test
+    fun deletingANestedFolderRemovesItsWholeSubtreeWhateverTheIdOrder() = runBlocking {
+        // Accueil → A (id 9) → B (id 3) → C (id 7) : un enfant d'id plus petit que son parent ferait
+        // échouer RESTRICT si les grilles partaient avant ce qui les vise.
+        val boards = listOf(home, BoardEntity(9, "A", 1, 2), BoardEntity(3, "B", 1, 2), BoardEntity(7, "C", 1, 1))
+        fun link(boardId: Long, column: Int, target: Long) =
+            CellEntity(boardId = boardId, row = 0, column = column, label = "to$target", linkedBoardId = target, pictogramId = null, category = null)
+        boardDao.insertAll(boards, listOf(link(1, 0, 9), link(9, 0, 3), link(3, 0, 7), word(1, 0, "reste")))
+        val folderCellId = checkNotNull(boardDao.observeBoard(1).first()).cells.single { it.linkedBoardId == 9L }.id
+
+        assertEquals(3, boardDao.deleteCellAndOrphanBoards(folderCellId, setOf(1L)))
+
+        assertEquals(1, boardDao.countBoards())
+        assertEquals(listOf("reste"), checkNotNull(boardDao.observeBoard(1).first()).cells.map { it.label })
+    }
+
+    @Test
+    fun aBoardStillLinkedElsewhereAndACycleSurviveAFolderDeletion() = runBlocking {
+        // A et B se visent l'un l'autre (cycle) ; S est visée par A et par l'accueil.
+        val boards = listOf(home, BoardEntity(2, "A", 1, 3), BoardEntity(3, "B", 1, 1), BoardEntity(4, "S", 1, 1))
+        fun link(boardId: Long, column: Int, target: Long) =
+            CellEntity(boardId = boardId, row = 0, column = column, label = "to$target", linkedBoardId = target, pictogramId = null, category = null)
+        boardDao.insertAll(boards, listOf(link(1, 0, 2), link(1, 1, 4), link(2, 0, 3), link(2, 1, 4), link(3, 0, 2)))
+        val folderCellId = checkNotNull(boardDao.observeBoard(1).first()).cells.single { it.linkedBoardId == 2L }.id
+
+        assertEquals(0, boardDao.deleteCellAndOrphanBoards(folderCellId, setOf(1L)))
+
+        // Le cycle A↔B reste (rien ne s'efface sans certitude), S aussi : l'accueil la vise encore.
+        assertTrue(boardDao.boardExists(2))
+        assertTrue(boardDao.boardExists(3))
+        assertTrue(boardDao.boardExists(4))
+        assertEquals(listOf(4L), checkNotNull(boardDao.observeBoard(1).first()).cells.mapNotNull { it.linkedBoardId })
+    }
+
+    @Test
+    fun aFolderIsInsertedWithItsBoardOrNotAtAll() = runBlocking {
+        boardDao.insertAll(listOf(home), listOf(word(0, 0, "pris")))
+
+        // Emplacement déjà pris : la case échoue, la grille créée juste avant doit partir avec elle.
+        val failure = runCatching { boardDao.insertFolder(BoardEntity(name = "dossier", rowCount = 4, columnCount = 6), word(0, 0, "dossier")) }
+
+        assertTrue(failure.exceptionOrNull()?.message.orEmpty().contains("UNIQUE"))
+        assertEquals(1, boardDao.countBoards())
+    }
+
+    @Test
+    fun anEditChangesOnlyItsCellAndItsFolderBoard() = runBlocking {
+        boardDao.insertAll(listOf(home, folderBoard), listOf(word(0, 0, "je"), folder))
+        val folderCellId = checkNotNull(boardDao.observeBoard(home.id).first()).cells.single { it.linkedBoardId != null }.id
+
+        boardDao.updateCellContentAndFolderName(folderCellId, folderBoard.id, "Jeux", 9813, "NOUN")
+
+        val cells = checkNotNull(boardDao.observeBoard(home.id).first()).cells.associateBy { it.label }
+        val edited = cells.getValue("Jeux")
+        assertEquals(Triple(1, 1, 9813L), Triple(edited.row, edited.column, edited.pictogramId))
+        assertEquals("NOUN", edited.category)
+        assertEquals("je", cells.getValue("je").label)
+        assertEquals("Jeux", checkNotNull(boardDao.observeBoard(folderBoard.id).first()).board.name)
+        assertEquals("home", checkNotNull(boardDao.observeBoard(home.id).first()).board.name)
+    }
 }

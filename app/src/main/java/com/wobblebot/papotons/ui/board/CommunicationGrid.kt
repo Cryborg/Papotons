@@ -86,26 +86,32 @@ fun CommunicationGrid(
     grid: ImmutableList<ImmutableList<Cell?>>,
     onCellClick: (Cell) -> Unit,
     modifier: Modifier = Modifier,
+    /** En édition, un emplacement libre devient une case « + » qui en ajoute une. */
+    isEditing: Boolean = false,
+    onEmptySlotClick: (row: Int, column: Int) -> Unit = { _, _ -> },
 ) {
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Column(
             modifier = modifier.padding(GRID_PADDING),
             verticalArrangement = Arrangement.spacedBy(CELL_SPACING),
         ) {
-            for (row in grid) {
+            for ((rowIndex, row) in grid.withIndex()) {
                 Row(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(CELL_SPACING),
                 ) {
-                    for (cell in row) {
+                    for ((columnIndex, cell) in row.withIndex()) {
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight(),
                         ) {
-                            if (cell != null) CellButton(cell = cell, onClick = { onCellClick(cell) })
+                            when {
+                                cell != null -> CellButton(cell = cell, isEditing = isEditing, onClick = { onCellClick(cell) })
+                                isEditing -> AddSlot(rowIndex, columnIndex, onClick = { onEmptySlotClick(rowIndex, columnIndex) })
+                            }
                         }
                     }
                 }
@@ -115,9 +121,14 @@ fun CommunicationGrid(
 }
 
 @Composable
-private fun CellButton(cell: Cell, onClick: () -> Unit) {
+private fun CellButton(cell: Cell, isEditing: Boolean, onClick: () -> Unit) {
     val isFolder = cell.linkedBoardId != null
-    val folderDescription = if (isFolder) stringResource(R.string.board_folder_description, cell.label) else null
+    val description = when {
+        isEditing && isFolder -> stringResource(R.string.edit_folder_description, cell.label)
+        isEditing -> stringResource(R.string.edit_cell_description, cell.label)
+        isFolder -> stringResource(R.string.board_folder_description, cell.label)
+        else -> null
+    }
     val category = cell.category
     val background = when {
         category != null -> wordCategoryBackground(category)
@@ -130,7 +141,7 @@ private fun CellButton(cell: Cell, onClick: () -> Unit) {
             .fillMaxSize()
             .semantics {
                 role = Role.Button
-                if (folderDescription != null) contentDescription = folderDescription
+                if (description != null) contentDescription = description
             },
         shape = BoardCardShape,
         color = background,
@@ -177,6 +188,30 @@ private fun CellButton(cell: Cell, onClick: () -> Unit) {
                         .testTag(FOLDER_MARK_TEST_TAG),
                 )
             }
+        }
+    }
+}
+
+/** Un emplacement libre en édition : il ajoute une case à cette position, et nulle part ailleurs. */
+@Composable
+private fun AddSlot(row: Int, column: Int, onClick: () -> Unit) {
+    // Lignes et colonnes comptées à partir de 1 pour TalkBack.
+    val description = stringResource(R.string.edit_add_cell_description, row + 1, column + 1)
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxSize()
+            .semantics {
+                role = Role.Button
+                contentDescription = description
+            },
+        shape = BoardCardShape,
+        color = MaterialTheme.colorScheme.surface,
+        // outline : 3:1 au moins sur le fond, la zone à toucher se voit.
+        border = BorderStroke(BOARD_CARD_BORDER_WIDTH, MaterialTheme.colorScheme.outline),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(painterResource(R.drawable.ic_add), contentDescription = null, tint = MaterialTheme.colorScheme.outline)
         }
     }
 }

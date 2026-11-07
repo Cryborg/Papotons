@@ -7,8 +7,10 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
-import com.wobblebot.papotons.data.CORRUPTED_DATABASES_DIRECTORY
+import com.wobblebot.papotons.data.CorruptedDatabaseCopies
 import com.wobblebot.papotons.domain.Board
+import com.wobblebot.papotons.domain.Cell
+import com.wobblebot.papotons.domain.CellContent
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
@@ -18,13 +20,26 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
-import java.io.File
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val TAG = "BoardRepository"
 private const val PREFERENCES_RETRY_DELAY_MS = 10_000L
+
+/** Taille d'un nouveau dossier : celle des dossiers du vocabulaire de base. */
+private const val FOLDER_ROW_COUNT = 4
+private const val FOLDER_COLUMN_COUNT = 6
+
+private fun CellContent.toEntity(boardId: Long, row: Int, column: Int, linkedBoardId: Long?) = CellEntity(
+    boardId = boardId,
+    row = row,
+    column = column,
+    label = label,
+    linkedBoardId = linkedBoardId,
+    pictogramId = pictogramId,
+    category = category?.name,
+)
 
 /**
  * Posé une fois le vocabulaire de base inséré. Pas un réglage : ne jamais l'effacer, sinon une base
@@ -88,6 +103,44 @@ class BoardRepository @Inject constructor(
         }
         .distinctUntilChanged()
 
+    /** Un mot à un emplacement libre ; échoue (index unique) si l'emplacement est pris. */
+    suspend fun addWord(boardId: Long, row: Int, column: Int, content: CellContent) {
+        copies().markEdited()
+        boardDao.insertCell(content.toEntity(boardId, row, column, linkedBoardId = null))
+    }
+
+    /** Un dossier : une grille vide, nommée comme lui, et la case qui l'ouvre. */
+    suspend fun addFolder(boardId: Long, row: Int, column: Int, content: CellContent) {
+        val board = BoardEntity(name = content.label, rowCount = FOLDER_ROW_COUNT, columnCount = FOLDER_COLUMN_COUNT)
+        copies().markEdited()
+        boardDao.insertFolder(board, content.toEntity(boardId, row, column, linkedBoardId = null))
+    }
+
+    /** Le contenu seulement ; un dossier renommé renomme sa grille (titre lu par TalkBack). */
+    suspend fun updateCell(cell: Cell, content: CellContent) {
+        copies().markEdited()
+        boardDao.updateCellContentAndFolderName(cell.id, cell.linkedBoardId, content.label, content.pictogramId, content.category?.name)
+    }
+
+    /**
+     * Supprime la case et, pour un dossier, les grilles de son sous-arbre que plus rien ne vise.
+     * L'accueil, la grille qui porte la case et [openRootBoardId] ne sont jamais supprimés : une base
+     * vidée par l'édition passerait pour une perte des grilles.
+     */
+    suspend fun deleteCell(cell: Cell, boardId: Long, openRootBoardId: Long) {
+        copies().markEdited()
+        val deletedBoardCount = boardDao.deleteCellAndOrphanBoards(cell.id, setOf(HOME_BOARD_ID, boardId, openRootBoardId))
+        Log.i(TAG, "Cell ${cell.id} deleted with $deletedBoardCount boards")
+    }
+
+    /**
+     * Le marqueur s'écrit AVANT chaque écriture en base : une écriture qui échoue ensuite l'aura
+     * avancé pour rien (la protection passe à la copie suivante, compromis accepté), mais jamais
+     * une modification n'est faite sans protection. Sur le thread
+     * appelant : lister un dossier de quelques entrées et écrire quelques octets.
+     */
+    private fun copies() = CorruptedDatabaseCopies(context.filesDir)
+
     suspend fun acknowledgeLostBoards() {
         unsavedLostBoards.value = false
         try {
@@ -107,7 +160,7 @@ class BoardRepository @Inject constructor(
      * jamais d'ouvrir une grille.
      */
     private suspend fun raiseLostBoardsIfNeeded(isDatabaseEmpty: Boolean) {
-        val hasCorruptedCopies = hasCorruptedCopies()
+        val hasCorruptedCopies = copies().hasCopies()
         var isLossFound = false
         try {
             preferences.edit { settings ->
@@ -125,13 +178,6 @@ class BoardRepository @Inject constructor(
             if (isLossFound || (isDatabaseEmpty && hasCorruptedCopies)) unsavedLostBoards.value = true
             Log.e(TAG, "Lost boards check could not be saved (loss found: $isLossFound)", exception)
         }
-    }
-
-    /** Sur le thread appelant : un dossier de quelques entrées, lu une fois par ouverture. */
-    private fun hasCorruptedCopies(): Boolean {
-        val names = File(context.filesDir, CORRUPTED_DATABASES_DIRECTORY).list()
-        // `null` : dossier absent (le cas courant) ou illisible, impossible à distinguer ici.
-        return names != null && names.isNotEmpty()
     }
 
     private suspend fun markSeeded() {

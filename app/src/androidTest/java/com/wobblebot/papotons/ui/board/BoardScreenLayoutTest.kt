@@ -86,7 +86,7 @@ class BoardScreenLayoutTest {
         message = persistentListOf(),
         speechStatus = SpeechStatus.Ready,
     )
-    private val noActions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {})
+    private val noActions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, {})
 
     private fun cellBounds(label: String) = composeRule.onNodeWithText(label).getBoundsInRoot()
 
@@ -118,6 +118,12 @@ class BoardScreenLayoutTest {
         state = homeState.copy(board = checkNotNull(homeState.board).copy(canGoBack = true))
         composeRule.onNodeWithContentDescription(context.getString(R.string.board_back)).assertIsDisplayed()
         assertEquals("navigation buttons", original, cellBounds("Manger"))
+        // Mode édition : le bandeau remplace la phrase dans la même barre, les emplacements vides
+        // deviennent des « + », et aucune case ne bouge.
+        state = homeState.copy(isEditing = true)
+        composeRule.onNodeWithContentDescription(context.getString(R.string.edit_add_cell_description, 1, 2)).assertIsDisplayed()
+        assertEquals("edit mode", original, cellBounds("Manger"))
+
         // Toutes les alertes à la fois : une seule tient en barre étroite, toutes en barre large.
         state = homeState.copy(speechStatus = SpeechStatus.LanguageMissing, isMuted = true, hasLostBoards = true)
         composeRule.onNodeWithContentDescription(context.getString(R.string.volume_muted_alert)).assertIsDisplayed()
