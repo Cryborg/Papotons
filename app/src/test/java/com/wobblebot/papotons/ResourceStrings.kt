@@ -3,7 +3,7 @@ package com.wobblebot.papotons
 import java.io.File
 
 /**
- * Les chaînes d'un fichier de `res/` (values, values-en), telles qu'Android les affichera, pour les tests
+ * Les chaînes d'un fichier de `res/` (`values`, puis une langue ajoutée), telles qu'Android les affichera, pour les tests
  * JVM qui ont besoin du vrai texte (élision, crédit). Les tests tournent depuis le dossier du module.
  */
 fun resourceStrings(valuesDirectory: String, fileName: String): Map<String, String> {

@@ -28,7 +28,7 @@ Tout build passe par la file de la machine (le hook `garde-gradle` refuse `./gra
 ## Conventions
 
 - Code et identifiants en anglais, sans abréviation (sauf acronymes usuels et `i`, `j`, `k`).
-- Aucune chaîne affichée en dur, aucun nombre magique : ressources i18n et constantes nommées. Français dans `values/`, anglais dans `values-en/`, toujours dans le même commit.
+- Aucune chaîne affichée en dur, aucun nombre magique : ressources i18n et constantes nommées. Français seulement, dans `values/` (pas d'autre langue pour l'instant).
 - KISS d'abord : pas d'abstraction pour deux cas, imiter l'existant plutôt que créer un mécanisme parallèle.
 - Un commentaire n'existe que pour faire comprendre le code, expliquer une correction contre-intuitive, ou retenir une erreur qu'on referait. Jamais de récit, jamais de compte recopié.
 - Aucun tiret cadratin dans un texte affiché.

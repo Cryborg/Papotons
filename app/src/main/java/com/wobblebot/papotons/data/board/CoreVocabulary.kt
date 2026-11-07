@@ -8,7 +8,7 @@ import com.wobblebot.papotons.domain.WordCategory
 // Généré par tools/arasaac/fetch_pictograms.py : modifier la spécification du script, pas ce fichier.
 
 /**
- * Vocabulaire de base inséré au premier lancement, dans la langue de l'appareil. Chaque case
+ * Vocabulaire de base inséré au premier lancement, en français. Chaque case
  * porte son picto ARASAAC (fichier `assets/pictograms/<id>.png`) et sa catégorie de mot.
  * Une fois publiées, ces positions deviennent le plan moteur des utilisateurs : on ajoute dans
  * les emplacements libres, on ne déplace jamais (invariant 3).

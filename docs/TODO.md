@@ -17,9 +17,7 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 - **2026-11-06, dépôt public (open source)**.
 - **2026-11-06, code sous GPL-3.0**. Pourquoi : comme Cboard, personne ne peut en tirer une version fermée et payante. Les pictos ARASAAC restent sous leur propre licence (CC BY-NC-SA).
 - **2026-11-06, grilles stockées en Room** (ex-D-3). Open Board Format seulement à l'import et à l'export. Pourquoi : requêtes, migrations vérifiables (schéma exporté dans `app/schemas/`), contraintes qui gardent les positions (index unique) et les dossiers (RESTRICT).
-
-## Décisions à trancher
-- **D-2 Repli de langue** : `values/` est en français, donc un téléphone en allemand affiche l'appli en français. Garder ce repli (public d'abord francophone) ou poser la brique `langue` pour renvoyer vers l'anglais ?
+- **2026-11-07, français seulement** (ex-D-2) : l'appli, son vocabulaire et sa voix sont en français, quelle que soit la langue de l'appareil ; les ressources anglaises sont retirées. L'anglais viendra plus tard, avec une langue portée par chaque grille (la voix suivra la grille, pas l'appareil). Pourquoi : public d'abord francophone, et une grille anglaise ne se réduit pas à traduire les libellés (ordre des mots, élisions).
 
 ## Dette ouverte
 
@@ -27,7 +25,6 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 - **TODO-2** Icône provisoire (bulle blanche sur bleu) : à faire dessiner, avec une version monochrome pour les icônes à thème d'Android 13 (S).
 - **TODO-3** Base perdue prise pour un premier lancement : `seedIfEmpty` réinsère le vocabulaire de base dès que `boards` est vide, et le callback par défaut de SQLite supprime le fichier d'une base corrompue. Poser un marqueur « installation amorcée » (table vide + marqueur = alerte, pas de vocabulaire réinséré) et copier la base avant toute suppression dans `onCorruption` (invariant 4) (S).
 - **TODO-4** Volume média à zéro : la voix part sur le flux média, souvent baissé sur tablette, et l'utilisateur non oral ne peut pas signaler le silence. Prévenir quand le volume est à zéro (S).
-- **TODO-5** Langue de la voix figée : lue une seule fois à l'init, depuis la langue des ressources. Un changement de langue de l'appareil change l'interface et pas la voix ; à terme, la langue appartient à la grille (S).
 - **TODO-6** Message et pile de navigation perdus à la mort du processus : les garder dans `SavedStateHandle` (S).
 
 ## Feuille de route (MVP)

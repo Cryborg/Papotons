@@ -5,7 +5,7 @@ Lu par les skills et agents du plugin `socle` (review-and-fix, lessons, push-own
 ## Projet
 
 - Stack : Kotlin 2.4.20, Jetpack Compose (Material 3), Hilt, DataStore, Room. Aucun Firebase.
-- Langue du code : anglais. Langue des textes affichés : français source (`values/`), anglais (`values-en/`)
+- Langue du code : anglais. Langue des textes affichés : français seulement (`values/`)
 - Branche : `main`
 - Base du diff par défaut : travail du jour sur `main` (parent du premier commit depuis minuit) et l'arbre non commité
 

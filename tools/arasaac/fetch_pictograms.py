@@ -52,7 +52,6 @@ ASSETS = ROOT / "app/src/main/assets/pictograms"
 THEME = ROOT / "app/src/main/java/com/wobblebot/papotons/ui/theme/Theme.kt"
 KOTLIN = ROOT / "app/src/main/java/com/wobblebot/papotons/data/board/CoreVocabulary.kt"
 STRINGS_FR = ROOT / "app/src/main/res/values/strings_vocabulary.xml"
-STRINGS_EN = ROOT / "app/src/main/res/values-en/strings_vocabulary.xml"
 
 # Grilles : clé, nom fr, nom en, lignes, colonnes. L'accueil d'abord : son id doit valoir 1
 # (HOME_BOARD_ID dans domain/Board.kt).
@@ -425,13 +424,11 @@ def generate(cache):
             write_atomically(target, data=data)
 
     french = [(board_string_name(key), fr) for key, fr, *_rest in BOARDS]
-    english = [(board_string_name(key), en) for key, fr, en, *_rest in BOARDS]
+    # Appli en français seulement : les noms anglais de la spécification attendent la version anglaise.
     for cell in vocabulary:
         if cell.target is None:
             french.append((cell.string_name, cell.french))
-            english.append((cell.string_name, cell.english))
     write_strings(STRINGS_FR, french, comment="Vocabulaire de base (généré par tools/arasaac/fetch_pictograms.py).")
-    write_strings(STRINGS_EN, english, comment=None)
     write_atomically(KOTLIN, text=render_kotlin(choices, vocabulary))
     write_atomically(SNAPSHOT, text=snapshot)
     print(f"{len(images)} pictos, {len(vocabulary)} cases, {len(BOARDS)} grilles")
@@ -447,7 +444,7 @@ import com.wobblebot.papotons.domain.WordCategory
 // Généré par tools/arasaac/fetch_pictograms.py : modifier la spécification du script, pas ce fichier.
 
 /**
- * Vocabulaire de base inséré au premier lancement, dans la langue de l'appareil. Chaque case
+ * Vocabulaire de base inséré au premier lancement, en français. Chaque case
  * porte son picto ARASAAC (fichier `assets/pictograms/<id>.png`) et sa catégorie de mot.
  * Une fois publiées, ces positions deviennent le plan moteur des utilisateurs : on ajoute dans
  * les emplacements libres, on ne déplace jamais (invariant 3).
