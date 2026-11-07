@@ -25,6 +25,10 @@ data class BoardUiState(
     val speechStatus: SpeechStatus = SpeechStatus.Initializing,
     /** Les grilles ont été trouvées perdues : alerte pour l'adulte, jusqu'à acquittement. */
     val hasLostBoards: Boolean = false,
+    /** La voix ne peut pas s'entendre (volume média à zéro ou coupé). */
+    val isMuted: Boolean = false,
+    /** Un appui sur « Son coupé » n'a pas pu monter le son : modale pour l'adulte. */
+    val isVolumeLockedDialogOpen: Boolean = false,
 ) {
     /** Une phrase est en cours : rien ne doit interrompre (redémarrage de mise à jour). */
     val isComposingMessage: Boolean get() = message.isNotEmpty()

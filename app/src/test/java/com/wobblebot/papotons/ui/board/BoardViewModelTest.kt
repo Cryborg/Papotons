@@ -40,6 +40,7 @@ private val CORE_VOCABULARY_SEEDED = booleanPreferencesKey("core_vocabulary_seed
 class BoardViewModelTest {
     private val dispatcher = UnconfinedTestDispatcher()
     private val speaker = FakeSpeaker()
+    private val volume = FakeMediaVolume()
     private val preferences = FakePreferences()
     private val context = mockk<Context> {
         every { getString(any()) } answers { "label${firstArg<Int>()}" }
@@ -79,7 +80,7 @@ class BoardViewModelTest {
         savedState: SavedStateHandle = SavedStateHandle(),
         voice: FakeSpeaker = speaker,
     ): BoardViewModel {
-        val viewModel = BoardViewModel(BoardRepository(dao, preferences, context), voice, savedState)
+        val viewModel = BoardViewModel(BoardRepository(dao, preferences, context), voice, volume, savedState)
         backgroundScope.launch { viewModel.uiState.collect {} }
         return viewModel
     }
@@ -177,7 +178,7 @@ class BoardViewModelTest {
 
     @Test
     fun `waking the screen up never shows the loading state again`() = runTest(dispatcher) {
-        val viewModel = BoardViewModel(BoardRepository(FakeBoardDao(boards, cells), preferences, context), speaker, SavedStateHandle())
+        val viewModel = BoardViewModel(BoardRepository(FakeBoardDao(boards, cells), preferences, context), speaker, volume, SavedStateHandle())
         val firstCollector = backgroundScope.launch { viewModel.uiState.collect {} }
         viewModel.tap("A")
         firstCollector.cancel()
@@ -509,5 +510,78 @@ class BoardViewModelTest {
 
         assertEquals(listOf(HOME_BOARD_ID, 2L), savedState.get<LongArray>(NAVIGATION_KEY)?.toList())
         checkNotNull(dao.insertGate).complete(Unit)
+    }
+
+    @Test
+    fun `a muted volume shows, and goes away once raised`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        volume.deviceIsMuted = true
+
+        // Lu au moment de parler : « Ne pas déranger » ne se signale pas toujours.
+        viewModel.tap("je")
+        assertTrue(viewModel.state().isMuted)
+
+        viewModel.onMutedAlertClick()
+        assertFalse(viewModel.state().isMuted)
+        assertFalse(viewModel.state().isVolumeLockedDialogOpen)
+    }
+
+    @Test
+    fun `speaking the sentence and coming back to the app read the volume again`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.onSpeakMessage()
+        // Phrase vide : rien n'est dit, rien n'est relu.
+        assertEquals(0, volume.refreshCount)
+        viewModel.tap("je")
+        assertEquals(1, volume.refreshCount)
+
+        viewModel.onSpeakMessage()
+        assertEquals(2, volume.refreshCount)
+        viewModel.recoverSpeech()
+        assertEquals(3, volume.refreshCount)
+    }
+
+    @Test
+    fun `a volume that cannot be raised opens the dialog, which the sound coming back closes for good`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        volume.deviceIsMuted = true
+        volume.canRaise = false
+        volume.refresh()
+
+        viewModel.onMutedAlertClick()
+        assertTrue(viewModel.state().isVolumeLockedDialogOpen)
+
+        // L'adulte coupe « Ne pas déranger » sans fermer la modale : elle part, et ne revient pas
+        // quand le son est recoupé plus tard.
+        volume.deviceIsMuted = false
+        volume.refresh()
+        assertFalse(viewModel.state().isVolumeLockedDialogOpen)
+        volume.deviceIsMuted = true
+        volume.refresh()
+        assertTrue(viewModel.state().isMuted)
+        assertFalse(viewModel.state().isVolumeLockedDialogOpen)
+    }
+
+    @Test
+    fun `closing the volume dialog keeps the alert`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        volume.deviceIsMuted = true
+        volume.canRaise = false
+        viewModel.onMutedAlertClick()
+        assertTrue(viewModel.state().isVolumeLockedDialogOpen)
+
+        viewModel.onVolumeLockedDialogClose()
+
+        assertFalse(viewModel.state().isVolumeLockedDialogOpen)
+        assertTrue(viewModel.state().isMuted)
+    }
+
+    @Test
+    fun `the volume watch is released with the view model`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+
+        ViewModelStore().apply { put("board", viewModel) }.clear()
+
+        assertTrue(volume.isReleased)
     }
 }

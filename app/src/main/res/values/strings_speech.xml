@@ -10,4 +10,11 @@
     <string name="speech_dialog_retry">Réessayer</string>
     <string name="speech_dialog_settings">Réglages de la voix</string>
     <string name="speech_dialog_settings_unreachable">Les réglages n\'ont pas pu s\'ouvrir : ouvrez Réglages, puis Accessibilité, puis Synthèse vocale.</string>
+    <!-- Alerte de la barre du haut : un appui monte le son. -->
+    <string name="volume_muted_alert">Son coupé : monter le volume</string>
+    <!-- Modale pour l\'adulte quand l\'appui n\'a pas pu remonter le son. -->
+    <string name="volume_locked_title">Le son reste coupé</string>
+    <string name="volume_locked_body">Papotons n\'a pas pu monter le son : le mode Ne pas déranger ou un réglage de l\'appareil le bloque. Sans son, la voix ne s\'entend pas. Désactivez Ne pas déranger, ou montez le volume des médias dans les réglages du son.</string>
+    <string name="volume_locked_settings">Réglages du son</string>
+    <string name="volume_locked_close">Fermer</string>
 </resources>

@@ -1,5 +1,6 @@
 package com.wobblebot.papotons
 
+import android.media.AudioManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -50,6 +51,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Chaque écran consomme ensuite ses insets (la grille : barres système et encoche, pas le clavier).
         enableEdgeToEdge()
+        // Les touches de volume règlent la voix (flux média), pas la sonnerie, même quand rien ne joue.
+        volumeControlStream = AudioManager.STREAM_MUSIC
         inAppUpdateManager = InAppUpdateManager(this)
         setContent {
             PapotonsTheme {

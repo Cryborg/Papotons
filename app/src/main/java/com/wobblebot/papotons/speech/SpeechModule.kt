@@ -20,4 +20,7 @@ abstract class SpeechModule {
 
     @Binds
     abstract fun scheduler(handlerScheduler: HandlerScheduler): MainThreadScheduler
+
+    @Binds
+    abstract fun mediaVolume(androidMediaVolume: AndroidMediaVolume): MediaVolume
 }

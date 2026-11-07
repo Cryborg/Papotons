@@ -10,6 +10,7 @@ import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.SentenceWord
 import com.wobblebot.papotons.domain.layoutGrid
 import com.wobblebot.papotons.domain.sentenceTokens
+import com.wobblebot.papotons.speech.MediaVolume
 import com.wobblebot.papotons.speech.Speaker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.PersistentList
@@ -42,6 +43,7 @@ internal const val STOP_TIMEOUT_MS = 5_000L
 class BoardViewModel @Inject constructor(
     private val repository: BoardRepository,
     private val speaker: Speaker,
+    private val mediaVolume: MediaVolume,
     /**
      * Miroir de la pile et de la phrase, pour survivre à la mort du processus : lu une seule fois
      * ici, à la création, puis seulement recopié (un collecteur par flux).
@@ -51,6 +53,12 @@ class BoardViewModel @Inject constructor(
     /** Pile des grilles ouvertes, l'accueil en bas. Vide tant que l'accueil n'est pas prêt. */
     private val navigation = MutableStateFlow<PersistentList<Long>>(persistentListOf())
     private val message = MutableStateFlow(restoredMessage())
+
+    /**
+     * Ouverte seulement par un appui sans effet sur « Son coupé ». Le son revenu la referme pour de
+     * bon : un volume recoupé plus tard ne doit pas la rouvrir sans qu'on ait rien touché.
+     */
+    private val isVolumeLockedDialogOpen = MutableStateFlow(false)
 
     /**
      * La grille affichée reste la précédente tant que la suivante n'est pas lue : une grille
@@ -73,12 +81,15 @@ class BoardViewModel @Inject constructor(
             speaker.status,
             // Faux d'ici la première lecture : l'écran n'attend pas l'alerte pour s'afficher.
             repository.observeLostBoards().onStart { emit(false) },
-        ) { board, words, speechStatus, hasLostBoards ->
+            combine(mediaVolume.isMuted, isVolumeLockedDialogOpen) { isMuted, isDialogOpen -> isMuted to (isMuted && isDialogOpen) },
+        ) { board, words, speechStatus, hasLostBoards, (isMuted, isVolumeLocked) ->
             BoardUiState(
                 board = board,
                 message = sentenceTokens(words).toImmutableList(),
                 speechStatus = speechStatus,
                 hasLostBoards = hasLostBoards,
+                isMuted = isMuted,
+                isVolumeLockedDialogOpen = isVolumeLocked,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), BoardUiState())
 
@@ -96,6 +107,9 @@ class BoardViewModel @Inject constructor(
         viewModelScope.launch {
             message.collect { words -> savedState[MESSAGE_KEY] = ArrayList(words.map(SavedWord::from)) }
         }
+        viewModelScope.launch {
+            mediaVolume.isMuted.collect { isMuted -> if (!isMuted) isVolumeLockedDialogOpen.value = false }
+        }
     }
 
     fun onCellClick(cell: Cell) {
@@ -106,6 +120,8 @@ class BoardViewModel @Inject constructor(
             navigation.update { stack -> if (isShowingTopOf(stack)) stack.adding(linkedBoardId) else stack }
         } else {
             speaker.speak(cell.label, interrupt = false)
+            // Au moment de parler : certaines coupures (« Ne pas déranger ») ne se signalent pas.
+            mediaVolume.refresh()
             message.update { it.adding(SentenceWord(cell.label, cell.category, cell.pictogramId)) }
         }
     }
@@ -120,7 +136,9 @@ class BoardViewModel @Inject constructor(
 
     fun onSpeakMessage() {
         val words = message.value
-        if (words.isNotEmpty()) speaker.speak(sentenceTokens(words).joinToString(separator = " ") { it.text }, interrupt = true)
+        if (words.isEmpty()) return
+        speaker.speak(sentenceTokens(words).joinToString(separator = " ") { it.text }, interrupt = true)
+        mediaVolume.refresh()
     }
 
     fun onDeleteLastWord() {
@@ -140,14 +158,25 @@ class BoardViewModel @Inject constructor(
     /**
      * À chaque `ON_START` (retour au premier plan, mais aussi rotation) et sur « Réessayer » :
      * une voix a pu être installée ou le moteur réactivé entre-temps, parfois sans que l'appli
-     * ne quitte le premier plan (écran partagé).
+     * ne quitte le premier plan (écran partagé). Le volume a pu changer aussi : il est relu.
      */
     fun recoverSpeech() {
         speaker.recoverIfNeeded()
+        mediaVolume.refresh()
+    }
+
+    /** Monte le son à un niveau audible ; s'il reste coupé, la modale pour l'adulte s'ouvre. */
+    fun onMutedAlertClick() {
+        if (!mediaVolume.raise()) isVolumeLockedDialogOpen.value = true
+    }
+
+    fun onVolumeLockedDialogClose() {
+        isVolumeLockedDialogOpen.value = false
     }
 
     override fun onCleared() {
         speaker.shutdown()
+        mediaVolume.release()
     }
 
     private fun isShowingTopOf(stack: PersistentList<Long>): Boolean = uiState.value.board?.id == stack.lastOrNull()

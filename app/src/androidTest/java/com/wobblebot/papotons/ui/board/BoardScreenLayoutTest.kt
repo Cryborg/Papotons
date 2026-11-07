@@ -20,6 +20,11 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.test.ForcedSize
+import androidx.compose.ui.test.DeviceConfigurationOverride
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
@@ -57,6 +62,10 @@ private const val LONG_SENTENCE_WORD_COUNT = 30
 private const val BUNDLED_PICTOGRAM_ID = 6632L
 private const val MIN_PICTOGRAM_SHARE = 0.4f
 private const val CENTER_TOLERANCE_DP = 2f
+// Un peu au-dessus du seuil où l'alerte de voix s'écrit (WRITTEN_ALERT_MIN_BAR_WIDTH, plus marges et insets).
+private val WIDE_BAR_WIDTH = 800.dp
+private const val WIDTH_TOLERANCE_DP = 0.01f
+private val WIDE_BAR_HEIGHT = 900.dp
 
 /**
  * Invariant 3 à l'écran : ce qui change autour de la grille (alerte de voix, message,
@@ -77,7 +86,7 @@ class BoardScreenLayoutTest {
         message = persistentListOf(),
         speechStatus = SpeechStatus.Ready,
     )
-    private val noActions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}, {})
+    private val noActions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {})
 
     private fun cellBounds(label: String) = composeRule.onNodeWithText(label).getBoundsInRoot()
 
@@ -109,6 +118,10 @@ class BoardScreenLayoutTest {
         state = homeState.copy(board = checkNotNull(homeState.board).copy(canGoBack = true))
         composeRule.onNodeWithContentDescription(context.getString(R.string.board_back)).assertIsDisplayed()
         assertEquals("navigation buttons", original, cellBounds("Manger"))
+        // Toutes les alertes à la fois : une seule tient en barre étroite, toutes en barre large.
+        state = homeState.copy(speechStatus = SpeechStatus.LanguageMissing, isMuted = true, hasLostBoards = true)
+        composeRule.onNodeWithContentDescription(context.getString(R.string.volume_muted_alert)).assertIsDisplayed()
+        assertEquals("every alert", original, cellBounds("Manger"))
     }
 
     @Test
@@ -307,9 +320,99 @@ class BoardScreenLayoutTest {
 
         // Chevauchés, l'appui sur « Effacer le dernier mot » effacerait toute la phrase.
         assertTrue("delete ends at ${deleteLast.right}, clear starts at ${clear.left}", deleteLast.right <= clear.left)
-        assertTrue("clear ends at ${clear.right}, alert starts at ${alert.left}", clear.right <= alert.left)
-        assertTrue("alert ends at ${alert.right}, about starts at ${about.left}", alert.right <= about.left)
+        val speak = composeRule.onNodeWithContentDescription(context.getString(R.string.message_speak)).getBoundsInRoot()
+        assertTrue("alert ends at ${alert.right}, speak starts at ${speak.left}", alert.right <= speak.left)
+        assertTrue("clear ends at ${clear.right}, about starts at ${about.left}", clear.right <= about.left)
         assertEquals(clear.width, deleteLast.width)
+    }
+
+    @Test
+    fun theMutedAlertRaisesTheVolume() {
+        var raiseCount = 0
+        val actions = noActions.copy(onMutedAlertClick = { raiseCount++ })
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = homeState.copy(isMuted = true), actions = actions) } }
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.volume_muted_alert)).performClick()
+
+        assertEquals(1, raiseCount)
+    }
+
+    @Test
+    fun anAlertThatComesOrGoesNeverMovesTheMessageButtons() {
+        // Son coupé détecté en disant la phrase, puis remonté par l'appui : le second appui au même
+        // endroit ne doit ni effacer un mot ni vider la phrase.
+        var state by mutableStateOf(homeState.copy(message = persistentListOf(SentenceToken("je", persistentListOf()))))
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = state, actions = noActions) } }
+        fun buttons() = listOf(R.string.message_speak, R.string.message_delete_last, R.string.message_clear, R.string.about_open)
+            .map { composeRule.onNodeWithContentDescription(context.getString(it)).getBoundsInRoot() }
+        val withoutAlert = buttons()
+
+        state = state.copy(isMuted = true)
+        composeRule.onNodeWithContentDescription(context.getString(R.string.volume_muted_alert)).assertIsDisplayed()
+        assertEquals("alert appearing", withoutAlert, buttons())
+
+        state = state.copy(isMuted = false)
+        composeRule.waitForIdle()
+        assertEquals("alert vanishing", withoutAlert, buttons())
+    }
+
+    @Test
+    fun aNarrowBarWithEveryAlertShowsOnlyTheMostImportant() {
+        // L'émulateur fait 411 dp : barre étroite. Dossier ouvert, phrase longue, toutes les alertes.
+        val words = (0 until LONG_SENTENCE_WORD_COUNT).map { SentenceToken("mot$it", persistentListOf()) }
+        val state = homeState.copy(
+            board = checkNotNull(homeState.board).copy(canGoBack = true),
+            message = words.toImmutableList(),
+            speechStatus = SpeechStatus.LanguageMissing,
+            isMuted = true,
+            hasLostBoards = true,
+        )
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = state, actions = noActions) } }
+
+        val clear = composeRule.onNodeWithContentDescription(context.getString(R.string.message_clear)).getBoundsInRoot()
+        val muted = composeRule.onNodeWithContentDescription(context.getString(R.string.volume_muted_alert)).getBoundsInRoot()
+        val about = composeRule.onNodeWithContentDescription(context.getString(R.string.about_open)).getBoundsInRoot()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.lost_boards_alert)).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.speech_language_missing)).assertDoesNotExist()
+
+        val speak = composeRule.onNodeWithContentDescription(context.getString(R.string.message_speak)).getBoundsInRoot()
+        assertTrue("muted alert ends at ${muted.right}, speak starts at ${speak.left}", muted.right <= speak.left)
+        assertTrue("clear ends at ${clear.right}, about starts at ${about.left}", clear.right <= about.left)
+    }
+
+    @Test
+    fun aWideBarWithEveryAlertKeepsEveryButtonReachable() {
+        // Le pire cas en barre large : à peine assez pour écrire l'alerte de voix, dossier ouvert,
+        // phrase longue, voix française manquante, son coupé, grilles perdues.
+        val words = (0 until LONG_SENTENCE_WORD_COUNT).map { SentenceToken("mot$it", persistentListOf()) }
+        val state = homeState.copy(
+            board = checkNotNull(homeState.board).copy(canGoBack = true),
+            message = words.toImmutableList(),
+            speechStatus = SpeechStatus.LanguageMissing,
+            isMuted = true,
+            hasLostBoards = true,
+        )
+        composeRule.setContent {
+            DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(DpSize(WIDE_BAR_WIDTH, WIDE_BAR_HEIGHT))) {
+                PapotonsTheme { BoardScreen(state = state, actions = noActions) }
+            }
+        }
+
+        val deleteLast = composeRule.onNodeWithContentDescription(context.getString(R.string.message_delete_last)).getBoundsInRoot()
+        val clear = composeRule.onNodeWithContentDescription(context.getString(R.string.message_clear)).getBoundsInRoot()
+        val speech = composeRule.onNodeWithText(context.getString(R.string.speech_language_missing)).getBoundsInRoot()
+        val muted = composeRule.onNodeWithContentDescription(context.getString(R.string.volume_muted_alert)).getBoundsInRoot()
+        val lost = composeRule.onNodeWithContentDescription(context.getString(R.string.lost_boards_alert)).getBoundsInRoot()
+        val about = composeRule.onNodeWithContentDescription(context.getString(R.string.about_open)).getBoundsInRoot()
+
+        assertTrue("delete ends at ${deleteLast.right}, clear starts at ${clear.left}", deleteLast.right <= clear.left)
+        val speak = composeRule.onNodeWithContentDescription(context.getString(R.string.message_speak)).getBoundsInRoot()
+        assertTrue("voice alert ends at ${speech.right}, muted starts at ${muted.left}", speech.right <= muted.left)
+        assertTrue("muted ends at ${muted.right}, lost boards starts at ${lost.left}", muted.right <= lost.left)
+        assertTrue("lost boards ends at ${lost.right}, speak starts at ${speak.left}", lost.right <= speak.left)
+        assertTrue("clear ends at ${clear.right}, about starts at ${about.left}", clear.right <= about.left)
+        // Densité forcée : arrondis au millième de dp près.
+        assertEquals(clear.width.value, deleteLast.width.value, WIDTH_TOLERANCE_DP)
     }
 
     @Test

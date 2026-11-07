@@ -60,6 +60,7 @@ data class BoardActions(
     val onDeleteLastWord: () -> Unit,
     val onClearMessage: () -> Unit,
     val onSpeechAlertClick: () -> Unit,
+    val onMutedAlertClick: () -> Unit,
     val onLostBoardsAlertClick: () -> Unit,
     val onAboutClick: () -> Unit,
 )
@@ -84,6 +85,7 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
                 areSettingsUnreachable = false
                 isSpeechDialogOpen = true
             },
+            onMutedAlertClick = viewModel::onMutedAlertClick,
             onLostBoardsAlertClick = { isLostBoardsDialogOpen = true },
             onAboutClick = { isAboutOpen = true },
         )
@@ -93,6 +95,15 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
     BackHandler(enabled = state.board?.canGoBack == true, onBack = viewModel::onBack)
     BoardScreen(state = state, actions = actions)
     if (isAboutOpen) AboutDialog(onClose = { isAboutOpen = false })
+    if (state.isVolumeLockedDialogOpen) {
+        VolumeLockedDialog(
+            onOpenSettings = {
+                // Aucun écran ouvert : la modale reste, la marche à suivre y est écrite.
+                if (openSoundSettings(context)) viewModel.onVolumeLockedDialogClose()
+            },
+            onClose = viewModel::onVolumeLockedDialogClose,
+        )
+    }
     if (isLostBoardsDialogOpen && state.hasLostBoards) {
         LostBoardsDialog(
             onAcknowledge = {
@@ -137,9 +148,11 @@ fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier =
                 canGoBack = board?.canGoBack == true,
                 speechStatus = state.speechStatus,
                 hasLostBoards = state.hasLostBoards,
+                isMuted = state.isMuted,
                 onBack = actions.onBack,
                 onHome = actions.onHome,
                 onSpeechAlertClick = actions.onSpeechAlertClick,
+                onMutedAlertClick = actions.onMutedAlertClick,
                 onLostBoardsAlertClick = actions.onLostBoardsAlertClick,
                 onAboutClick = actions.onAboutClick,
             ) {
@@ -176,13 +189,19 @@ fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier =
     }
 }
 
+/** Réglages du son, sinon réglages généraux. Faux quand aucun écran n'a pu s'ouvrir. */
+private fun openSoundSettings(context: Context): Boolean = openFirstSettings(context, listOf(Settings.ACTION_SOUND_SETTINGS, Settings.ACTION_SETTINGS))
+
 /**
  * Réglages de synthèse vocale, sinon installation de voix (action publique), sinon réglages
  * généraux. Pas de `resolveActivity` : il exigerait de déclarer chaque action dans `<queries>`.
  * Faux quand aucun écran n'a pu s'ouvrir.
  */
-private fun openSpeechSettings(context: Context): Boolean {
-    val actions = listOf(TTS_SETTINGS_ACTION, TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA, Settings.ACTION_SETTINGS)
+private fun openSpeechSettings(context: Context): Boolean =
+    openFirstSettings(context, listOf(TTS_SETTINGS_ACTION, TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA, Settings.ACTION_SETTINGS))
+
+/** Ouvre le premier écran de [actions] qui existe. Faux quand aucun n'a pu s'ouvrir. */
+private fun openFirstSettings(context: Context, actions: List<String>): Boolean {
     for (action in actions) {
         try {
             context.startActivity(Intent(action))
@@ -213,7 +232,7 @@ private fun BoardScreenPreview() {
                 message = persistentListOf(SentenceToken("je", persistentListOf()), SentenceToken("veux", persistentListOf())),
                 speechStatus = SpeechStatus.LanguageMissing,
             ),
-            actions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}, {}),
+            actions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {}),
         )
     }
 }

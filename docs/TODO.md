@@ -23,7 +23,6 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 
 - **TODO-1** Pas encore de `docs/regles/INVARIANTS.md` ni de tests qui gardent les invariants 1 à 5 du CLAUDE.md : à écrire avec les premières fonctions (S).
 - **TODO-2** Icône provisoire (bulle blanche sur bleu) : à faire dessiner, avec une version monochrome pour les icônes à thème d'Android 13 (S).
-- **TODO-4** Volume média à zéro : la voix part sur le flux média, souvent baissé sur tablette, et l'utilisateur non oral ne peut pas signaler le silence. Prévenir quand le volume est à zéro (S).
 
 ## Feuille de route (MVP)
 
