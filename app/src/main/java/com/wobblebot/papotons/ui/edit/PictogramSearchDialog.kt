@@ -104,7 +104,12 @@ fun PictogramSearchDialog(
                         val loading = stringResource(R.string.search_loading)
                         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                             // Annoncée : un adulte qui n'y voit pas sait que la recherche est partie.
-                            CircularProgressIndicator(modifier = Modifier.semantics { contentDescription = loading; liveRegion = LiveRegionMode.Polite })
+                            CircularProgressIndicator(
+                                modifier = Modifier.semantics {
+                                    contentDescription = loading
+                                    liveRegion = LiveRegionMode.Polite
+                                },
+                            )
                         }
                     }
                     SearchStatus.Failed -> Column(verticalArrangement = Arrangement.spacedBy(ITEM_SPACING)) {

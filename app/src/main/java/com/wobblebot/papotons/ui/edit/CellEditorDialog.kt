@@ -42,6 +42,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -199,15 +200,18 @@ private fun CellEditor(
                 Section(R.string.editor_pictogram) {
                     val currentPictogram = pictogramId
                     val currentPhoto = photoFile
+                    // Nommé : TalkBack confirme qu'une photo ou un picto est en place, une fois l'import fini.
+                    val photoPreview = stringResource(R.string.editor_preview_photo)
+                    val pictogramPreview = stringResource(R.string.editor_preview_pictogram)
                     if (currentPhoto != null) {
-                        CellPicture(Picture.Photo(currentPhoto), Modifier.size(PICTOGRAM_PREVIEW_SIZE))
+                        CellPicture(Picture.Photo(currentPhoto), Modifier.size(PICTOGRAM_PREVIEW_SIZE).semantics { contentDescription = photoPreview })
                     } else if (currentPictogram == null) {
                         Text(stringResource(R.string.editor_no_pictogram))
                     } else if (chosen != null && chosen.id == currentPictogram) {
                         // Pas encore gardé sur l'appareil : l'image de la recherche.
-                        Image(bitmap = chosen.image, contentDescription = null, modifier = Modifier.size(PICTOGRAM_PREVIEW_SIZE))
+                        Image(bitmap = chosen.image, contentDescription = pictogramPreview, modifier = Modifier.size(PICTOGRAM_PREVIEW_SIZE))
                     } else {
-                        Pictogram(currentPictogram, Modifier.size(PICTOGRAM_PREVIEW_SIZE))
+                        Pictogram(currentPictogram, Modifier.size(PICTOGRAM_PREVIEW_SIZE).semantics { contentDescription = pictogramPreview })
                     }
                     if (state.isImportingPhoto) {
                         // Annoncée : la préparation d'une photo peut durer, TalkBack ne doit pas rester muet.

@@ -73,4 +73,26 @@ class EditorAnnouncementsTest {
 
         composeRule.onNodeWithText(context.getString(R.string.editor_photo_importing)).assert(announced)
     }
+
+    @Test
+    fun theImageOfTheCellIsNamed() {
+        val cell = Cell(id = 4, row = 0, column = 1, label = "Mamie", linkedBoardId = null, photoFile = "mamie.jpg")
+        composeRule.setContent {
+            PapotonsTheme {
+                CellEditorDialog(
+                    state = CellEditorState(EditTarget.ExistingCell(boardId = 1, cell = cell)),
+                    onSave = { _, _ -> },
+                    onDelete = {},
+                    onOpenFolder = {},
+                    onSearchPictogram = {},
+                    onRemovePictogram = {},
+                    onTakePhoto = null,
+                    onChoosePhoto = {},
+                    onClose = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.editor_preview_photo)).assertExists()
+    }
 }

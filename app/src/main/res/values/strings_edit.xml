@@ -32,6 +32,8 @@
     <string name="editor_kind_folder">Dossier (il ouvre une grille)</string>
     <string name="editor_pictogram">Image</string>
     <string name="editor_no_pictogram">Sans image</string>
+    <string name="editor_preview_photo">Photo de la case</string>
+    <string name="editor_preview_pictogram">Pictogramme de la case</string>
     <string name="editor_remove_pictogram">Retirer l\'image</string>
     <string name="editor_search_pictogram">Chercher un pictogramme</string>
     <string name="editor_take_photo">Prendre une photo</string>
@@ -47,9 +49,9 @@
     <string name="search_button">Chercher</string>
     <string name="search_loading">Recherche en cours</string>
     <plurals name="search_found">
-        <item quantity="one">%d pictogramme trouvé</item>
-        <item quantity="many">%d pictogrammes trouvés</item>
-        <item quantity="other">%d pictogrammes trouvés</item>
+        <item quantity="one">%1$d pictogramme trouvé</item>
+        <item quantity="many">%1$d pictogrammes trouvés</item>
+        <item quantity="other">%1$d pictogrammes trouvés</item>
     </plurals>
     <string name="search_none">Aucun pictogramme pour ce mot. Essayez un mot plus simple ou au singulier.</string>
     <string name="search_failed">La recherche n\'a pas abouti. Vérifiez la connexion internet et réessayez dans un moment ; le reste de l\'appli fonctionne sans.</string>
