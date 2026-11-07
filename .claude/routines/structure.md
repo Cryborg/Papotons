@@ -1,0 +1,10 @@
+# Papotons : consignes `structure`
+
+Lues par la tournée cloud (23 h) (programme : `~/.claude/scheduled-tasks/programme.md`). Le verrou, le temps, les lois communes, le passage et la forme du compte rendu sont dans `REGLES_COMMUNES.md`, la passe en général dans `passes/structure.md` ; ici, seulement ce qui est propre à Papotons. Écrites le 2026-11-07, à l'entrée du projet dans les routines.
+
+Avant tout, lis le `CLAUDE.md` du dépôt (stack, architecture, conventions, invariants numérotés) : il l'emporte sur toute habitude prise sur un jeu. Papotons n'est PAS un jeu : c'est une appli de Communication Améliorante et Alternative, utilisée par des enfants qui ne parlent pas. Une case qui bouge ou une grille perdue, c'est la parole de l'enfant qui casse. La mémoire du projet est versionnée dans `.claude/memoire-auto/` (index : `MEMORY.md`).
+
+1. Mesure : pour chaque fichier Kotlin de `app/src/main/java`, le nombre de commits des 60 derniers jours multiplié par son nombre de lignes. Les dix premiers sont les candidats ; ajoute les fonctions de plus de 60 lignes et les `@Composable` de plus de 150. La carte des domaines du scan mécanique (`bash tools/audit/mechanical-scan.sh --pretty`) aide à nommer les coutures.
+2. Pour chaque candidat, nomme la couture : quel domaine se sépare de quel autre (grille et placement, phrase et élision, synthèse vocale, édition, réglages, profils). La séparation voulue est celle du `CLAUDE.md` : `domain/` en Kotlin pur et testé, `data/`, `speech/`, `ui/<écran>/`.
+3. Livre les découpes MÉCANIQUES (déplacer du code sans changer son comportement : extraire un composable, un fichier, une fonction privée), une par commit, `refactor(<écran ou couche>): …`. Ne déplace jamais ce que les invariants nomment sans vérifier les tests qui le citent. Ne touche ni aux entités Room, ni aux DAO, ni aux migrations : leurs noms et paquets entrent dans le schéma exporté.
+4. Le reste va dans `docs/TODO.md` § « Dette ouverte », priorisé, avec la couture nommée et l'effort.

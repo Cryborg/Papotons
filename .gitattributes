@@ -9,3 +9,9 @@
 *.jar binary
 *.keystore binary
 *.jks binary
+
+# Routines : le PC (tournée du soir) et le cloud (branche claude/routines) ajoutent
+# tous deux des lignes à ces fichiers ; le gate les réunit par union au lieu
+# d'écarter l'un des deux côtés (PLAN_DES_NUITS.md, loi 2 bis).
+docs/TODO.md merge=union
+docs/NUITS.md merge=union

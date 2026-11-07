@@ -1,0 +1,16 @@
+# Papotons : consignes `chantier-todo`
+
+Lues par la tournée cloud (23 h) (programme : `~/.claude/scheduled-tasks/programme.md`). Le verrou, le temps, les lois communes, le passage et la forme du compte rendu sont dans `REGLES_COMMUNES.md`, la passe en général dans `passes/chantier-todo.md` ; ici, seulement ce qui est propre à Papotons. Écrites le 2026-11-07, à l'entrée du projet dans les routines.
+
+Avant tout, lis le `CLAUDE.md` du dépôt (stack, architecture, conventions, invariants numérotés) : il l'emporte sur toute habitude prise sur un jeu. Papotons n'est PAS un jeu : c'est une appli de Communication Améliorante et Alternative, utilisée par des enfants qui ne parlent pas. Une case qui bouge ou une grille perdue, c'est la parole de l'enfant qui casse. La mémoire du projet est versionnée dans `.claude/memoire-auto/` (index : `MEMORY.md`).
+
+- TA FILE : les entrées de `docs/TODO.md` § « Dette ouverte » qui portent `[chantier]`, chacune avec son ID `TODO-<n>` (c'est lui qui finit le titre du commit). Tu ne rouvres rien de « Décisions actées », et tu ne touches pas à « Feuille de route (MVP) » ni à « Idées ».
+- LES TESTS : en Kotlin pur dans `app/src/test/java/com/wobblebot/papotons/` (`InvariantsTest`, `CoreVocabularyLayoutSnapshotTest`, `BoardRepositoryTest`…). Un invariant numéroté cité par son test garde ce test vert et intact : un correctif qui demanderait de le changer se rend.
+- SE REND SANS RIEN CODER, en plus des critères communs : toute entité ou migration Room (`app/schemas/`, invariant 4) ; la sauvegarde et l'export `.obz` ; le vocabulaire de base, son instantané et les fichiers générés (voir plus bas) ; une chaîne neuve (c'est une mise en page à voir) ; le rendu de la grille et les gestes (taille des cases, glisser-déposer), qui se jugent à l'écran ; l'épinglage de l'appli et la sortie protégée.
+- **Jamais à la main**, même pour une coquille : le vocabulaire de base et les pictos (générés par `tools/arasaac/fetch_pictograms.py`), `assets/conjugations.tsv` (généré par `tools/conjugaison/generate_conjugations.py`), les grilles de `docs/test-ferme/grilles/`. Un défaut dedans se corrige dans le générateur ou sa source (`choices.json`, `verbs.txt`), et la régénération est pour une session de jour : la nuit, ça va au TODO.
+- **Jamais déplacé ni retiré** : une case de l'instantané `core_vocabulary_layout.txt` (invariant 3, testé par `CoreVocabularyLayoutSnapshotTest`), un picto livré, un nom de `WordCategory`.
+- RELIS en plus, comme la relecture du code : aucun nombre magique, aucun tiret cadratin affiché, `DialogProperties(dismissOnClickOutside = false)` sur toute modale.
+- Une entrée en partie seulement faisable : tu ne la découpes pas toi-même, tu la rends avec la raison.
+- Aucun journal à part : tes commits et ton compte rendu suffisent, et l'état de la file est le TODO lui-même.
+
+DANS LE CLOUD : le dépôt est un clone relié à `~/projets/Papotons`, sur la branche `claude/routines`. Tu commites avec `bash ~/.claude/scheduled-tasks/bin/routine-commit.sh "<message>" <fichiers>` lancé depuis ce dossier, jamais `git commit`, et tu ne pousses rien : `ranger`, en fin de tournée, pousse la branche. La relecture du code passe APRÈS toi dans la même tournée : elle relira tes commits, et les entrées qu'elle marque cette nuit sont pour la nuit suivante.
