@@ -14,10 +14,12 @@ import com.wobblebot.papotons.data.board.FakeBoardDao
 import com.wobblebot.papotons.data.pictogram.PictogramResult
 import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.CellContent
+import com.wobblebot.papotons.domain.ConjugationTable
 import com.wobblebot.papotons.domain.WordCategory
 import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import com.wobblebot.papotons.domain.Picture
+import com.wobblebot.papotons.domain.SentenceWord
 import com.wobblebot.papotons.speech.SpeechStatus
 import io.mockk.every
 import io.mockk.mockk
@@ -54,6 +56,7 @@ class BoardViewModelTest {
     private val arasaac = FakeArasaacClient()
     private val pictogramStore = FakePictogramStore()
     private val photos = FakePhotoStore()
+    private val conjugations = FakeConjugations()
     private var nowMs = 0L
     private var filesDirectory = File("build/tmp/no-files")
     private val preferences = FakePreferences()
@@ -95,7 +98,7 @@ class BoardViewModelTest {
         savedState: SavedStateHandle = SavedStateHandle(),
         voice: FakeSpeaker = speaker,
     ): BoardViewModel {
-        val viewModel = BoardViewModel(BoardRepository(dao, preferences, context).also { it.fileDispatcher = dispatcher }, voice, volume, arasaac, pictogramStore, photos, savedState).also { it.elapsedRealtimeMs = { nowMs } }
+        val viewModel = BoardViewModel(BoardRepository(dao, preferences, context).also { it.fileDispatcher = dispatcher }, voice, volume, arasaac, pictogramStore, photos, conjugations, savedState).also { it.elapsedRealtimeMs = { nowMs } }
         backgroundScope.launch { viewModel.uiState.collect {} }
         return viewModel
     }
@@ -104,9 +107,16 @@ class BoardViewModelTest {
 
     private fun BoardViewModel.messageTexts() = state().message.map { it.text }
 
+    private fun BoardViewModel.cell(label: String): Cell = checkNotNull(state().board).grid.flatten().filterNotNull().first { it.label == label }
+
     private fun BoardViewModel.tap(label: String) {
-        val cell: Cell = checkNotNull(state().board).grid.flatten().filterNotNull().first { it.label == label }
-        onCellClick(cell)
+        onCellClick(cell(label))
+    }
+
+    /** Ouvre la grille 3, où « ai » est un verbe avec un picto. */
+    private fun BoardViewModel.openVerbBoard() {
+        tap("A")
+        tap("B")
     }
 
     @Test
@@ -193,7 +203,7 @@ class BoardViewModelTest {
 
     @Test
     fun `waking the screen up never shows the loading state again`() = runTest(dispatcher) {
-        val viewModel = BoardViewModel(BoardRepository(FakeBoardDao(boards, cells), preferences, context), speaker, volume, arasaac, pictogramStore, photos, SavedStateHandle()).also { it.elapsedRealtimeMs = { nowMs } }
+        val viewModel = BoardViewModel(BoardRepository(FakeBoardDao(boards, cells), preferences, context), speaker, volume, arasaac, pictogramStore, photos, conjugations, SavedStateHandle()).also { it.elapsedRealtimeMs = { nowMs } }
         val firstCollector = backgroundScope.launch { viewModel.uiState.collect {} }
         viewModel.tap("A")
         firstCollector.cancel()
@@ -1564,7 +1574,7 @@ class BoardViewModelTest {
     @Test
     fun `a restore brings the stack back home and closes the editor`() = runTest(dispatcher) {
         val repository = BoardRepository(FakeBoardDao(boards, cells), preferences, context).also { it.fileDispatcher = dispatcher }
-        val viewModel = BoardViewModel(repository, speaker, volume, arasaac, pictogramStore, photos, SavedStateHandle()).also { it.elapsedRealtimeMs = { nowMs } }
+        val viewModel = BoardViewModel(repository, speaker, volume, arasaac, pictogramStore, photos, conjugations, SavedStateHandle()).also { it.elapsedRealtimeMs = { nowMs } }
         backgroundScope.launch { viewModel.uiState.collect {} }
         viewModel.tap("A")
         viewModel.tap("B")
@@ -1578,5 +1588,236 @@ class BoardViewModelTest {
         assertFalse(viewModel.state().board?.canGoBack == true)
         assertNull(viewModel.state().editor)
         assertTrue(viewModel.state().isEditing)
+    }
+
+    @Test
+    fun `a long press on a verb opens its forms without speaking`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.openVerbBoard()
+
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+
+        assertEquals("avoir", viewModel.state().verbForms?.forms?.infinitive)
+        assertTrue(speaker.spoken.isEmpty())
+        assertTrue(viewModel.state().message.isEmpty())
+        // La grille d'en dessous reste celle d'où la page a été ouverte.
+        assertEquals(3L, viewModel.state().board?.id)
+    }
+
+    @Test
+    fun `a form is spoken and added as a verb with the picture of its cell, and the grid comes back`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.tap("je")
+        viewModel.openVerbBoard()
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+
+        viewModel.onVerbFormClick("ai eu")
+
+        assertEquals(listOf("je", "ai eu"), speaker.spoken)
+        // « j'ai eu » : la forme garde la catégorie verbe, sans quoi « je » ne s'élide pas.
+        assertEquals(listOf("j'ai eu"), viewModel.messageTexts())
+        assertEquals(listOf(listOf(10L, 80L)), viewModel.state().message.map { token -> token.pictures.map { (it as Picture.Pictogram).id } })
+        assertNull(viewModel.state().verbForms)
+        assertEquals(3L, viewModel.state().board?.id)
+    }
+
+    @Test
+    fun `a form touched with no page open does nothing`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+
+        viewModel.onVerbFormClick("ai eu")
+
+        assertTrue(speaker.spoken.isEmpty())
+        assertTrue(viewModel.state().message.isEmpty())
+    }
+
+    @Test
+    fun `a long press on a verb outside the table speaks it like a tap`() = runTest(dispatcher) {
+        // Grille 2 : « B », puis un verbe que la table ne connaît pas, à l'emplacement libre.
+        val unknownVerb = CellEntity(id = 20, boardId = 2, row = 0, column = 1, label = "ubériser", linkedBoardId = null, pictogramId = null, category = "VERB")
+        val viewModel = startViewModel(FakeBoardDao(boards, cells + unknownVerb))
+        viewModel.tap("A")
+
+        viewModel.onCellLongClick(viewModel.cell("ubériser"))
+
+        assertNull(viewModel.state().verbForms)
+        assertEquals(listOf("ubériser"), speaker.spoken)
+        assertEquals(listOf("ubériser"), viewModel.messageTexts())
+    }
+
+    @Test
+    fun `a long press on a word that is not a verb speaks it, even when it reads like a form`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+
+        // « veux » est une forme de la table, mais sa case n'a pas la catégorie verbe.
+        viewModel.onCellLongClick(viewModel.cell("veux"))
+
+        assertNull(viewModel.state().verbForms)
+        assertEquals(listOf("veux"), speaker.spoken)
+    }
+
+    @Test
+    fun `a long press before the table is read speaks like a tap`() = runTest(dispatcher) {
+        val viewModel = BoardViewModel(
+            BoardRepository(FakeBoardDao(boards, cells), preferences, context).also { it.fileDispatcher = dispatcher },
+            speaker, volume, arasaac, pictogramStore, photos, FakeConjugations(ConjugationTable.EMPTY), SavedStateHandle(),
+        )
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        viewModel.openVerbBoard()
+
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+
+        assertNull(viewModel.state().verbForms)
+        assertEquals(listOf("ai"), speaker.spoken)
+    }
+
+    @Test
+    fun `a long press on a folder opens nothing`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+
+        viewModel.onCellLongClick(viewModel.cell("A"))
+
+        assertNull(viewModel.state().verbForms)
+        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
+    }
+
+    @Test
+    fun `back closes the forms first, then goes up one board`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.openVerbBoard()
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+        assertNotNull(viewModel.state().verbForms)
+
+        viewModel.onBack()
+
+        assertNull(viewModel.state().verbForms)
+        assertEquals(3L, viewModel.state().board?.id)
+
+        viewModel.onBack()
+
+        assertEquals(2L, viewModel.state().board?.id)
+    }
+
+    @Test
+    fun `home closes the forms and goes back to the root board`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.openVerbBoard()
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+        assertNotNull(viewModel.state().verbForms)
+
+        viewModel.onHome()
+
+        assertNull(viewModel.state().verbForms)
+        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
+    }
+
+    @Test
+    fun `editing closes the forms, and a long press while editing opens nothing`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.openVerbBoard()
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+        assertNotNull(viewModel.state().verbForms)
+
+        viewModel.onStartEditing()
+
+        assertNull(viewModel.state().verbForms)
+
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+
+        assertNull(viewModel.state().verbForms)
+        assertTrue(speaker.spoken.isEmpty())
+    }
+
+    @Test
+    fun `a restore closes the forms`() = runTest(dispatcher) {
+        val repository = BoardRepository(FakeBoardDao(boards, cells), preferences, context).also { it.fileDispatcher = dispatcher }
+        val viewModel = BoardViewModel(repository, speaker, volume, arasaac, pictogramStore, photos, conjugations, SavedStateHandle()).also { it.elapsedRealtimeMs = { nowMs } }
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        viewModel.openVerbBoard()
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+        assertNotNull(viewModel.state().verbForms)
+
+        repository.replaceAll(BackupContent(listOf(boards[0].copy(name = "restored")), listOf(cells[0])))
+
+        assertEquals("restored", viewModel.state().board?.name)
+        assertNull(viewModel.state().verbForms)
+    }
+
+    @Test
+    fun `an open page keeps the update restart away`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.openVerbBoard()
+
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+
+        assertTrue(viewModel.state().isBusy)
+    }
+
+    @Test
+    fun `je is elided before a form of the page, never before its infinitive`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.tap("je")
+        viewModel.openVerbBoard()
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+        viewModel.onVerbFormClick("avoir")
+        viewModel.onHome()
+        viewModel.tap("je")
+        viewModel.openVerbBoard()
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+        viewModel.onVerbFormClick("avais")
+
+        assertEquals(listOf("je", "avoir", "j'avais"), viewModel.messageTexts())
+    }
+
+    @Test
+    fun `a conjugated word survives the process death as conjugated`() {
+        val word = SentenceWord("ouvre", WordCategory.VERB, null, isConjugated = true)
+
+        assertEquals(word, SavedWord.from(word).toSentenceWord())
+    }
+
+    @Test
+    fun `a form of the page is marked conjugated, its infinitive is not`() = runTest(dispatcher) {
+        val savedState = SavedStateHandle()
+        val viewModel = startViewModel(savedState = savedState)
+        viewModel.openVerbBoard()
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+        viewModel.onVerbFormClick("avais")
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+        viewModel.onVerbFormClick("avoir")
+
+        // La marque décide de « j'ouvre », « j'habite » : la terminaison seule ne le dit pas.
+        val saved = checkNotNull(savedState.get<ArrayList<SavedWord>>(MESSAGE_KEY))
+        assertEquals(listOf("avais" to true, "avoir" to false), saved.map { it.label to it.isConjugated })
+    }
+
+    @Test
+    fun `a long press while another board loads opens nothing`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(boards, cells)
+        val viewModel = startViewModel(dao)
+        viewModel.openVerbBoard()
+        val verb = viewModel.cell("ai")
+        dao.areReadsHeld.value = true
+
+        // La grille 3 est encore affichée, mais l'accueil est déjà demandé.
+        viewModel.onHome()
+        viewModel.onCellLongClick(verb)
+
+        assertNull(viewModel.state().verbForms)
+        assertTrue(speaker.spoken.isEmpty())
+    }
+
+    @Test
+    fun `the forms close when the board under them disappears`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(boards, cells)
+        val viewModel = startViewModel(dao)
+        viewModel.openVerbBoard()
+        viewModel.onCellLongClick(viewModel.cell("ai"))
+        assertNotNull(viewModel.state().verbForms)
+
+        dao.boards.value = boards.filter { it.id != 3L }
+
+        assertNull(viewModel.state().verbForms)
+        assertEquals(2L, viewModel.state().board?.id)
     }
 }

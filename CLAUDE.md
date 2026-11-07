@@ -22,8 +22,8 @@ Tout build passe par la file de la machine (le hook `garde-gradle` refuse `./gra
 
 ## Architecture
 
-- Arborescence : `domain/` (modèle pur : grille, case, placement, catégories, élision), `data/` (Room : grilles et cases, vocabulaire de base ; `pictogram/` : pictos embarqués), `speech/` (synthèse vocale et son rétablissement), `ui/` (écrans, `board/`, `about/`, `theme/`, `splash/`, `settings/`), `update/` (mise à jour Play depuis l'appli).
-- Vocabulaire de base et pictos : générés par `tools/arasaac/fetch_pictograms.py`, jamais édités à la main. Un picto livré ne se retire jamais, un nom de `WordCategory` ne se renomme jamais, et depuis la première publication une case de l'instantané `core_vocabulary_layout.txt` ne bouge plus (on ajoute).
+- Arborescence : `domain/` (modèle pur : grille, case, placement, catégories, élision, conjugaison), `data/` (Room : grilles et cases, vocabulaire de base ; `pictogram/` : pictos embarqués), `speech/` (synthèse vocale et son rétablissement), `ui/` (écrans, `board/`, `about/`, `theme/`, `splash/`, `settings/`), `update/` (mise à jour Play depuis l'appli).
+- Vocabulaire de base et pictos : générés par `tools/arasaac/fetch_pictograms.py`, jamais édités à la main. Table de conjugaison (`assets/conjugations.tsv`) : générée par `tools/conjugaison/generate_conjugations.py` depuis `verbs.txt`, jamais éditée à la main. Un picto livré ne se retire jamais, un nom de `WordCategory` ne se renomme jamais, et depuis la première publication une case de l'instantané `core_vocabulary_layout.txt` ne bouge plus (on ajoute).
 - Activité unique, écrans en Compose.
 
 ## Conventions

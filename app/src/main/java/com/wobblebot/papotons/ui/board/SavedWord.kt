@@ -16,11 +16,14 @@ internal data class SavedWord(
     val pictogramId: Long?,
     // Ajouté après coup : un état sauvé sans ce champ se relit avec `null` (sérialisation Java).
     val photoFile: String? = null,
+    // Un état sauvé sans ce champ se relit avec `false` (sérialisation Java).
+    val isConjugated: Boolean = false,
 ) : Serializable {
     fun toSentenceWord() = SentenceWord(
         label,
         WordCategory.fromStoredName(categoryName),
         photoFile?.let(Picture::Photo) ?: pictogramId?.let(Picture::Pictogram),
+        isConjugated,
     )
 
     companion object {
@@ -29,9 +32,9 @@ internal data class SavedWord(
         fun from(word: SentenceWord): SavedWord {
             val picture = word.picture
             return when (picture) {
-                is Picture.Pictogram -> SavedWord(word.label, word.category?.name, picture.id, null)
-                is Picture.Photo -> SavedWord(word.label, word.category?.name, null, picture.fileName)
-                null -> SavedWord(word.label, word.category?.name, null, null)
+                is Picture.Pictogram -> SavedWord(word.label, word.category?.name, picture.id, null, word.isConjugated)
+                is Picture.Photo -> SavedWord(word.label, word.category?.name, null, picture.fileName, word.isConjugated)
+                null -> SavedWord(word.label, word.category?.name, null, null, word.isConjugated)
             }
         }
     }

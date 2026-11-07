@@ -51,9 +51,11 @@ data class BoardUiState(
     val editor: CellEditorState? = null,
     /** La recherche de pictos ouverte depuis l'éditeur. */
     val pictogramSearch: PictogramSearchState? = null,
+    /** La page des formes d'un verbe, à la place de la grille. */
+    val verbForms: VerbFormsPage? = null,
 ) {
-    /** Une phrase, une modification ou un réglage est en cours : rien ne doit interrompre (redémarrage de mise à jour). */
-    val isBusy: Boolean get() = message.isNotEmpty() || isEditing || isSettingsOpen
+    /** Une phrase, une modification, un réglage ou un choix de forme est en cours : rien ne doit interrompre (redémarrage de mise à jour). */
+    val isBusy: Boolean get() = message.isNotEmpty() || isEditing || isSettingsOpen || verbForms != null
 
     /** La taille de la grille ouverte, lue sur l'écran réellement ouvert (pas sur le réglage) ; `null` pour un autre écran. */
     val boardSize: BoardSize? get() = BoardSize.withHome(board?.rootBoardId)

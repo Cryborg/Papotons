@@ -51,6 +51,15 @@ class ElisionTest {
     }
 
     @Test
+    fun `je before a form taken from the forms page is elided, even with h or -re`() {
+        fun conjugated(label: String) = SentenceWord(label, WordCategory.VERB, picture = null, isConjugated = true)
+
+        assertEquals(listOf("j'habite"), texts(listOf(subject, conjugated("habite"))))
+        assertEquals(listOf("j'ouvre"), texts(listOf(subject, conjugated("ouvre"))))
+        assertEquals(listOf("je", "vais ouvrir"), texts(listOf(subject, conjugated("vais ouvrir"))))
+    }
+
+    @Test
     fun `je at the end of the sentence stays`() {
         assertEquals(listOf("veux", "je"), texts(listOf(verb("veux"), subject)))
     }

@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.paneTitle
@@ -84,6 +85,8 @@ data class BoardActions(
     val onEmptySlotClick: (row: Int, column: Int) -> Unit,
     val onStopEditing: () -> Unit,
     val onBackupClick: () -> Unit,
+    val onCellLongClick: (Cell) -> Unit = {},
+    val onVerbFormClick: (String) -> Unit = {},
 )
 
 /** Ce qu'ouvre le contrôle parental quand il est passé. */
@@ -129,6 +132,8 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState, backupViewModel: 
             onEmptySlotClick = viewModel::onEmptySlotClick,
             onStopEditing = viewModel::onStopEditing,
             onBackupClick = backupViewModel::onOpen,
+            onCellLongClick = viewModel::onCellLongClick,
+            onVerbFormClick = viewModel::onVerbFormClick,
         )
     }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.recoverSpeech() }
@@ -143,7 +148,8 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState, backupViewModel: 
         if (isLeaving) viewModel.onCloseSettings()
     }
     // À l'accueil, le retour arrière garde son sens habituel (quitter l'appli) ; en édition, il la termine.
-    BackHandler(enabled = state.board?.canGoBack == true, onBack = viewModel::onBack)
+    // La page des formes se referme aussi par le retour arrière, même ouverte depuis l'accueil.
+    BackHandler(enabled = state.board?.canGoBack == true || state.verbForms != null, onBack = viewModel::onBack)
     BackHandler(enabled = state.isEditing && state.board?.canGoBack != true, onBack = viewModel::onStopEditing)
     // Les modales de sauvegarde n'existent qu'en édition, derrière le contrôle parental.
     LaunchedEffect(state.isEditing) {
@@ -325,8 +331,10 @@ fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier =
         // la grille et déplacer les cases.
         Column(modifier = Modifier.windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))) {
             val board = state.board
+            val verbForms = state.verbForms
             BoardTopBar(
-                canGoBack = board?.canGoBack == true,
+                // La page des formes se referme par « Retour », même ouverte depuis l'accueil.
+                canGoBack = board?.canGoBack == true || verbForms != null,
                 speechStatus = state.speechStatus,
                 hasLostBoards = state.hasLostBoards,
                 isMuted = state.isMuted,
@@ -364,12 +372,24 @@ fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier =
                 ) {
                     CircularProgressIndicator(modifier = Modifier.semantics { contentDescription = loadingDescription })
                 }
+            } else if (verbForms != null) {
+                val pageTitle = stringResource(R.string.conjugation_page_title, verbForms.forms.infinitive)
+                VerbFormsGrid(
+                    page = verbForms,
+                    onFormClick = actions.onVerbFormClick,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .testTag(VERB_FORMS_TEST_TAG)
+                        .semantics { paneTitle = pageTitle },
+                )
             } else {
                 CommunicationGrid(
                     grid = board.grid,
                     onCellClick = actions.onCellClick,
                     isEditing = state.isEditing,
                     onEmptySlotClick = actions.onEmptySlotClick,
+                    onCellLongClick = actions.onCellLongClick,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()

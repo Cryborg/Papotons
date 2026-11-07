@@ -9,6 +9,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wobblebot.papotons.data.board.BoardRepository
+import com.wobblebot.papotons.data.conjugation.Conjugations
 import com.wobblebot.papotons.data.photo.PhotoStore
 import com.wobblebot.papotons.data.pictogram.ArasaacClient
 import com.wobblebot.papotons.data.pictogram.PictogramStore
@@ -20,7 +21,9 @@ import com.wobblebot.papotons.domain.Board
 import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.CellContent
+import com.wobblebot.papotons.domain.ConjugationTable
 import com.wobblebot.papotons.domain.SentenceWord
+import com.wobblebot.papotons.domain.WordCategory
 import com.wobblebot.papotons.domain.layoutGrid
 import com.wobblebot.papotons.domain.sentenceTokens
 import com.wobblebot.papotons.speech.MediaVolume
@@ -83,6 +86,7 @@ class BoardViewModel @Inject constructor(
     private val arasaac: ArasaacClient,
     private val pictogramStore: PictogramStore,
     private val photos: PhotoStore,
+    private val conjugations: Conjugations,
     /**
      * Miroir de la pile et de la phrase, pour survivre à la mort du processus : lu une seule fois
      * ici, à la création, puis seulement recopié (un collecteur par flux).
@@ -130,6 +134,15 @@ class BoardViewModel @Inject constructor(
     /** Depuis quand l'appli photo ou le sélecteur sont ouverts ; `null` sinon. */
     private var photoRequestedAtMs: Long? = null
     private var cameraCapture: Uri? = null
+
+    /**
+     * La page des formes ouverte par un appui long, à la place de la grille. Jamais dans [savedState] :
+     * c'est un passage, la grille revient après la mort du processus.
+     */
+    private val verbForms = MutableStateFlow<VerbFormsPage?>(null)
+
+    /** Vide jusqu'à la fin de sa lecture : un appui long d'ici là parle comme un appui simple. */
+    private var conjugationTable = ConjugationTable.EMPTY
 
     /** L'horloge du délai de prise de vue ; remplaçable en test. */
     internal var elapsedRealtimeMs: () -> Long = SystemClock::elapsedRealtime
@@ -189,7 +202,8 @@ class BoardViewModel @Inject constructor(
                 editor = secondary.editor,
                 pictogramSearch = secondary.pictogramSearch,
             )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), BoardUiState())
+        }.combine(verbForms) { state, page -> state.copy(verbForms = page) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), BoardUiState())
 
     /** L'ouverture de l'accueil en cours, pour ne pas la lancer deux fois. */
     private var homeOpening: Job? = null
@@ -209,6 +223,12 @@ class BoardViewModel @Inject constructor(
             // Un compteur, pas un événement : une restauration faite quand l'écran n'écoutait pas compte aussi.
             repository.replacements.drop(1).collect { onBoardsReplaced() }
         }
+        viewModelScope.launch { conjugationTable = conjugations.table() }
+        viewModelScope.launch {
+            // La page vaut pour la grille d'où elle a été ouverte : toute pile changée la referme
+            // (grille affichée disparue, grilles remplacées).
+            navigation.drop(1).collect { verbForms.value = null }
+        }
         viewModelScope.launch {
             mediaVolume.isMuted.collect { isMuted -> if (!isMuted) isVolumeLockedDialogOpen.value = false }
         }
@@ -227,18 +247,55 @@ class BoardViewModel @Inject constructor(
             // grille affichée : il n'empile rien.
             navigation.update { stack -> if (isShowingTopOf(stack)) stack.adding(linkedBoardId) else stack }
         } else {
-            speaker.speak(cell.spoken, interrupt = false)
-            // Au moment de parler : certaines coupures (« Ne pas déranger ») ne se signalent pas.
-            mediaVolume.refresh()
-            message.update { it.adding(SentenceWord(cell.spoken, cell.category, cell.picture)) }
+            say(SentenceWord(cell.spoken, cell.category, cell.picture))
         }
     }
 
+    /**
+     * Appui long sur un verbe (jamais un dossier, jamais en édition) : la page de ses formes. Un verbe
+     * hors de la table parle comme un appui simple. Seul un appui parti pendant le chargement d'une
+     * autre grille reste sans effet, comme pour un dossier.
+     */
+    fun onCellLongClick(cell: Cell) {
+        // Comme un dossier : un appui parti pendant qu'une autre grille se charge ne vise plus rien.
+        if (isEditing.value || cell.linkedBoardId != null || !isShowingTopOf(navigation.value)) return
+        val forms = if (cell.category == WordCategory.VERB) conjugationTable.formsOf(cell.spoken) else null
+        if (forms == null) {
+            // Ni libellé ni contenu dans le journal : ce sont les mots de l'utilisateur.
+            Log.i(TAG, "No forms for cell ${cell.id} (${conjugationTable.verbCount} verbs loaded)")
+            onCellClick(cell)
+        } else {
+            verbForms.value = VerbFormsPage(cell, forms)
+        }
+    }
+
+    /** Une forme touchée entre dans la phrase comme un mot de la grille, avec l'image de sa case ; la grille revient. */
+    fun onVerbFormClick(form: String) {
+        val page = verbForms.value ?: return
+        verbForms.value = null
+        // L'infinitif du coin n'est pas une forme conjuguée : « je » ne s'élide pas devant lui.
+        val isConjugated = form != page.forms.infinitive
+        say(SentenceWord(form, page.cell.category, page.cell.picture, isConjugated = isConjugated))
+    }
+
+    private fun say(word: SentenceWord) {
+        speaker.speak(word.label, interrupt = false)
+        // Au moment de parler : certaines coupures (« Ne pas déranger ») ne se signalent pas.
+        mediaVolume.refresh()
+        message.update { it.adding(word) }
+    }
+
     fun onBack() {
+        // La page des formes se referme d'abord, comme un dossier : la grille d'en dessous ne bouge pas.
+        if (verbForms.value != null) {
+            verbForms.value = null
+            return
+        }
         navigation.update { stack -> if (stack.size > 1 && isShowingTopOf(stack)) stack.removingAt(stack.lastIndex) else stack }
     }
 
     fun onHome() {
+        verbForms.value = null
         navigation.update { stack -> if (stack.size > 1) persistentListOf(stack.first()) else stack }
     }
 
@@ -263,6 +320,7 @@ class BoardViewModel @Inject constructor(
     fun onStartEditing() {
         speaker.stop()
         isSettingsOpen.value = false
+        verbForms.value = null
         isEditing.value = true
     }
 
@@ -324,6 +382,8 @@ class BoardViewModel @Inject constructor(
     /** Toutes les grilles ont été remplacées : la pile et l'éditeur visent peut-être des grilles qui n'existent plus. */
     private fun onBoardsReplaced() {
         editor.value = null
+        // Pas seulement le collecteur de pile : une pile qui revient à la même valeur ([1], [], [1]) peut lui échapper.
+        verbForms.value = null
         onSearchClose()
         chosenBytes = null
         discardUnsavedPhoto()
@@ -684,6 +744,8 @@ class BoardViewModel @Inject constructor(
             // s'afficherait plus jusqu'à la fin du processus. `ensureHomeBoard` remet le vocabulaire de
             // base et lève l'alerte si c'est une perte.
             if (stack.size == 1) reopenHome()
+            // L'accueil réinséré garde son id : la pile ne change pas et le collecteur ne verrait rien.
+            verbForms.value = null
             return null
         }
         return DisplayedBoard(
