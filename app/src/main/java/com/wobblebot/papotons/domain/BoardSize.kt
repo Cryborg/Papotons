@@ -7,10 +7,17 @@ package com.wobblebot.papotons.domain
  * copie de cet accueil, reconnue par son `core_board_id` ; l'écran de départ retient l'id de la copie,
  * jamais le nom de la taille.
  */
-enum class BoardSize(val homeBoardId: Long, val folderRowCount: Int, val folderColumnCount: Int) {
-    LARGE_CELLS(homeBoardId = 13, folderRowCount = 2, folderColumnCount = 3),
-    MEDIUM(homeBoardId = 7, folderRowCount = 3, folderColumnCount = 4),
-    STANDARD(homeBoardId = HOME_BOARD_ID, folderRowCount = 4, folderColumnCount = 6);
+enum class BoardSize(
+    val homeBoardId: Long,
+    /** Les dimensions de son accueil, que les Réglages dessinent (vérifiées par CoreVocabularyTest). */
+    val homeRowCount: Int,
+    val homeColumnCount: Int,
+    val folderRowCount: Int,
+    val folderColumnCount: Int,
+) {
+    LARGE_CELLS(homeBoardId = 13, homeRowCount = 3, homeColumnCount = 4, folderRowCount = 2, folderColumnCount = 3),
+    MEDIUM(homeBoardId = 7, homeRowCount = 5, homeColumnCount = 6, folderRowCount = 3, folderColumnCount = 4),
+    STANDARD(homeBoardId = HOME_BOARD_ID, homeRowCount = 7, homeColumnCount = 8, folderRowCount = 4, folderColumnCount = 6);
 
     companion object {
         /** La taille dont [coreBoardId] (l'id d'origine d'une grille) est l'accueil, `null` pour toute autre grille. */

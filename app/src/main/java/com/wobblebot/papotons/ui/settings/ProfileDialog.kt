@@ -13,7 +13,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -33,14 +33,16 @@ import com.wobblebot.papotons.ui.edit.takeWhole
 private val FIELD_SPACING = 8.dp
 
 /**
- * Créer ([initialName] `null`) ou modifier un utilisateur. [onDelete] `null` : pas de suppression
+ * Créer ([initialName] `null`) ou modifier un utilisateur. Rien n'est sauvé (`remember`) : sauvé, un
+ * brouillon survivrait à la mort du processus et reviendrait dans la modale d'un autre utilisateur,
+ * jusque sur sa confirmation de suppression. Une rotation ferme donc la modale. [onDelete] `null` : pas de suppression
  * (nouvel utilisateur, ou le dernier). La suppression passe par une confirmation.
  */
 @Composable
 fun ProfileDialog(initialName: String?, onSave: (String) -> Unit, onDelete: (() -> Unit)?, onClose: () -> Unit) {
-    var name by rememberSaveable { mutableStateOf(initialName.orEmpty()) }
-    var isNameMissing by rememberSaveable { mutableStateOf(false) }
-    var isConfirmingDelete by rememberSaveable { mutableStateOf(false) }
+    var name by remember { mutableStateOf(initialName.orEmpty()) }
+    var isNameMissing by remember { mutableStateOf(false) }
+    var isConfirmingDelete by remember { mutableStateOf(false) }
     if (isConfirmingDelete && onDelete != null) {
         DeleteProfileDialog(name = initialName.orEmpty(), onConfirm = onDelete, onCancel = { isConfirmingDelete = false })
         return

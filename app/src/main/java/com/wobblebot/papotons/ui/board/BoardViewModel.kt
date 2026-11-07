@@ -28,6 +28,7 @@ import com.wobblebot.papotons.domain.layoutGrid
 import com.wobblebot.papotons.domain.sentenceTokens
 import com.wobblebot.papotons.speech.MediaVolume
 import com.wobblebot.papotons.speech.Speaker
+import com.wobblebot.papotons.ui.settings.SettingsPage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
@@ -66,14 +67,14 @@ private data class SecondaryState(
     val isMuted: Boolean,
     val isVolumeLockedDialogOpen: Boolean,
     val isEditing: Boolean,
-    val isSettingsOpen: Boolean,
+    val settingsPage: SettingsPage?,
     val settingFailure: SettingFailure?,
     val editor: CellEditorState?,
     val pictogramSearch: PictogramSearchState?,
 )
 
 /** Les deux zones réservées aux adultes. */
-private data class AdultState(val isEditing: Boolean, val isSettingsOpen: Boolean, val settingFailure: SettingFailure?)
+private data class AdultState(val isEditing: Boolean, val settingsPage: SettingsPage?, val settingFailure: SettingFailure?)
 internal const val NAVIGATION_KEY = "navigation"
 internal const val MESSAGE_KEY = "message"
 internal const val STOP_TIMEOUT_MS = 5_000L
@@ -109,7 +110,11 @@ class BoardViewModel @Inject constructor(
      * [savedState], pour qu'aucun ne se rouvre sans contrôle après la mort du processus.
      */
     private val isEditing = MutableStateFlow(false)
-    private val isSettingsOpen = MutableStateFlow(false)
+    /**
+     * La page des Réglages ouverte, `null` s'ils sont fermés. Ici et pas dans l'écran : gardée à la
+     * rotation, jamais après la mort du processus (un état sauvé non lu rouvrirait la page plus tard).
+     */
+    private val settingsPage = MutableStateFlow<SettingsPage?>(null)
     private val settingFailure = MutableStateFlow<SettingFailure?>(null)
 
     /** Le choix de taille en cours : un nouveau choix l'annule, le dernier appui gagne. */
@@ -179,7 +184,7 @@ class BoardViewModel @Inject constructor(
             combine(
                 mediaVolume.isMuted,
                 isVolumeLockedDialogOpen,
-                combine(isEditing, isSettingsOpen, settingFailure, ::AdultState),
+                combine(isEditing, settingsPage, settingFailure, ::AdultState),
                 editor,
                 pictogramSearch,
             ) { isMuted, isDialogOpen, adult, editor, search ->
@@ -187,7 +192,7 @@ class BoardViewModel @Inject constructor(
                     isMuted = isMuted,
                     isVolumeLockedDialogOpen = isMuted && isDialogOpen,
                     isEditing = adult.isEditing,
-                    isSettingsOpen = adult.isSettingsOpen,
+                    settingsPage = adult.settingsPage,
                     settingFailure = adult.settingFailure,
                     editor = editor,
                     pictogramSearch = search,
@@ -202,7 +207,7 @@ class BoardViewModel @Inject constructor(
                 isMuted = secondary.isMuted,
                 isVolumeLockedDialogOpen = secondary.isVolumeLockedDialogOpen,
                 isEditing = secondary.isEditing,
-                isSettingsOpen = secondary.isSettingsOpen,
+                settingsPage = secondary.settingsPage,
                 settingFailure = secondary.settingFailure,
                 editor = secondary.editor,
                 pictogramSearch = secondary.pictogramSearch,
@@ -331,7 +336,7 @@ class BoardViewModel @Inject constructor(
     /** Après le contrôle parental. Les mots encore en file se taisent ; les Réglages se ferment sur la grille à modifier. */
     fun onStartEditing() {
         speaker.stop()
-        isSettingsOpen.value = false
+        settingsPage.value = null
         verbForms.value = null
         isEditing.value = true
     }
@@ -349,12 +354,17 @@ class BoardViewModel @Inject constructor(
     /** Après le contrôle parental (ou depuis l'édition, par [onSettingsRequested]). */
     fun onOpenSettings() {
         settingFailure.value = null
-        isSettingsOpen.value = true
+        settingsPage.value = SettingsPage.Home
+    }
+
+    /** Une sous-page, ou l'accueil ; sans effet si les Réglages sont fermés. */
+    fun onSettingsPageChosen(page: SettingsPage) {
+        settingsPage.update { current -> if (current == null) null else page }
     }
 
     /** « Fermer », retour arrière, et tout départ de l'appli (`ON_STOP`). */
     fun onCloseSettings() {
-        isSettingsOpen.value = false
+        settingsPage.value = null
     }
 
     /**

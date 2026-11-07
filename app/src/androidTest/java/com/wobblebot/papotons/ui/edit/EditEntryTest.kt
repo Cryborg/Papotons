@@ -136,6 +136,8 @@ class EditEntryTest {
         openSettings()
 
         try {
+            // Dans sa sous-page, depuis l'accueil des Réglages.
+            composeRule.onNodeWithText(string(R.string.settings_board_size)).performScrollTo().performClick()
             composeRule.onNodeWithText(string(R.string.board_size_large_cells)).performScrollTo().performClick()
             composeRule.waitUntil(SPLASH_TIMEOUT_MS) { board()?.id == BoardSize.LARGE_CELLS.homeBoardId }
             assertEquals(LARGE_CELLS_ROWS, board()?.grid?.size)

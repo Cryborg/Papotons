@@ -21,6 +21,7 @@ import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import com.wobblebot.papotons.domain.Picture
 import com.wobblebot.papotons.domain.SentenceWord
 import com.wobblebot.papotons.speech.SpeechStatus
+import com.wobblebot.papotons.ui.settings.SettingsPage
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
@@ -781,6 +782,36 @@ class BoardViewModelTest {
         viewModel.onStartEditing()
         assertFalse(viewModel.state().isSettingsOpen)
         assertTrue(viewModel.state().isEditing)
+    }
+
+    /** Chaque ouverture repart de l'accueil des Réglages, et une page ne se choisit pas Réglages fermés. */
+    @Test
+    fun `the settings always open on their home page`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.onSettingsPageChosen(SettingsPage.Caregivers)
+        assertNull(viewModel.state().settingsPage)
+
+        viewModel.onOpenSettings()
+        viewModel.onSettingsPageChosen(SettingsPage.Caregivers)
+        assertEquals(SettingsPage.Caregivers, viewModel.state().settingsPage)
+        viewModel.onCloseSettings()
+        viewModel.onOpenSettings()
+
+        assertEquals(SettingsPage.Home, viewModel.state().settingsPage)
+    }
+
+    /** Une sous-page laissée ouverte ne revient pas : l'édition ferme les Réglages, la roue rouvre l'accueil. */
+    @Test
+    fun `editing closes the settings and the gear reopens their home`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.onOpenSettings()
+        viewModel.onSettingsPageChosen(SettingsPage.Profiles)
+
+        viewModel.onStartEditing()
+        assertNull(viewModel.state().settingsPage)
+        assertTrue(viewModel.onSettingsRequested())
+
+        assertEquals(SettingsPage.Home, viewModel.state().settingsPage)
     }
 
     @Test

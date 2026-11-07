@@ -15,7 +15,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -40,16 +39,17 @@ private val FIELD_SPACING = 8.dp
 
 /**
  * Créer ([caregiver] `null`, code obligatoire) ou modifier un accompagnant (code vide : inchangé).
- * Les codes tapés ne survivent pas à une rotation (`remember`) : jamais sauvés hors de la mémoire.
+ * Rien n'est sauvé (`remember`) : ni les codes, ni un brouillon qui reviendrait, après la mort du
+ * processus, dans la modale d'un autre accompagnant. Une rotation ferme donc la modale.
  */
 @Composable
 fun CaregiverDialog(caregiver: Caregiver?, isLast: Boolean, onSave: (String, String?) -> Unit, onDelete: () -> Unit, onClose: () -> Unit) {
-    var name by rememberSaveable { mutableStateOf(caregiver?.name.orEmpty()) }
+    var name by remember { mutableStateOf(caregiver?.name.orEmpty()) }
     var code by remember { mutableStateOf("") }
     var again by remember { mutableStateOf("") }
     var isNameMissing by remember { mutableStateOf(false) }
     var codeErrorMessage by remember { mutableStateOf<Int?>(null) }
-    var isConfirmingDelete by rememberSaveable { mutableStateOf(false) }
+    var isConfirmingDelete by remember { mutableStateOf(false) }
     if (isConfirmingDelete && caregiver != null) {
         DeleteCaregiverDialog(caregiver.name, isLast, onConfirm = onDelete, onCancel = { isConfirmingDelete = false })
         return

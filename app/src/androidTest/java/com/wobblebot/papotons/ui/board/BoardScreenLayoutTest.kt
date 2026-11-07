@@ -68,6 +68,13 @@ private const val CENTER_TOLERANCE_DP = 2f
 private val WIDE_BAR_WIDTH = 800.dp
 private const val WIDTH_TOLERANCE_DP = 0.01f
 private val WIDE_BAR_HEIGHT = 900.dp
+private val PORTRAIT_PHONE_WIDTH = 360.dp
+private val PORTRAIT_PHONE_HEIGHT = 740.dp
+// Un téléphone couché.
+private val LANDSCAPE_PHONE_WIDTH = 740.dp
+private val LANDSCAPE_PHONE_HEIGHT = 360.dp
+private const val LARGE_CELLS_ROWS = 3
+private const val LARGE_CELLS_COLUMNS = 4
 
 /**
  * Invariant 3 à l'écran : ce qui change autour de la grille (alerte de voix, message,
@@ -94,13 +101,21 @@ class BoardScreenLayoutTest {
 
     private fun assertCellsStayPut(fontScale: Float) {
         var state by mutableStateOf(homeState)
+        var profileName by mutableStateOf<String?>(null)
         composeRule.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
-                PapotonsTheme { BoardScreen(state = state, actions = noActions) }
+                PapotonsTheme { BoardScreen(state = state, actions = noActions, profileName = profileName) }
             }
         }
         val original = cellBounds("Manger")
+
+        // Le prénom arrive dans la barre des adultes après la lecture, long ou court : elle garde son épaisseur.
+        profileName = "Léo"
+        composeRule.onNodeWithContentDescription(context.getString(R.string.adult_bar_profile_description, "Léo")).assertIsDisplayed()
+        assertEquals("profile name", original, cellBounds("Manger"))
+        profileName = "Marie-Charlotte Bernadette de la Fontaine"
+        assertEquals("long profile name", original, cellBounds("Manger"))
 
         state = homeState.copy(speechStatus = SpeechStatus.Unavailable)
         // Écrite sur un écran large, réduite à son icône sur un écran étroit.
@@ -361,7 +376,8 @@ class BoardScreenLayoutTest {
         assertTrue("delete ends at ${deleteLast.right}, clear starts at ${clear.left}", deleteLast.right <= clear.left)
         val speak = composeRule.onNodeWithContentDescription(context.getString(R.string.message_speak)).getBoundsInRoot()
         assertTrue("alert ends at ${alert.right}, speak starts at ${speak.left}", alert.right <= speak.left)
-        assertTrue("clear ends at ${clear.right}, settings starts at ${settings.left}", clear.right <= settings.left)
+        // La roue est sous la barre du haut, dans la barre des adultes.
+        assertTrue("settings top ${settings.top} must be below the top bar (clear bottom ${clear.bottom})", settings.top >= clear.bottom)
         assertEquals(clear.width, deleteLast.width)
     }
 
@@ -382,7 +398,7 @@ class BoardScreenLayoutTest {
         // endroit ne doit ni effacer un mot ni vider la phrase.
         var state by mutableStateOf(homeState.copy(message = persistentListOf(SentenceToken("je", persistentListOf()))))
         composeRule.setContent { PapotonsTheme { BoardScreen(state = state, actions = noActions) } }
-        fun buttons() = listOf(R.string.message_speak, R.string.message_delete_last, R.string.message_clear, R.string.settings_open)
+        fun buttons() = listOf(R.string.message_speak, R.string.message_delete_last, R.string.message_clear)
             .map { composeRule.onNodeWithContentDescription(context.getString(it)).getBoundsInRoot() }
         val withoutAlert = buttons()
 
@@ -416,7 +432,8 @@ class BoardScreenLayoutTest {
 
         val speak = composeRule.onNodeWithContentDescription(context.getString(R.string.message_speak)).getBoundsInRoot()
         assertTrue("muted alert ends at ${muted.right}, speak starts at ${speak.left}", muted.right <= speak.left)
-        assertTrue("clear ends at ${clear.right}, settings starts at ${settings.left}", clear.right <= settings.left)
+        // La roue est sous la barre du haut, dans la barre des adultes.
+        assertTrue("settings top ${settings.top} must be below the top bar (clear bottom ${clear.bottom})", settings.top >= clear.bottom)
     }
 
     @Test
@@ -449,7 +466,8 @@ class BoardScreenLayoutTest {
         assertTrue("voice alert ends at ${speech.right}, muted starts at ${muted.left}", speech.right <= muted.left)
         assertTrue("muted ends at ${muted.right}, lost boards starts at ${lost.left}", muted.right <= lost.left)
         assertTrue("lost boards ends at ${lost.right}, speak starts at ${speak.left}", lost.right <= speak.left)
-        assertTrue("clear ends at ${clear.right}, settings starts at ${settings.left}", clear.right <= settings.left)
+        // La roue est sous la barre du haut, dans la barre des adultes.
+        assertTrue("settings top ${settings.top} must be below the top bar (clear bottom ${clear.bottom})", settings.top >= clear.bottom)
         // Densité forcée : arrondis au millième de dp près.
         assertEquals(clear.width.value, deleteLast.width.value, WIDTH_TOLERANCE_DP)
     }
@@ -463,5 +481,51 @@ class BoardScreenLayoutTest {
         }
 
         assertTrue(cellBounds("je").left < cellBounds("Manger").left)
+    }
+
+    @Test
+    fun inPortraitTheSettingsAreInTheAdultBarBelowTheGrid() {
+        // Taille forcée : sur un émulateur couché ou une tablette, la barre passerait en rail.
+        composeRule.setContent {
+            DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(DpSize(PORTRAIT_PHONE_WIDTH, PORTRAIT_PHONE_HEIGHT))) {
+                PapotonsTheme { BoardScreen(state = homeState, actions = noActions, profileName = "Léo") }
+            }
+        }
+
+        val settings = composeRule.onNodeWithContentDescription(context.getString(R.string.settings_open)).getBoundsInRoot()
+        assertTrue("settings top ${settings.top}, grid bottom ${cellBounds("Manger").bottom}", settings.top >= cellBounds("Manger").bottom)
+        composeRule.onNodeWithContentDescription(context.getString(R.string.adult_bar_profile_description, "Léo")).assertIsDisplayed()
+    }
+
+    /**
+     * Téléphone couché : la barre passe en rail à droite de la grille, sans lui prendre de hauteur
+     * (en bas, les grandes cases passeraient sous 48 dp). Assertion de structure : la taille forcée
+     * change la densité, donc les encarts système, et un seuil chiffré ne serait pas fiable.
+     */
+    @Test
+    fun inLandscapeTheAdultBarIsARailBesideTheGrid() {
+        val largeCells = (0 until LARGE_CELLS_ROWS * LARGE_CELLS_COLUMNS).map { index ->
+            Cell(id = index + 1L, row = index / LARGE_CELLS_COLUMNS, column = index % LARGE_CELLS_COLUMNS, label = "c$index", linkedBoardId = null)
+        }
+        val state = homeState.copy(board = DisplayedBoard(id = 13, name = "Grandes cases", grid = layoutGrid(LARGE_CELLS_ROWS, LARGE_CELLS_COLUMNS, largeCells), canGoBack = false))
+        composeRule.setContent {
+            DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(DpSize(LANDSCAPE_PHONE_WIDTH, LANDSCAPE_PHONE_HEIGHT))) {
+                PapotonsTheme { BoardScreen(state = state, actions = noActions, profileName = "Léo") }
+            }
+        }
+
+        val settings = composeRule.onNodeWithContentDescription(context.getString(R.string.settings_open)).getBoundsInRoot()
+        val lastCell = cellBounds("c${LARGE_CELLS_ROWS * LARGE_CELLS_COLUMNS - 1}")
+        assertTrue("settings left ${settings.left}, last cell right ${lastCell.right}", settings.left >= lastCell.right)
+        // À côté de la dernière ligne, pas dessous : la grille garde toute la hauteur.
+        assertTrue("settings top ${settings.top}, last cell bottom ${lastCell.bottom}", settings.top < lastCell.bottom)
+    }
+
+    /** Une grille qui ne se charge pas ne doit pas fermer l'accès aux Réglages (sauvegarde, utilisateurs). */
+    @Test
+    fun theSettingsStayReachableWhileTheGridLoads() {
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = homeState.copy(board = null), actions = noActions) } }
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.settings_open)).assertIsDisplayed()
     }
 }

@@ -1,20 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Bouton de la barre du haut : il ouvre le contrôle parental, puis les Réglages. -->
+    <!-- Roue dentée de la barre des adultes (en bas, ou à droite en largeur) : le contrôle, puis les Réglages. -->
     <string name="settings_open">Réglages</string>
     <string name="settings_title">Réglages</string>
     <string name="settings_close">Fermer</string>
-    <string name="settings_edit_description">Ajouter, changer ou supprimer des cases et des dossiers.</string>
-    <string name="settings_backup_description">Enregistrer les grilles de tous les utilisateurs dans un fichier, ou les restaurer.</string>
-    <string name="settings_about_description">Crédits des pictogrammes, confidentialité, licence et version.</string>
+    <string name="settings_back">Retour</string>
+    <!-- Accueil des Réglages : carte de l'utilisateur ouvert, puis sections. -->
+    <string name="settings_open_profile">Utilisateur ouvert</string>
+    <string name="settings_change_profile">Changer</string>
+    <string name="settings_change_profile_description">Changer d\'utilisateur</string>
+    <!-- Barre des adultes, lu par TalkBack : %1$s est le prénom. -->
+    <string name="adult_bar_profile_description">Utilisateur ouvert : %1$s</string>
+    <!-- %1$s : le prénom de l'utilisateur ouvert. -->
+    <string name="settings_section_grids_of">Pour %1$s</string>
+    <string name="settings_section_grids">Grilles</string>
+    <string name="settings_section_people">Personnes</string>
+    <string name="settings_section_app">Appli</string>
+    <string name="settings_board_size_unknown">Taille non reconnue</string>
+    <string name="settings_caregivers_summary_none">Aucun : un calcul protège les Réglages</string>
+    <string name="settings_backup_unsaved">Des changements ne sont pas sauvegardés</string>
+    <string name="settings_backup_saved">Grilles sauvegardées</string>
+    <!-- %1$s : la version, « 0.1.0 ». -->
+    <string name="settings_about_summary">Version %1$s</string>
+    <string name="settings_edit_description">Ajouter, changer ou supprimer des cases et des dossiers</string>
     <!-- Taille des cases : un jeu de grilles par taille, chacun avec ses positions fixes. -->
     <string name="settings_board_size">Taille des cases</string>
     <string name="settings_board_size_explanation">Chaque taille a ses propres grilles : ce qui est modifié dans une taille ne change pas les autres.</string>
-    <string name="board_size_large_cells">Grandes cases (3 × 4)</string>
+    <string name="board_size_large_cells">Grandes cases (3 × 4)</string>
     <string name="board_size_large_cells_description">12 cases : premiers pas, difficultés pour viser, téléphone même couché.</string>
-    <string name="board_size_medium">Moyennes (5 × 6)</string>
+    <string name="board_size_medium">Moyennes (5 × 6)</string>
     <string name="board_size_medium_description">30 cases : téléphone tenu debout, petite tablette.</string>
-    <string name="board_size_standard">Standard (7 × 8)</string>
+    <string name="board_size_standard">Standard (7 × 8)</string>
     <string name="board_size_standard_description">56 cases : tablette.</string>
     <string name="settings_board_size_failed">La taille n\'a pas pu être enregistrée. Réessayez.</string>
     <string name="settings_board_size_unavailable">Ces grilles n\'ont pas cette taille : elles viennent sans doute d\'une sauvegarde plus ancienne.</string>

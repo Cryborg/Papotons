@@ -13,11 +13,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -61,7 +65,10 @@ import com.wobblebot.papotons.ui.settings.CaregiverActions
 import com.wobblebot.papotons.ui.settings.CaregiversViewModel
 import com.wobblebot.papotons.ui.settings.ProfileActions
 import com.wobblebot.papotons.ui.settings.ProfilesViewModel
+import com.wobblebot.papotons.ui.settings.SettingsContent
 import com.wobblebot.papotons.ui.settings.SettingsDialog
+import com.wobblebot.papotons.ui.settings.SettingsPage
+import com.wobblebot.papotons.ui.settings.openProfileName
 import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -184,7 +191,7 @@ fun BoardRoute(
     LaunchedEffect(state.isEditing) {
         if (!state.isEditing) backupViewModel.onEditingEnded()
     }
-    BoardScreen(state = state, actions = actions, hasUnsavedChanges = backupState.hasUnsavedChanges)
+    BoardScreen(state = state, actions = actions, hasUnsavedChanges = backupState.hasUnsavedChanges, profileName = profilesState.openProfileName())
     // Un échec d'une ouverture précédente ne s'affiche plus.
     LaunchedEffect(state.isSettingsOpen) {
         if (state.isSettingsOpen) {
@@ -194,12 +201,18 @@ fun BoardRoute(
     }
     if (state.isSettingsOpen) {
         SettingsDialog(
-            boardSize = state.boardSize,
-            settingFailure = state.settingFailure,
-            profiles = profilesState,
+            page = state.settingsPage ?: SettingsPage.Home,
+            content = SettingsContent(
+                boardSize = state.boardSize,
+                settingFailure = state.settingFailure,
+                profiles = profilesState,
+                caregivers = caregiversState,
+                hasUnsavedChanges = backupState.hasUnsavedChanges,
+                isBoardShown = state.board != null,
+            ),
             profileActions = profileActions,
-            caregivers = caregiversState,
             caregiverActions = caregiverActions,
+            onPageChosen = viewModel::onSettingsPageChosen,
             onBoardSizeChosen = viewModel::onBoardSizeChosen,
             onEditBoards = viewModel::onStartEditing,
             // La sauvegarde n'existe qu'en édition : on y entre, comme « Restaurer » des grilles perdues.
@@ -373,79 +386,92 @@ private fun BackupDialogs(
 }
 
 @Composable
-fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier = Modifier, hasUnsavedChanges: Boolean = true) {
+fun BoardScreen(
+    state: BoardUiState,
+    actions: BoardActions,
+    modifier: Modifier = Modifier,
+    hasUnsavedChanges: Boolean = true,
+    /** Le prénom de l'utilisateur ouvert, `null` tant qu'il n'est pas lu. */
+    profileName: String? = null,
+) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        // Barres système et encoche seulement : le clavier (édition, MVP-3) ne doit pas rétrécir
-        // la grille et déplacer les cases.
-        Column(modifier = Modifier.windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))) {
-            val board = state.board
-            val verbForms = state.verbForms
-            BoardTopBar(
-                // La page des formes se referme par « Retour », même ouverte depuis l'accueil.
-                canGoBack = board?.canGoBack == true || verbForms != null,
-                speechStatus = state.speechStatus,
-                hasLostBoards = state.hasLostBoards,
-                isMuted = state.isMuted,
-                onBack = actions.onBack,
-                onHome = actions.onHome,
-                onSpeechAlertClick = actions.onSpeechAlertClick,
-                onMutedAlertClick = actions.onMutedAlertClick,
-                onLostBoardsAlertClick = actions.onLostBoardsAlertClick,
-                onSettingsClick = actions.onSettingsClick,
-            ) {
-                if (state.isEditing) {
-                    EditBanner(
-                        onDone = actions.onStopEditing,
-                        onBackup = actions.onBackupClick,
-                        hasUnsavedChanges = hasUnsavedChanges,
-                        modifier = Modifier.weight(1f),
-                    )
-                } else {
-                    MessageBar(
-                        words = state.message,
-                        onSpeak = actions.onSpeakMessage,
-                        onDeleteLastWord = actions.onDeleteLastWord,
-                        onClear = actions.onClearMessage,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-            if (board == null) {
-                val loadingDescription = stringResource(R.string.board_loading)
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentAlignment = Alignment.Center,
+        BoxWithConstraints {
+            // En largeur, la barre des adultes passe en rail à droite : la hauteur reste aux cases.
+            val isRail = maxWidth > maxHeight
+            // Barres système et encoche seulement : le clavier (édition, MVP-3) ne doit pas rétrécir
+            // la grille et déplacer les cases. En hauteur, la barre du bas prend elle-même l'encart du
+            // bas, pour que son fond passe sous la barre de navigation.
+            val insets = WindowInsets.systemBars.union(WindowInsets.displayCutout)
+            Column(modifier = Modifier.windowInsetsPadding(if (isRail) insets else insets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
+                BoardTopBar(
+                    // La page des formes se referme par « Retour », même ouverte depuis l'accueil.
+                    canGoBack = state.board?.canGoBack == true || state.verbForms != null,
+                    speechStatus = state.speechStatus,
+                    hasLostBoards = state.hasLostBoards,
+                    isMuted = state.isMuted,
+                    onBack = actions.onBack,
+                    onHome = actions.onHome,
+                    onSpeechAlertClick = actions.onSpeechAlertClick,
+                    onMutedAlertClick = actions.onMutedAlertClick,
+                    onLostBoardsAlertClick = actions.onLostBoardsAlertClick,
                 ) {
-                    CircularProgressIndicator(modifier = Modifier.semantics { contentDescription = loadingDescription })
+                    if (state.isEditing) {
+                        EditBanner(
+                            onDone = actions.onStopEditing,
+                            onBackup = actions.onBackupClick,
+                            hasUnsavedChanges = hasUnsavedChanges,
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        MessageBar(
+                            words = state.message,
+                            onSpeak = actions.onSpeakMessage,
+                            onDeleteLastWord = actions.onDeleteLastWord,
+                            onClear = actions.onClearMessage,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
-            } else if (verbForms != null) {
-                val pageTitle = stringResource(R.string.conjugation_page_title, verbForms.forms.infinitive)
-                VerbFormsGrid(
-                    page = verbForms,
-                    onFormClick = actions.onVerbFormClick,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .testTag(VERB_FORMS_TEST_TAG)
-                        .semantics { paneTitle = pageTitle },
-                )
-            } else {
-                CommunicationGrid(
-                    grid = board.grid,
-                    onCellClick = actions.onCellClick,
-                    isEditing = state.isEditing,
-                    onEmptySlotClick = actions.onEmptySlotClick,
-                    onCellLongClick = actions.onCellLongClick,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        // Nom de la grille, non affiché : porté en titre de volet pour TalkBack.
-                        .semantics { paneTitle = board.name },
-                )
+                Row(modifier = Modifier.weight(1f)) {
+                    BoardContent(state, actions, Modifier.weight(1f).fillMaxHeight())
+                    // Toujours là, même pendant le chargement : les Réglages restent atteignables.
+                    if (isRail) BoardAdultBar(profileName, isRail = true, onSettingsClick = actions.onSettingsClick)
+                }
+                if (!isRail) BoardAdultBar(profileName, isRail = false, onSettingsClick = actions.onSettingsClick)
             }
         }
+    }
+}
+
+/** Ce qui occupe la place sous la barre du haut : chargement, page des formes d'un verbe, ou grille. */
+@Composable
+private fun BoardContent(state: BoardUiState, actions: BoardActions, modifier: Modifier) {
+    val board = state.board
+    val verbForms = state.verbForms
+    if (board == null) {
+        val loadingDescription = stringResource(R.string.board_loading)
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(modifier = Modifier.semantics { contentDescription = loadingDescription })
+        }
+    } else if (verbForms != null) {
+        val pageTitle = stringResource(R.string.conjugation_page_title, verbForms.forms.infinitive)
+        VerbFormsGrid(
+            page = verbForms,
+            onFormClick = actions.onVerbFormClick,
+            modifier = modifier
+                .testTag(VERB_FORMS_TEST_TAG)
+                .semantics { paneTitle = pageTitle },
+        )
+    } else {
+        CommunicationGrid(
+            grid = board.grid,
+            onCellClick = actions.onCellClick,
+            isEditing = state.isEditing,
+            onEmptySlotClick = actions.onEmptySlotClick,
+            onCellLongClick = actions.onCellLongClick,
+            // Nom de la grille, non affiché : porté en titre de volet pour TalkBack.
+            modifier = modifier.semantics { paneTitle = board.name },
+        )
     }
 }
 

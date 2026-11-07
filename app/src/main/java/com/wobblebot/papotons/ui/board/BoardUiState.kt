@@ -5,6 +5,7 @@ import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.SentenceToken
 import com.wobblebot.papotons.speech.SpeechStatus
+import com.wobblebot.papotons.ui.settings.SettingsPage
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 
@@ -43,8 +44,8 @@ data class BoardUiState(
     val isVolumeLockedDialogOpen: Boolean = false,
     /** Mode édition, ouvert par un adulte après le contrôle parental. */
     val isEditing: Boolean = false,
-    /** L'écran Réglages, ouvert par un adulte après le contrôle parental, ou depuis l'édition. */
-    val isSettingsOpen: Boolean = false,
+    /** La page des Réglages ouverte (par un adulte après le contrôle, ou depuis l'édition), `null` s'ils sont fermés. */
+    val settingsPage: SettingsPage? = null,
     /** Pourquoi le dernier choix de taille n'a rien changé, `null` s'il a réussi. */
     val settingFailure: SettingFailure? = null,
     /** L'éditeur de case ouvert, en édition seulement. */
@@ -54,6 +55,8 @@ data class BoardUiState(
     /** La page des formes d'un verbe, à la place de la grille. */
     val verbForms: VerbFormsPage? = null,
 ) {
+    val isSettingsOpen: Boolean get() = settingsPage != null
+
     /** Une phrase, une modification, un réglage ou un choix de forme est en cours : rien ne doit interrompre (redémarrage de mise à jour). */
     val isBusy: Boolean get() = message.isNotEmpty() || isEditing || isSettingsOpen || verbForms != null
 

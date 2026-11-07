@@ -5,10 +5,11 @@
 
     <!-- Réglages, section Utilisateurs : les personnes qui communiquent, chacune avec ses grilles. -->
     <string name="settings_profiles">Utilisateurs</string>
-    <string name="settings_profiles_explanation">Chaque utilisateur a ses propres grilles. Celui qui est coché est ouvert, et se rouvre au lancement.</string>
+    <string name="settings_profiles_explanation">Chaque utilisateur a ses propres grilles. Toucher un prénom ouvre ses grilles ; le dernier ouvert se rouvre au lancement.</string>
     <string name="profile_add">Ajouter un utilisateur</string>
-    <string name="profile_edit">Modifier</string>
-    <!-- Lu par TalkBack sur le bouton « Modifier » d'une ligne. -->
+    <!-- Sous le prénom de l'utilisateur ouvert, dans la liste. -->
+    <string name="profile_open">Ouvert</string>
+    <!-- Lu par TalkBack sur le crayon d'une ligne. -->
     <string name="profile_edit_description">Modifier %1$s</string>
     <string name="profile_new_title">Nouvel utilisateur</string>
     <string name="profile_edit_title">Modifier l\'utilisateur</string>

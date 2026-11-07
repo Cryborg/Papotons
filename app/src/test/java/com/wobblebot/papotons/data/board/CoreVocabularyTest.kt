@@ -82,6 +82,8 @@ class CoreVocabularyTest {
         for ((size, dimensions) in expected) {
             val sizeHome = checkNotNull(boardsById[size.homeBoardId]) { "$size home missing" }
             assertEquals("$size", dimensions, sizeHome.rowCount to sizeHome.columnCount)
+            // Ce que les Réglages dessinent : l'accueil réel.
+            assertEquals("$size", dimensions, size.homeRowCount to size.homeColumnCount)
         }
     }
 
@@ -127,7 +129,7 @@ class CoreVocabularyTest {
         val strings = File("src/main/res/values/strings_settings.xml").readText()
         val names = mapOf(BoardSize.LARGE_CELLS to "board_size_large_cells", BoardSize.MEDIUM to "board_size_medium", BoardSize.STANDARD to "board_size_standard")
         for ((size, name) in names) {
-            val shown = checkNotNull(Regex("""<string name="$name">[^<]*\((\d+) × (\d+)\)</string>""").find(strings)) { "$name has no dimensions" }
+            val shown = checkNotNull(Regex("""<string name="$name">[^<]*\((\d+)[ \u00A0]×[ \u00A0](\d+)\)</string>""").find(strings)) { "$name has no dimensions" }
             val (rows, columns) = shown.destructured
             val sizeHome = checkNotNull(boardsById[size.homeBoardId])
             assertEquals(name, sizeHome.rowCount to sizeHome.columnCount, rows.toInt() to columns.toInt())

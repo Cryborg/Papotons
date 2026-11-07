@@ -20,7 +20,6 @@
     <string name="settings_caregivers_explanation">Chaque accompagnant ouvre les Réglages avec son code. Tous ont les mêmes droits.</string>
     <string name="caregiver_add">Ajouter un accompagnant</string>
     <string name="caregiver_edit">Modifier</string>
-    <string name="caregiver_edit_description">Modifier %1$s</string>
     <!-- %1$s : la date du changement. -->
     <string name="caregiver_code_reset">Code changé par « Code oublié ? » le %1$s</string>
     <string name="caregiver_new_title">Nouvel accompagnant</string>

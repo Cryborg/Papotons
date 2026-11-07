@@ -24,6 +24,20 @@ internal val PapotonsColorScheme = lightColorScheme(
     onSecondaryContainer = Color(0xFF3B2C00),
     // Alerte « voix indisponible ».
     error = Color(0xFFB3261E),
+    // Réglages : pastilles des grilles et carte de l'utilisateur ouvert (sinon les violets par défaut de Material).
+    primaryContainer = Color(0xFFDCE8F7),
+    onPrimaryContainer = Color(0xFF0B2E57),
+    // Réglages : pastilles des personnes (utilisateurs, accompagnants).
+    tertiaryContainer = Color(0xFFE6DFF6),
+    onTertiaryContainer = Color(0xFF33256B),
+    // Fonds des Card et des feuilles de Material : gris bleutés de la palette, pas les violets par défaut.
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF7F9FC),
+    surfaceContainer = Color(0xFFF1F4F9),
+    surfaceContainerHigh = Color(0xFFEBEFF5),
+    surfaceContainerHighest = Color(0xFFE4E9F0),
+    // Contour des OutlinedButton : au moins 3:1 sur blanc et sur le fond gris des Réglages (frontière d'un contrôle).
+    outlineVariant = Color(0xFF7E8693),
 )
 
 // Code couleur de Goossens modifié (Fitzgerald) : un fond par catégorie de mot. Pastels clairs,
