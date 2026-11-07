@@ -83,9 +83,11 @@ class FakeBoardDao(
         return id
     }
 
-    override suspend fun updateCellContent(cellId: Long, label: String, pictogramId: Long?, category: String?): Int {
+    override suspend fun updateCellContent(cellId: Long, label: String, pictogramId: Long?, category: String?, photoFile: String?, spokenText: String?): Int {
         val before = cells.value
-        cells.value = before.map { if (it.id == cellId) it.copy(label = label, pictogramId = pictogramId, category = category) else it }
+        cells.value = before.map {
+            if (it.id == cellId) it.copy(label = label, pictogramId = pictogramId, category = category, photoFile = photoFile, spokenText = spokenText) else it
+        }
         return before.count { it.id == cellId }
     }
 
@@ -105,6 +107,8 @@ class FakeBoardDao(
         cells.value.filter { it.boardId == boardId }.mapNotNull { it.linkedBoardId }
 
     override suspend fun countLinksTo(boardId: Long): Int = cells.value.count { it.linkedBoardId == boardId }
+
+    override suspend fun photoFilesOf(boardId: Long): List<String> = cells.value.filter { it.boardId == boardId }.mapNotNull { it.photoFile }
 
     override suspend fun deleteBoard(boardId: Long): Int {
         if (countLinksTo(boardId) != 0) throw SQLiteConstraintException("FOREIGN KEY constraint failed (RESTRICT)")

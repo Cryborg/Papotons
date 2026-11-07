@@ -39,6 +39,8 @@ private fun CellContent.toEntity(boardId: Long, row: Int, column: Int, linkedBoa
     linkedBoardId = linkedBoardId,
     pictogramId = pictogramId,
     category = category?.name,
+    photoFile = photoFile,
+    spokenText = spokenText,
 )
 
 /**
@@ -116,21 +118,32 @@ class BoardRepository @Inject constructor(
         boardDao.insertFolder(board, content.toEntity(boardId, row, column, linkedBoardId = null))
     }
 
-    /** Le contenu seulement ; un dossier renommé renomme sa grille (titre lu par TalkBack). */
-    suspend fun updateCell(cell: Cell, content: CellContent) {
+    /** Le contenu seulement ; un dossier renommé renomme sa grille (titre lu par TalkBack). Rend la photo d'avant. */
+    suspend fun updateCell(cell: Cell, content: CellContent): String? {
         copies().markEdited()
-        boardDao.updateCellContentAndFolderName(cell.id, cell.linkedBoardId, content.label, content.pictogramId, content.category?.name)
+        return boardDao.updateCellContentAndFolderName(
+            cell.id,
+            cell.photoFile,
+            cell.linkedBoardId,
+            content.label,
+            content.pictogramId,
+            content.category?.name,
+            content.photoFile,
+            content.spokenText,
+        )
     }
 
     /**
      * Supprime la case et, pour un dossier, les grilles de son sous-arbre que plus rien ne vise.
      * L'accueil, la grille qui porte la case et [openRootBoardId] ne sont jamais supprimés : une base
-     * vidée par l'édition passerait pour une perte des grilles.
+     * vidée par l'édition passerait pour une perte des grilles. Rend les photos des cases supprimées :
+     * à effacer, une photo n'appartenant qu'à une case.
      */
-    suspend fun deleteCell(cell: Cell, boardId: Long, openRootBoardId: Long) {
+    suspend fun deleteCell(cell: Cell, boardId: Long, openRootBoardId: Long): List<String> {
         copies().markEdited()
-        val deletedBoardCount = boardDao.deleteCellAndOrphanBoards(cell.id, setOf(HOME_BOARD_ID, boardId, openRootBoardId))
-        Log.i(TAG, "Cell ${cell.id} deleted with $deletedBoardCount boards")
+        val deleted = boardDao.deleteCellAndOrphanBoards(cell.id, setOf(HOME_BOARD_ID, boardId, openRootBoardId))
+        Log.i(TAG, "Cell ${cell.id} deleted with ${deleted.boardCount} boards")
+        return deleted.photoFiles
     }
 
     /**

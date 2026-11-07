@@ -24,10 +24,17 @@
     <string name="editor_kind">Type de case</string>
     <string name="editor_kind_word">Mot (il se dit)</string>
     <string name="editor_kind_folder">Dossier (il ouvre une grille)</string>
-    <string name="editor_pictogram">Pictogramme</string>
-    <string name="editor_no_pictogram">Sans pictogramme</string>
-    <string name="editor_remove_pictogram">Retirer le pictogramme</string>
+    <string name="editor_pictogram">Image</string>
+    <string name="editor_no_pictogram">Sans image</string>
+    <string name="editor_remove_pictogram">Retirer l\'image</string>
     <string name="editor_search_pictogram">Chercher un pictogramme</string>
+    <string name="editor_take_photo">Prendre une photo</string>
+    <string name="editor_choose_photo">Choisir une image</string>
+    <string name="editor_photo_importing">Préparation de la photo</string>
+    <string name="editor_photo_failed">Cette image n\'a pas pu être utilisée. Essayez-en une autre.</string>
+    <string name="editor_photo_no_app">Aucune appli photo n\'est disponible sur cet appareil.</string>
+    <string name="editor_spoken_text">Ce que dit la case (facultatif)</string>
+    <string name="editor_spoken_text_hint">Si vide, la case dit le mot affiché.</string>
     <!-- Recherche de pictogrammes ARASAAC (réseau, en édition seulement). -->
     <string name="search_title">Chercher un pictogramme</string>
     <string name="search_field">Mot à chercher</string>

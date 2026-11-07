@@ -14,6 +14,7 @@ import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.CellContent
 import com.wobblebot.papotons.domain.WordCategory
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
+import com.wobblebot.papotons.domain.Picture
 import com.wobblebot.papotons.speech.SpeechStatus
 import io.mockk.every
 import io.mockk.mockk
@@ -34,6 +35,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import android.net.Uri
 import org.junit.Test
 import java.io.File
 
@@ -47,6 +49,8 @@ class BoardViewModelTest {
     private val volume = FakeMediaVolume()
     private val arasaac = FakeArasaacClient()
     private val pictogramStore = FakePictogramStore()
+    private val photos = FakePhotoStore()
+    private var nowMs = 0L
     private var filesDirectory = File("build/tmp/no-files")
     private val preferences = FakePreferences()
     private val context = mockk<Context> {
@@ -87,7 +91,7 @@ class BoardViewModelTest {
         savedState: SavedStateHandle = SavedStateHandle(),
         voice: FakeSpeaker = speaker,
     ): BoardViewModel {
-        val viewModel = BoardViewModel(BoardRepository(dao, preferences, context), voice, volume, arasaac, pictogramStore, savedState)
+        val viewModel = BoardViewModel(BoardRepository(dao, preferences, context), voice, volume, arasaac, pictogramStore, photos, savedState).also { it.elapsedRealtimeMs = { nowMs } }
         backgroundScope.launch { viewModel.uiState.collect {} }
         return viewModel
     }
@@ -185,7 +189,7 @@ class BoardViewModelTest {
 
     @Test
     fun `waking the screen up never shows the loading state again`() = runTest(dispatcher) {
-        val viewModel = BoardViewModel(BoardRepository(FakeBoardDao(boards, cells), preferences, context), speaker, volume, arasaac, pictogramStore, SavedStateHandle())
+        val viewModel = BoardViewModel(BoardRepository(FakeBoardDao(boards, cells), preferences, context), speaker, volume, arasaac, pictogramStore, photos, SavedStateHandle()).also { it.elapsedRealtimeMs = { nowMs } }
         val firstCollector = backgroundScope.launch { viewModel.uiState.collect {} }
         viewModel.tap("A")
         firstCollector.cancel()
@@ -210,7 +214,7 @@ class BoardViewModelTest {
         assertEquals(listOf(false, false), speaker.interruptions)
         assertEquals(listOf("veux", "je"), viewModel.messageTexts())
         // Chaque mot garde le picto de sa case ; « veux » est en texte seul.
-        assertEquals(listOf(emptyList(), listOf(10L)), viewModel.state().message.map { it.pictogramIds })
+        assertEquals(listOf(emptyList(), listOf(10L)), viewModel.state().message.map { token -> token.pictures.map { (it as Picture.Pictogram).id } })
         assertTrue(viewModel.state().isBusy)
     }
 
@@ -361,7 +365,7 @@ class BoardViewModelTest {
 
         assertEquals(listOf("j'ai"), viewModel.messageTexts())
         // « j'ai » montre les deux pictos touchés, celui de « je » puis celui du verbe.
-        assertEquals(listOf(listOf(10L, 80L)), viewModel.state().message.map { it.pictogramIds })
+        assertEquals(listOf(listOf(10L, 80L)), viewModel.state().message.map { token -> token.pictures.map { (it as Picture.Pictogram).id } })
         viewModel.onSpeakMessage()
         assertEquals(listOf("j'ai"), speaker.spoken)
         viewModel.onDeleteLastWord()
@@ -455,7 +459,7 @@ class BoardViewModelTest {
         assertTrue(second.state().board?.canGoBack == true)
         // « j'ai » se refait : la catégorie du verbe est revenue avec le mot.
         assertEquals(listOf("j'ai"), second.messageTexts())
-        assertEquals(listOf(listOf(10L, 80L)), second.state().message.map { it.pictogramIds })
+        assertEquals(listOf(listOf(10L, 80L)), second.state().message.map { token -> token.pictures.map { (it as Picture.Pictogram).id } })
     }
 
     @Test
@@ -472,7 +476,30 @@ class BoardViewModelTest {
         val word = SavedWord("x", "GONE", 7).toSentenceWord()
 
         assertNull(word.category)
-        assertEquals("x" to 7L, word.label to word.pictogramId)
+        assertEquals("x" to Picture.Pictogram(7), word.label to word.picture)
+    }
+
+    @Test
+    fun `a saved photo comes back, and wins over a pictogram`() {
+        val word = SavedWord("Mamie", null, 7, photoFile = "a1b2.jpg").toSentenceWord()
+
+        assertEquals(Picture.Photo("a1b2.jpg"), word.picture)
+        assertEquals(word, SavedWord.from(word).toSentenceWord())
+    }
+
+    @Test
+    fun `a cell says its own text, and that text enters the sentence`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(
+            listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 1, columnCount = 1)),
+            listOf(CellEntity(id = 1, boardId = HOME_BOARD_ID, row = 0, column = 0, label = "Mamie", linkedBoardId = null, pictogramId = 7, category = null, photoFile = "m.jpg", spokenText = "Mamie Jeanne")),
+        )
+        val viewModel = startViewModel(dao)
+
+        viewModel.tap("Mamie")
+
+        assertEquals(listOf("Mamie Jeanne"), speaker.spoken)
+        assertEquals(listOf("Mamie Jeanne"), viewModel.messageTexts())
+        assertEquals(listOf(listOf(Picture.Photo("m.jpg"))), viewModel.state().message.map { it.pictures })
     }
 
     @Test
@@ -620,7 +647,7 @@ class BoardViewModelTest {
 
         viewModel.onStartEditing()
         viewModel.onEmptySlotClick(1, 2)
-        viewModel.onEditorSave(CellContent("eau", null, WordCategory.NOUN), asFolder = false)
+        viewModel.onEditorSave(CellContent("eau", null, WordCategory.NOUN, null, null), asFolder = false)
 
         assertNull(viewModel.state().editor)
         val word = viewModel.state().board?.grid?.get(1)?.get(2)
@@ -628,7 +655,7 @@ class BoardViewModelTest {
         assertNull(word?.linkedBoardId)
 
         viewModel.onEmptySlotClick(0, 0)
-        viewModel.onEditorSave(CellContent("Animaux", null, null), asFolder = true)
+        viewModel.onEditorSave(CellContent("Animaux", null, null, null, null), asFolder = true)
         val folder = checkNotNull(viewModel.state().board?.grid?.get(0)?.get(0))
         assertEquals("Animaux", dao.boards.value.single { it.id == folder.linkedBoardId }.name)
     }
@@ -641,8 +668,8 @@ class BoardViewModelTest {
         viewModel.onEmptySlotClick(0, 0)
         dao.insertGate = CompletableDeferred()
 
-        viewModel.onEditorSave(CellContent("eau", null, null), asFolder = false)
-        viewModel.onEditorSave(CellContent("eau", null, null), asFolder = false)
+        viewModel.onEditorSave(CellContent("eau", null, null, null, null), asFolder = false)
+        viewModel.onEditorSave(CellContent("eau", null, null, null, null), asFolder = false)
         // Fermer pendant l'écriture ne la perd pas de vue.
         viewModel.onEditorClose()
         assertTrue(viewModel.state().editor?.isWriting == true)
@@ -659,7 +686,7 @@ class BoardViewModelTest {
         viewModel.onStartEditing()
         viewModel.tap("veux")
         // Une case existante garde son type, quoi que dise asFolder.
-        viewModel.onEditorSave(CellContent("voudrais", null, WordCategory.VERB), asFolder = true)
+        viewModel.onEditorSave(CellContent("voudrais", null, WordCategory.VERB, null, null), asFolder = true)
         assertEquals("voudrais", viewModel.state().board?.grid?.get(0)?.get(1)?.label)
         assertNull(viewModel.state().board?.grid?.get(0)?.get(1)?.linkedBoardId)
 
@@ -681,7 +708,7 @@ class BoardViewModelTest {
         viewModel.tap("veux")
         dao.cells.value = dao.cells.value.filterNot { it.label == "veux" }
 
-        viewModel.onEditorSave(CellContent("voudrais", null, null), asFolder = false)
+        viewModel.onEditorSave(CellContent("voudrais", null, null, null, null), asFolder = false)
 
         assertEquals(EditFailure.SlotTakenOrCellGone, viewModel.state().editor?.failure)
     }
@@ -692,7 +719,7 @@ class BoardViewModelTest {
         viewModel.onStartEditing()
         // (1, 1) est déjà pris (« lost ») : un « + » affiché avant que la grille ne soit relue.
         viewModel.onEmptySlotClick(1, 1)
-        viewModel.onEditorSave(CellContent("y", null, null), asFolder = false)
+        viewModel.onEditorSave(CellContent("y", null, null, null, null), asFolder = false)
 
         assertEquals(EditFailure.SlotTakenOrCellGone, viewModel.state().editor?.failure)
         assertEquals("lost", viewModel.state().board?.grid?.get(1)?.get(1)?.label)
@@ -706,7 +733,7 @@ class BoardViewModelTest {
         viewModel.onStartEditing()
         dao.insertGate = CompletableDeferred()
         viewModel.onEmptySlotClick(0, 0)
-        viewModel.onEditorSave(CellContent("lent", null, null), asFolder = false)
+        viewModel.onEditorSave(CellContent("lent", null, null, null, null), asFolder = false)
 
         viewModel.onStopEditing()
         viewModel.onStartEditing()
@@ -766,7 +793,7 @@ class BoardViewModelTest {
         viewModel.onStartEditing()
         viewModel.onEmptySlotClick(0, 0)
 
-        viewModel.onEditorSave(CellContent("eau", null, null), asFolder = false)
+        viewModel.onEditorSave(CellContent("eau", null, null, null, null), asFolder = false)
 
         assertEquals(EditFailure.Storage, viewModel.state().editor?.failure)
         assertFalse(viewModel.state().editor?.isWriting == true)
@@ -794,7 +821,7 @@ class BoardViewModelTest {
         assertEquals(20L, viewModel.state().editor?.chosenPictogram?.id)
         assertTrue(pictogramStore.stored.isEmpty())
 
-        viewModel.onEditorSave(CellContent("poire", 20, null), asFolder = false)
+        viewModel.onEditorSave(CellContent("poire", 20, null, null, null), asFolder = false)
 
         assertEquals(setOf(20L), pictogramStore.stored.keys)
         assertEquals(20L, dao.cells.value.single().pictogramId)
@@ -811,7 +838,7 @@ class BoardViewModelTest {
         viewModel.onSearchPick(10)
         pictogramStore.canStore = false
 
-        viewModel.onEditorSave(CellContent("pomme", 10, null), asFolder = false)
+        viewModel.onEditorSave(CellContent("pomme", 10, null, null, null), asFolder = false)
 
         assertEquals(EditFailure.Storage, viewModel.state().editor?.failure)
         assertEquals(emptyList<CellEntity>(), dao.cells.value)
@@ -819,7 +846,7 @@ class BoardViewModelTest {
 
         // L'adulte réessaie une fois la place libérée : le choix n'a pas été perdu.
         pictogramStore.canStore = true
-        viewModel.onEditorSave(CellContent("pomme", 10, null), asFolder = false)
+        viewModel.onEditorSave(CellContent("pomme", 10, null, null, null), asFolder = false)
         assertEquals(setOf(10L), pictogramStore.stored.keys)
         assertEquals(10L, dao.cells.value.single().pictogramId)
     }
@@ -871,7 +898,7 @@ class BoardViewModelTest {
         viewModel.onSearchPick(20)
 
         // L'adulte retire le picto et enregistre sans : rien n'est gardé.
-        viewModel.onEditorSave(CellContent("poire", null, null), asFolder = false)
+        viewModel.onEditorSave(CellContent("poire", null, null, null, null), asFolder = false)
         assertTrue(pictogramStore.stored.isEmpty())
         assertNull(dao.cells.value.single().pictogramId)
 
@@ -882,7 +909,7 @@ class BoardViewModelTest {
         viewModel.onSearchPick(10)
         viewModel.onEditorClose()
         viewModel.onEmptySlotClick(0, 2)
-        viewModel.onEditorSave(CellContent("autre", 10, null), asFolder = false)
+        viewModel.onEditorSave(CellContent("autre", 10, null, null, null), asFolder = false)
         assertTrue(pictogramStore.stored.isEmpty())
     }
 
@@ -960,7 +987,7 @@ class BoardViewModelTest {
         viewModel.onChosenPictogramRemoved()
 
         assertNull(viewModel.state().editor?.chosenPictogram)
-        viewModel.onEditorSave(CellContent("poire", 20, null), asFolder = false)
+        viewModel.onEditorSave(CellContent("poire", 20, null, null, null), asFolder = false)
         assertTrue(pictogramStore.stored.isEmpty())
     }
 
@@ -972,7 +999,7 @@ class BoardViewModelTest {
         viewModel.onSearchPick(20)
         pictogramStore.storeGate = CompletableDeferred()
 
-        viewModel.onEditorSave(CellContent("poire", 20, null), asFolder = false)
+        viewModel.onEditorSave(CellContent("poire", 20, null, null, null), asFolder = false)
         viewModel.onChosenPictogramRemoved()
         checkNotNull(pictogramStore.storeGate).complete(Unit)
 
@@ -989,5 +1016,358 @@ class BoardViewModelTest {
         viewModel.onSearch("le")
 
         assertEquals(SearchStatus.TooManyResults, viewModel.state().pictogramSearch?.status)
+    }
+
+    private val gallery: Uri = mockk(relaxed = true)
+
+    @Test
+    fun `a chosen photo is committed with the cell and replaces nothing else`() = runTest(dispatcher) {
+        val (viewModel, dao) = editingEmptyHome()
+
+        viewModel.onGalleryRequested()
+        assertTrue(viewModel.isAwaitingPhoto)
+        viewModel.onPhotoResult(gallery)
+        assertFalse(viewModel.isAwaitingPhoto)
+        assertEquals("photo1.jpg", viewModel.state().editor?.chosenPhoto)
+
+        viewModel.onEditorSave(CellContent("Mamie", null, null, "photo1.jpg", "Mamie Jeanne"), asFolder = false)
+
+        assertEquals(setOf("photo1.jpg"), photos.committed)
+        assertEquals(emptyList<String>(), photos.deleted)
+        val cell = dao.cells.value.single()
+        assertEquals("photo1.jpg" to "Mamie Jeanne", cell.photoFile to cell.spokenText)
+    }
+
+    @Test
+    fun `a photo given up is deleted, whatever the way out`() = runTest(dispatcher) {
+        val (viewModel, _) = editingEmptyHome()
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+
+        // Un autre choix remplace la première.
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+        assertEquals(listOf("photo1.jpg"), photos.deleted)
+
+        viewModel.onEditorClose()
+        assertEquals(listOf("photo1.jpg", "photo2.jpg"), photos.deleted)
+        assertTrue(photos.committed.isEmpty())
+    }
+
+    @Test
+    fun `a save failing after the photo is committed reuses it on retry`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.onStartEditing()
+        // (1, 1) est pris : l'écriture en base échoue après la validation de la photo.
+        viewModel.onEmptySlotClick(1, 1)
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+
+        viewModel.onEditorSave(CellContent("x", null, null, "photo1.jpg", null), asFolder = false)
+        assertEquals(EditFailure.SlotTakenOrCellGone, viewModel.state().editor?.failure)
+        viewModel.onEditorSave(CellContent("x", null, null, "photo1.jpg", null), asFolder = false)
+
+        assertEquals(setOf("photo1.jpg"), photos.committed)
+        viewModel.onEditorClose()
+        // Écrite dans aucune case : effacée.
+        assertEquals(listOf("photo1.jpg"), photos.deleted)
+    }
+
+    @Test
+    fun `replacing or removing the photo of a cell deletes the old one once saved`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(
+            listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 1, columnCount = 2)),
+            listOf(
+                CellEntity(id = 1, boardId = HOME_BOARD_ID, row = 0, column = 0, label = "Mamie", linkedBoardId = null, pictogramId = null, category = null, photoFile = "old.jpg", spokenText = null),
+                CellEntity(id = 2, boardId = HOME_BOARD_ID, row = 0, column = 1, label = "Papi", linkedBoardId = null, pictogramId = null, category = null, photoFile = "papi.jpg", spokenText = null),
+            ),
+        )
+        val viewModel = startViewModel(dao)
+        viewModel.onStartEditing()
+        viewModel.tap("Mamie")
+        viewModel.onEditorSave(CellContent("Mamie", 7, null, null, null), asFolder = false)
+        assertEquals(listOf("old.jpg"), photos.deleted)
+
+        viewModel.tap("Papi")
+        viewModel.onEditorDelete()
+        assertEquals(listOf("old.jpg", "papi.jpg"), photos.deleted)
+    }
+
+    @Test
+    fun `a photo coming back too late ends the edit`() = runTest(dispatcher) {
+        val (viewModel, _) = editingEmptyHome()
+        viewModel.onCameraRequested()
+
+        nowMs += PHOTO_REQUEST_TIMEOUT_MS + 1
+        viewModel.onCameraResult(isSaved = true)
+
+        assertFalse(viewModel.state().isEditing)
+        assertFalse(viewModel.isAwaitingPhoto)
+        assertEquals(0, photos.prepareCount)
+        assertEquals(1, photos.cameraCaptureDiscarded)
+    }
+
+    @Test
+    fun `an import finishing after the editor closed is thrown away`() = runTest(dispatcher) {
+        val (viewModel, dao) = editingEmptyHome()
+        photos.prepareGate = CompletableDeferred()
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+        assertTrue(viewModel.state().editor?.isImportingPhoto == true)
+        // « Enregistrer » attend la fin de l'import.
+        viewModel.onEditorSave(CellContent("x", null, null, null, null), asFolder = false)
+        assertFalse(viewModel.state().editor?.isWriting == true)
+
+        assertTrue(dao.cells.value.isEmpty())
+
+        // Fermé puis rouvert sur une autre case : l'import en retard ne doit pas y atterrir.
+        viewModel.onEditorClose()
+        viewModel.onEmptySlotClick(0, 1)
+        checkNotNull(photos.prepareGate).complete(Unit)
+
+        assertEquals(listOf("photo1.jpg"), photos.deleted)
+        assertNull(viewModel.state().editor?.chosenPhoto)
+    }
+
+    @Test
+    fun `an unusable image says so`() = runTest(dispatcher) {
+        val (viewModel, _) = editingEmptyHome()
+        photos.canPrepare = false
+
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+
+        assertEquals(PhotoFailure.UnusableImage, viewModel.state().editor?.photoFailure)
+        assertNull(viewModel.state().editor?.chosenPhoto)
+    }
+
+    private fun TestScope.editingCellWithPhoto(): Pair<BoardViewModel, FakeBoardDao> {
+        val dao = FakeBoardDao(
+            listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 1, columnCount = 2)),
+            listOf(CellEntity(id = 1, boardId = HOME_BOARD_ID, row = 0, column = 0, label = "Mamie", linkedBoardId = null, pictogramId = null, category = null, photoFile = "old.jpg", spokenText = null)),
+        )
+        val viewModel = startViewModel(dao)
+        viewModel.onStartEditing()
+        viewModel.tap("Mamie")
+        return viewModel to dao
+    }
+
+    @Test
+    fun `a cell keeping its photo never loses it, saved or not`() = runTest(dispatcher) {
+        val (viewModel, dao) = editingCellWithPhoto()
+
+        viewModel.onEditorSave(CellContent("Mamou", null, null, "old.jpg", "Mamie Jeanne"), asFolder = false)
+
+        assertTrue(photos.deleted.isEmpty())
+        assertEquals("old.jpg", dao.cells.value.single().photoFile)
+
+        // Une écriture qui échoue n'efface pas non plus l'ancienne photo.
+        viewModel.tap("Mamou")
+        dao.cells.value = emptyList()
+        viewModel.onEditorSave(CellContent("Mamie", null, null, null, null), asFolder = false)
+        assertEquals(EditFailure.SlotTakenOrCellGone, viewModel.state().editor?.failure)
+        assertTrue(photos.deleted.isEmpty())
+    }
+
+    @Test
+    fun `leaving the edit while a photo is being saved never deletes it`() = runTest(dispatcher) {
+        val (viewModel, dao) = editingEmptyHome()
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+        photos.commitGate = CompletableDeferred()
+        viewModel.onEditorSave(CellContent("Mamie", null, null, "photo1.jpg", null), asFolder = false)
+
+        viewModel.onStopEditing()
+        checkNotNull(photos.commitGate).complete(Unit)
+
+        assertEquals("photo1.jpg", dao.cells.value.single().photoFile)
+        assertTrue(photos.deleted.isEmpty())
+    }
+
+    @Test
+    fun `a photo that cannot be committed is not written and stays pending`() = runTest(dispatcher) {
+        val (viewModel, dao) = editingEmptyHome()
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+        photos.canCommit = false
+
+        viewModel.onEditorSave(CellContent("Mamie", null, null, "photo1.jpg", null), asFolder = false)
+
+        assertEquals(EditFailure.Storage, viewModel.state().editor?.failure)
+        assertTrue(dao.cells.value.isEmpty())
+        assertTrue(photos.deleted.isEmpty())
+        assertEquals("photo1.jpg", viewModel.state().editor?.chosenPhoto)
+    }
+
+    @Test
+    fun `a photo and a pictogram replace each other`() = runTest(dispatcher) {
+        val (viewModel, _) = editingEmptyHome()
+        viewModel.onSearchOpen("pomme")
+        viewModel.onSearch("pomme")
+        viewModel.onSearchPick(20)
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+        assertNull(viewModel.state().editor?.chosenPictogram)
+        assertEquals("photo1.jpg", viewModel.state().editor?.chosenPhoto)
+
+        viewModel.onSearchOpen("pomme")
+        viewModel.onSearch("pomme")
+        viewModel.onSearchPick(10)
+        assertNull(viewModel.state().editor?.chosenPhoto)
+        assertEquals(listOf("photo1.jpg"), photos.deleted)
+
+        viewModel.onEditorSave(CellContent("x", 10, null, null, null), asFolder = false)
+        assertEquals(setOf(10L), pictogramStore.stored.keys)
+    }
+
+    @Test
+    fun `a photo taken in time lands in the editor, a cancelled one changes nothing`() = runTest(dispatcher) {
+        val (viewModel, _) = editingEmptyHome()
+
+        viewModel.onCameraRequested()
+        viewModel.onCameraResult(isSaved = false)
+        assertFalse(viewModel.isAwaitingPhoto)
+        assertEquals(0, photos.prepareCount)
+
+        viewModel.onCameraRequested()
+        nowMs += PHOTO_REQUEST_TIMEOUT_MS
+        viewModel.onCameraResult(isSaved = true)
+        assertTrue(viewModel.state().isEditing)
+        assertEquals("photo1.jpg", viewModel.state().editor?.chosenPhoto)
+        assertEquals(2, photos.cameraCaptureDiscarded)
+    }
+
+    @Test
+    fun `a missing camera app says so and stops waiting`() = runTest(dispatcher) {
+        val (viewModel, _) = editingEmptyHome()
+        viewModel.onCameraRequested()
+
+        viewModel.onPhotoRequestFailed()
+
+        assertFalse(viewModel.isAwaitingPhoto)
+        assertEquals(PhotoFailure.NoPhotoApp, viewModel.state().editor?.photoFailure)
+    }
+
+    @Test
+    fun `stopping the edit or opening a folder deletes the photo not yet saved`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.onStartEditing()
+        viewModel.tap("A")
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+
+        viewModel.onEditorOpenFolder()
+        assertEquals(listOf("photo1.jpg"), photos.deleted)
+
+        viewModel.tap("B")
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+        viewModel.onStopEditing()
+        assertEquals(listOf("photo1.jpg", "photo2.jpg"), photos.deleted)
+    }
+
+    @Test
+    fun `removing the image during an import never leaves the editor stuck`() = runTest(dispatcher) {
+        val (viewModel, dao) = editingEmptyHome()
+        photos.prepareGate = CompletableDeferred()
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+
+        viewModel.onChosenPictogramRemoved()
+        checkNotNull(photos.prepareGate).complete(Unit)
+
+        assertFalse(viewModel.state().editor?.isImportingPhoto == true)
+        assertEquals(listOf("photo1.jpg"), photos.deleted)
+        viewModel.onEditorSave(CellContent("eau", null, null, null, null), asFolder = false)
+        assertEquals("eau", dao.cells.value.single().label)
+    }
+
+    @Test
+    fun `a write failing after the editor closed deletes its photo`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.onStartEditing()
+        // (1, 1) est pris : l'écriture échoue après la validation.
+        viewModel.onEmptySlotClick(1, 1)
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+        photos.commitGate = CompletableDeferred()
+        viewModel.onEditorSave(CellContent("x", null, null, "photo1.jpg", null), asFolder = false)
+
+        viewModel.onStopEditing()
+        checkNotNull(photos.commitGate).complete(Unit)
+
+        assertEquals(listOf("photo1.jpg"), photos.deleted)
+    }
+
+    @Test
+    fun `replacing a photo by another deletes the old one and commits the new one`() = runTest(dispatcher) {
+        val (viewModel, dao) = editingCellWithPhoto()
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+
+        viewModel.onEditorSave(CellContent("Mamie", null, null, "photo1.jpg", null), asFolder = false)
+
+        assertEquals(setOf("photo1.jpg"), photos.committed)
+        assertEquals(listOf("old.jpg"), photos.deleted)
+        assertEquals("photo1.jpg", dao.cells.value.single().photoFile)
+    }
+
+    @Test
+    fun `a write failing late never deletes the photo of an editor opened since`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.onStartEditing()
+        // A : (1, 1) est pris, l'écriture échouera ; retenue pendant qu'un autre éditeur s'ouvre.
+        viewModel.onEmptySlotClick(1, 1)
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+        val gateOfA = CompletableDeferred<Unit>()
+        photos.commitGate = gateOfA
+        viewModel.onEditorSave(CellContent("x", null, null, "photo1.jpg", null), asFolder = false)
+        viewModel.onStopEditing()
+        viewModel.onStartEditing()
+        // B : son propre choix.
+        viewModel.tap("je")
+        photos.commitGate = null
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+        assertEquals("photo2.jpg", viewModel.state().editor?.chosenPhoto)
+
+        gateOfA.complete(Unit)
+
+        assertEquals(listOf("photo1.jpg"), photos.deleted)
+        assertEquals("photo2.jpg", viewModel.state().editor?.chosenPhoto)
+    }
+
+    @Test
+    fun `a photo given up earlier is refused, the current one is kept`() = runTest(dispatcher) {
+        val (viewModel, dao) = editingEmptyHome()
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+
+        // Brouillon en retard : il vise encore la première photo, déjà effacée.
+        viewModel.onEditorSave(CellContent("Mamie", null, null, "photo1.jpg", null), asFolder = false)
+
+        assertEquals(EditFailure.Storage, viewModel.state().editor?.failure)
+        assertTrue(dao.cells.value.none { it.label == "Mamie" })
+        assertEquals(listOf("photo1.jpg"), photos.deleted)
+        assertTrue(photos.committed.isEmpty())
+        viewModel.onEditorSave(CellContent("Mamie", null, null, "photo2.jpg", null), asFolder = false)
+        assertEquals("photo2.jpg", dao.cells.value.single { it.label == "Mamie" }.photoFile)
+        assertEquals(listOf("photo1.jpg"), photos.deleted)
+    }
+
+    @Test
+    fun `an editor opened on a cell not yet reread never brings back its old photo`() = runTest(dispatcher) {
+        val (viewModel, dao) = editingCellWithPhoto()
+        // La case a déjà reçu une nouvelle photo, que l'éditeur n'a pas encore vue.
+        dao.cells.value = dao.cells.value.map { it.copy(photoFile = "new.jpg") }
+
+        viewModel.onEditorSave(CellContent("Mamou", null, null, "old.jpg", null), asFolder = false)
+
+        assertEquals(EditFailure.SlotTakenOrCellGone, viewModel.state().editor?.failure)
+        assertEquals("Mamie" to "new.jpg", dao.cells.value.single().let { it.label to it.photoFile })
+        assertTrue(photos.deleted.isEmpty())
     }
 }

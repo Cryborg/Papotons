@@ -2,15 +2,19 @@ package com.wobblebot.papotons.ui.board
 
 import android.database.sqlite.SQLiteConstraintException
 import android.database.sqlite.SQLiteException
+import android.net.Uri
+import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wobblebot.papotons.data.board.BoardRepository
+import com.wobblebot.papotons.data.photo.PhotoStore
 import com.wobblebot.papotons.data.pictogram.ArasaacClient
 import com.wobblebot.papotons.data.pictogram.PictogramStore
 import com.wobblebot.papotons.data.pictogram.TooManyResultsException
 import com.wobblebot.papotons.data.pictogram.isSearchable
+import com.wobblebot.papotons.data.board.CellChangedException
 import com.wobblebot.papotons.data.board.CellNotFoundException
 import com.wobblebot.papotons.domain.Board
 import com.wobblebot.papotons.domain.Cell
@@ -48,6 +52,9 @@ import javax.inject.Inject
 private const val TAG = "BoardViewModel"
 private const val PARALLEL_THUMBNAILS = 4
 
+/** Au-delà, une photo revenue de l'appli photo est ignorée et l'édition se termine. */
+internal const val PHOTO_REQUEST_TIMEOUT_MS = 2 * 60 * 1000L
+
 /** Ce que l'écran lit en plus de la grille et de la phrase, regroupé pour tenir dans un `combine`. */
 private data class SecondaryState(
     val isMuted: Boolean,
@@ -68,6 +75,7 @@ class BoardViewModel @Inject constructor(
     private val mediaVolume: MediaVolume,
     private val arasaac: ArasaacClient,
     private val pictogramStore: PictogramStore,
+    private val photos: PhotoStore,
     /**
      * Miroir de la pile et de la phrase, pour survivre à la mort du processus : lu une seule fois
      * ici, à la création, puis seulement recopié (un collecteur par flux).
@@ -100,6 +108,22 @@ class BoardViewModel @Inject constructor(
 
     /** Change à chaque recherche : une vignette d'une recherche remplacée ne touche plus rien. */
     private var searchCount = 0L
+
+    /** Une photo préparée dans l'éditeur et écrite dans aucune case : à effacer si on y renonce. */
+    private var unsavedPhoto: String? = null
+
+    /** Change à chaque photo demandée ou abandonnée : un import arrivé trop tard est jeté. */
+    private var photoCount = 0L
+
+    /** Depuis quand l'appli photo ou le sélecteur sont ouverts ; `null` sinon. */
+    private var photoRequestedAtMs: Long? = null
+    private var cameraCapture: Uri? = null
+
+    /** L'horloge du délai de prise de vue ; remplaçable en test. */
+    internal var elapsedRealtimeMs: () -> Long = SystemClock::elapsedRealtime
+
+    /** Un choix de photo est en cours : l'appli passe par `ON_STOP` sans que l'adulte soit parti. */
+    val isAwaitingPhoto: Boolean get() = photoRequestedAtMs != null
 
     /**
      * La grille affichée reste la précédente tant que la suivante n'est pas lue : une grille
@@ -177,10 +201,10 @@ class BoardViewModel @Inject constructor(
             // grille affichée : il n'empile rien.
             navigation.update { stack -> if (isShowingTopOf(stack)) stack.adding(linkedBoardId) else stack }
         } else {
-            speaker.speak(cell.label, interrupt = false)
+            speaker.speak(cell.spoken, interrupt = false)
             // Au moment de parler : certaines coupures (« Ne pas déranger ») ne se signalent pas.
             mediaVolume.refresh()
-            message.update { it.adding(SentenceWord(cell.label, cell.category, cell.pictogramId)) }
+            message.update { it.adding(SentenceWord(cell.spoken, cell.category, cell.picture)) }
         }
     }
 
@@ -221,6 +245,7 @@ class BoardViewModel @Inject constructor(
         editor.value = null
         onSearchClose()
         chosenBytes = null
+        discardUnsavedPhoto()
     }
 
     fun onEmptySlotClick(row: Int, column: Int) {
@@ -231,7 +256,78 @@ class BoardViewModel @Inject constructor(
 
     fun onEditorClose() {
         editor.update { current -> if (current?.isWriting == true) current else null }
-        if (editor.value == null) chosenBytes = null
+        if (editor.value == null) {
+            chosenBytes = null
+            discardUnsavedPhoto()
+        }
+    }
+
+    /** Juste avant d'ouvrir l'appli photo : le fichier où elle écrit, vidé d'avance. */
+    fun onCameraRequested(): Uri {
+        photoRequestedAtMs = elapsedRealtimeMs()
+        return photos.freshCameraCapture().also { cameraCapture = it }
+    }
+
+    fun onGalleryRequested() {
+        photoRequestedAtMs = elapsedRealtimeMs()
+    }
+
+    /** Aucune appli photo ni sélecteur : un message, jamais un plantage. */
+    fun onPhotoRequestFailed() {
+        photoRequestedAtMs = null
+        editor.update { it?.copy(photoFailure = PhotoFailure.NoPhotoApp) }
+    }
+
+    /** L'appareil photo a rendu la main ; [isSaved] faux si l'adulte a renoncé. */
+    fun onCameraResult(isSaved: Boolean) {
+        onPhotoResult(if (isSaved) cameraCapture else null)
+    }
+
+    /**
+     * Une photo revenue de l'appareil photo ou du sélecteur. Revenue plus de [PHOTO_REQUEST_TIMEOUT_MS]
+     * après la demande, l'adulte est sans doute parti et l'enfant a repris la tablette dans la tâche
+     * de l'appli photo : l'édition se termine, la photo est ignorée.
+     */
+    fun onPhotoResult(source: Uri?) {
+        val requestedAt = photoRequestedAtMs ?: return
+        photoRequestedAtMs = null
+        if (elapsedRealtimeMs() - requestedAt > PHOTO_REQUEST_TIMEOUT_MS) {
+            Log.i(TAG, "Photo came back too late, edit mode ended")
+            photos.discardCameraCapture()
+            onStopEditing()
+            return
+        }
+        // Pendant une écriture, l'éditeur ne change pas (la photo en cours de validation lui appartient).
+        if (source == null || editor.value == null || editor.value?.isWriting == true) {
+            photos.discardCameraCapture()
+            return
+        }
+        val photoNumber = ++photoCount
+        editor.update { it?.copy(isImportingPhoto = true, photoFailure = null) }
+        viewModelScope.launch {
+            val name = photos.prepare(source)
+            photos.discardCameraCapture()
+            if (photoNumber != photoCount || editor.value == null) {
+                if (name != null) photos.delete(name)
+                return@launch
+            }
+            if (name == null) {
+                editor.update { it?.copy(isImportingPhoto = false, photoFailure = PhotoFailure.UnusableImage) }
+                return@launch
+            }
+            discardUnsavedPhoto()
+            unsavedPhoto = name
+            // Une photo remplace le picto : la règle de priorité ne sert qu'aux données incohérentes.
+            chosenBytes = null
+            editor.update { it?.copy(isImportingPhoto = false, chosenPhoto = name, chosenPictogram = null) }
+        }
+    }
+
+    private fun discardUnsavedPhoto() {
+        photoCount++
+        val name = unsavedPhoto ?: return
+        unsavedPhoto = null
+        viewModelScope.launch { photos.delete(name) }
     }
 
     /**
@@ -248,7 +344,9 @@ class BoardViewModel @Inject constructor(
         // Pendant une écriture, l'éditeur ne change pas : son résultat doit pouvoir le refermer.
         if (editor.value?.isWriting == true) return
         chosenBytes = null
-        editor.update { it?.copy(chosenPictogram = null) }
+        // Un import en cours est abandonné avec : l'éditeur ne reste pas bloqué à l'attendre.
+        discardUnsavedPhoto()
+        editor.update { it?.copy(chosenPictogram = null, chosenPhoto = null, isImportingPhoto = false, photoFailure = null) }
     }
 
     /**
@@ -311,7 +409,9 @@ class BoardViewModel @Inject constructor(
         val bytes = foundBytes[pictogramId] ?: return
         val image = pictogramSearch.value?.results?.firstOrNull { it.id == pictogramId }?.image ?: return
         chosenBytes = pictogramId to bytes
-        editor.update { it?.copy(chosenPictogram = ChosenPictogram(pictogramId, image)) }
+        // Un picto remplace la photo choisie.
+        discardUnsavedPhoto()
+        editor.update { it?.copy(chosenPictogram = ChosenPictogram(pictogramId, image), chosenPhoto = null, photoFailure = null) }
         onSearchClose()
     }
 
@@ -325,28 +425,70 @@ class BoardViewModel @Inject constructor(
 
     /** [asFolder] ne compte que pour une nouvelle case : une case existante garde son type. */
     fun onEditorSave(content: CellContent, asFolder: Boolean) {
-        writeFromEditor { target ->
-            // Le picto choisi d'abord : la case ne vise jamais un picto absent de l'appareil (invariant 2).
-            val chosen = chosenBytes
-            if (chosen != null && content.pictogramId == chosen.first && !pictogramStore.store(chosen.first, chosen.second)) {
-                throw IOException("Pictogram ${chosen.first} could not be stored")
+        if (editor.value?.isImportingPhoto == true) return
+        writeFromEditor { target, writeToken ->
+            // La photo validée d'abord ; validation idempotente : un nouvel essai après un échec en
+            // base réutilise le même fichier.
+            val photo = content.photoFile
+            // Seules deux photos peuvent être écrites : celle choisie ici, ou celle que la case a déjà.
+            // Une autre (brouillon en retard d'une frame) viserait un fichier peut-être effacé.
+            if (photo != null && photo != unsavedPhoto && photo != (target as? EditTarget.ExistingCell)?.cell?.photoFile) {
+                throw IOException("Photo is not this editor's")
             }
-            when (target) {
-                is EditTarget.NewCell ->
-                    if (asFolder) {
-                        repository.addFolder(target.boardId, target.row, target.column, content)
+            // L'écriture prend la photo en charge : un « Terminer » ou un départ pendant qu'elle tourne
+            // ne doit pas effacer un fichier que la case va viser. Rendue à l'éditeur si l'écriture échoue.
+            val ownedPhoto = photo?.takeIf { it == unsavedPhoto }
+            if (ownedPhoto != null) unsavedPhoto = null
+            try {
+                // Seule la photo choisie dans cet éditeur est à valider : une photo déjà dans la case l'est,
+                // et l'exiger bloquerait l'édition d'une case dont le fichier a disparu.
+                if (ownedPhoto != null && !photos.commit(ownedPhoto)) throw IOException("Photo could not be committed")
+                writeCellContent(target, content, asFolder)
+            } catch (exception: Exception) {
+                if (ownedPhoto != null) {
+                    // Rendue à son éditeur s'il est toujours là ; sinon elle n'est plus à personne, et
+                    // on n'efface qu'elle (jamais la photo d'un éditeur ouvert depuis).
+                    if (editor.value?.writeToken == writeToken && unsavedPhoto == null) {
+                        unsavedPhoto = ownedPhoto
                     } else {
-                        repository.addWord(target.boardId, target.row, target.column, content)
+                        photos.delete(ownedPhoto)
                     }
-                is EditTarget.ExistingCell -> repository.updateCell(target.cell, content)
+                }
+                throw exception
+            }
+        }
+    }
+
+    /** Picto choisi gardé, case écrite, puis ancienne photo effacée si elle n'appartient plus à personne. */
+    private suspend fun writeCellContent(target: EditTarget, content: CellContent, asFolder: Boolean) {
+        // Le picto choisi d'abord : la case ne vise jamais un picto absent de l'appareil (invariant 2).
+        val chosen = chosenBytes
+        if (chosen != null && content.pictogramId == chosen.first && !pictogramStore.store(chosen.first, chosen.second)) {
+            throw IOException("Pictogram ${chosen.first} could not be stored")
+        }
+        when (target) {
+            is EditTarget.NewCell ->
+                if (asFolder) {
+                    repository.addFolder(target.boardId, target.row, target.column, content)
+                } else {
+                    repository.addWord(target.boardId, target.row, target.column, content)
+                }
+            is EditTarget.ExistingCell -> {
+                // L'ancienne photo est lue en base, dans la transaction : jamais un instantané périmé.
+                val previousPhoto = repository.updateCell(target.cell, content)
+                // Écrite en base : l'ancienne photo, remplacée ou retirée, n'appartient plus à personne.
+                if (previousPhoto != null && previousPhoto != content.photoFile) photos.delete(previousPhoto)
             }
         }
     }
 
     fun onEditorDelete() {
-        writeFromEditor { target ->
+        writeFromEditor { target, writeToken ->
             if (target is EditTarget.ExistingCell) {
-                repository.deleteCell(target.cell, target.boardId, openRootBoardId = navigation.value.first())
+                val deletedPhotos = repository.deleteCell(target.cell, target.boardId, openRootBoardId = navigation.value.first())
+                for (photo in deletedPhotos) photos.delete(photo)
+                // La photo choisie dans CET éditeur seulement, s'il est encore là.
+                if (editor.value?.writeToken == writeToken) discardUnsavedPhoto()
             }
         }
     }
@@ -357,10 +499,12 @@ class BoardViewModel @Inject constructor(
         val linkedBoardId = target.cell.linkedBoardId ?: return
         editor.value = null
         chosenBytes = null
+        discardUnsavedPhoto()
         navigation.update { stack -> if (isShowingTopOf(stack)) stack.adding(linkedBoardId) else stack }
     }
 
-    private fun writeFromEditor(write: suspend (EditTarget) -> Unit) {
+    /** [write] reçoit la cible et le jeton de l'écriture : elle ne touche qu'à ce qui est à elle. */
+    private fun writeFromEditor(write: suspend (EditTarget, Long) -> Unit) {
         val current = editor.value ?: return
         if (current.isWriting) return
         val writing = current.copy(isWriting = true, failure = null, writeToken = ++writeCount)
@@ -369,12 +513,14 @@ class BoardViewModel @Inject constructor(
             // Le résultat ne touche que l'éditeur qui l'a lancé : fermé (Terminer, départ) ou rouvert
             // entre-temps, un autre éditeur ne se referme pas et n'affiche pas l'échec d'un autre.
             try {
-                write(current.target)
+                write(current.target, writing.writeToken)
                 if (editor.compareAndSet(writing, null)) chosenBytes = null
             } catch (exception: SQLiteConstraintException) {
                 // Emplacement pris entre-temps (un « + » pas encore rafraîchi) : rien n'est écrit.
                 reportEditFailure(current, writing, EditFailure.SlotTakenOrCellGone, exception)
             } catch (exception: CellNotFoundException) {
+                reportEditFailure(current, writing, EditFailure.SlotTakenOrCellGone, exception)
+            } catch (exception: CellChangedException) {
                 reportEditFailure(current, writing, EditFailure.SlotTakenOrCellGone, exception)
             } catch (exception: SQLiteException) {
                 // Disque plein : rien n'est écrit à moitié (transactions).

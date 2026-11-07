@@ -33,6 +33,8 @@ fun BoardWithCells.toDomain(): Board = Board(
             label = cell.label,
             linkedBoardId = cell.linkedBoardId,
             pictogramId = cell.pictogramId,
+            photoFile = cell.photoFile,
+            spokenText = cell.spokenText,
             category = categoryOf(cell),
         )
     }.toImmutableList(),

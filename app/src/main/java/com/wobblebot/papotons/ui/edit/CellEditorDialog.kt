@@ -52,8 +52,11 @@ import androidx.compose.ui.window.DialogProperties
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.CellContent
 import com.wobblebot.papotons.domain.WordCategory
+import com.wobblebot.papotons.domain.Picture
 import com.wobblebot.papotons.ui.board.CellEditorState
+import com.wobblebot.papotons.ui.board.CellPicture
 import com.wobblebot.papotons.ui.board.EditFailure
+import com.wobblebot.papotons.ui.board.PhotoFailure
 import com.wobblebot.papotons.ui.board.EditTarget
 import com.wobblebot.papotons.ui.board.Pictogram
 import com.wobblebot.papotons.ui.theme.wordCategoryBackground
@@ -63,6 +66,7 @@ private val SECTION_SPACING = 16.dp
 private val ITEM_SPACING = 8.dp
 private val PICTOGRAM_PREVIEW_SIZE = 96.dp
 private val CATEGORY_SWATCH_SIZE = 16.dp
+private const val MAX_SPOKEN_TEXT_LENGTH = 200
 
 /**
  * L'éditeur d'une case, en plein écran. Le brouillon survit à la rotation (`rememberSaveable`) ;
@@ -77,12 +81,17 @@ fun CellEditorDialog(
     onOpenFolder: () -> Unit,
     onSearchPictogram: (query: String) -> Unit,
     onRemovePictogram: () -> Unit,
+    /** `null` : l'appareil n'a pas d'appareil photo, le bouton n'est pas proposé. */
+    onTakePhoto: (() -> Unit)?,
+    onChoosePhoto: () -> Unit,
     onClose: () -> Unit,
 ) {
     val existing = (state.target as? EditTarget.ExistingCell)?.cell
     var label by rememberSaveable(state.target) { mutableStateOf(existing?.label.orEmpty()) }
     var pictogramId by rememberSaveable(state.target) { mutableStateOf(existing?.pictogramId) }
     var categoryName by rememberSaveable(state.target) { mutableStateOf(existing?.category?.name) }
+    var photoFile by rememberSaveable(state.target) { mutableStateOf(existing?.photoFile) }
+    var spokenText by rememberSaveable(state.target) { mutableStateOf(existing?.spokenText.orEmpty()) }
     var asFolder by rememberSaveable(state.target) { mutableStateOf(false) }
     var isLabelMissing by rememberSaveable(state.target) { mutableStateOf(false) }
     var isDeleteConfirmOpen by rememberSaveable(state.target) { mutableStateOf(false) }
@@ -91,7 +100,18 @@ fun CellEditorDialog(
     // Un picto choisi dans la recherche remplace celui du brouillon.
     val chosen = state.chosenPictogram
     LaunchedEffect(chosen) {
-        if (chosen != null) pictogramId = chosen.id
+        if (chosen != null) {
+            pictogramId = chosen.id
+            photoFile = null
+        }
+    }
+    // Une photo prise ou choisie remplace le picto.
+    val chosenPhoto = state.chosenPhoto
+    LaunchedEffect(chosenPhoto) {
+        if (chosenPhoto != null) {
+            photoFile = chosenPhoto
+            pictogramId = null
+        }
     }
 
     Dialog(
@@ -140,9 +160,22 @@ fun CellEditorDialog(
                         }
                     }
                 }
+                if (!isFolder) {
+                    OutlinedTextField(
+                        value = spokenText,
+                        onValueChange = { typed -> spokenText = typed.replace('\n', ' ').takeWhole(MAX_SPOKEN_TEXT_LENGTH) },
+                        label = { Text(stringResource(R.string.editor_spoken_text)) },
+                        supportingText = { Text(stringResource(R.string.editor_spoken_text_hint)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 Section(R.string.editor_pictogram) {
                     val currentPictogram = pictogramId
-                    if (currentPictogram == null) {
+                    val currentPhoto = photoFile
+                    if (currentPhoto != null) {
+                        CellPicture(Picture.Photo(currentPhoto), Modifier.size(PICTOGRAM_PREVIEW_SIZE))
+                    } else if (currentPictogram == null) {
                         Text(stringResource(R.string.editor_no_pictogram))
                     } else if (chosen != null && chosen.id == currentPictogram) {
                         // Pas encore gardé sur l'appareil : l'image de la recherche.
@@ -150,14 +183,34 @@ fun CellEditorDialog(
                     } else {
                         Pictogram(currentPictogram, Modifier.size(PICTOGRAM_PREVIEW_SIZE))
                     }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING)) {
-                        OutlinedButton(onClick = { onSearchPictogram(label.trim()) }, enabled = !state.isWriting) {
+                    if (state.isImportingPhoto) {
+                        Text(stringResource(R.string.editor_photo_importing))
+                    }
+                    state.photoFailure?.let { failure ->
+                        Text(
+                            stringResource(if (failure == PhotoFailure.NoPhotoApp) R.string.editor_photo_no_app else R.string.editor_photo_failed),
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
+                        )
+                    }
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING),
+                        verticalArrangement = Arrangement.spacedBy(ITEM_SPACING),
+                    ) {
+                        val canPick = !state.isWriting && !state.isImportingPhoto
+                        if (onTakePhoto != null) {
+                            OutlinedButton(onClick = onTakePhoto, enabled = canPick) { Text(stringResource(R.string.editor_take_photo)) }
+                        }
+                        OutlinedButton(onClick = onChoosePhoto, enabled = canPick) { Text(stringResource(R.string.editor_choose_photo)) }
+                        OutlinedButton(onClick = { onSearchPictogram(label.trim()) }, enabled = canPick) {
                             Text(stringResource(R.string.editor_search_pictogram))
                         }
-                        if (currentPictogram != null) {
+                        // Visible aussi pendant un import : c'est la sortie d'une image qui ne se charge pas.
+                        if (currentPictogram != null || currentPhoto != null || state.isImportingPhoto) {
                             TextButton(
                                 onClick = {
                                     pictogramId = null
+                                    photoFile = null
                                     onRemovePictogram()
                                 },
                                 enabled = !state.isWriting,
@@ -201,13 +254,15 @@ fun CellEditorDialog(
                     verticalArrangement = Arrangement.spacedBy(ITEM_SPACING),
                 ) {
                     if (existing != null) {
-                        TextButton(onClick = { isDeleteConfirmOpen = true }, enabled = !state.isWriting) {
+                        TextButton(onClick = { isDeleteConfirmOpen = true }, enabled = !state.isWriting && !state.isImportingPhoto) {
                             Text(stringResource(R.string.editor_delete), color = MaterialTheme.colorScheme.error)
                         }
                         if (existing.linkedBoardId != null) {
                             // Seulement sans modification en cours : ouvrir le dossier ferme l'éditeur et
                             // jetterait le brouillon sans le dire.
-                            val isUnchanged = label == existing.label && pictogramId == existing.pictogramId && categoryName == existing.category?.name
+                            val isUnchanged = label == existing.label && pictogramId == existing.pictogramId &&
+                                categoryName == existing.category?.name && photoFile == existing.photoFile &&
+                                spokenText == existing.spokenText.orEmpty()
                             OutlinedButton(onClick = onOpenFolder, enabled = !state.isWriting && isUnchanged) {
                                 Text(stringResource(R.string.editor_open_folder))
                             }
@@ -222,10 +277,12 @@ fun CellEditorDialog(
                             if (isLabelMissing) {
                                 labelFocus.requestFocus()
                             } else {
-                                onSave(CellContent(trimmed, pictogramId, WordCategory.fromStoredName(categoryName)), isFolder)
+                                // Vide, ou égal au libellé : la case dit son libellé. Un dossier ne parle pas.
+                                val spoken = spokenText.trim().replace(Regex("\\s+"), " ").takeIf { it.isNotEmpty() && it != trimmed && !isFolder }
+                                onSave(CellContent(trimmed, pictogramId, WordCategory.fromStoredName(categoryName), photoFile, spoken), isFolder)
                             }
                         },
-                        enabled = !state.isWriting,
+                        enabled = !state.isWriting && !state.isImportingPhoto,
                     ) {
                         Text(stringResource(R.string.editor_save))
                     }
@@ -274,4 +331,10 @@ private fun WordCategory.displayName(): Int = when (this) {
     WordCategory.QUESTION -> R.string.category_question
     WordCategory.NEGATION -> R.string.category_negation
     WordCategory.LITTLE_WORD -> R.string.category_little_word
+}
+
+/** Coupe à [maxLength] sans jamais laisser une moitié d'émoji (paire de substitution). */
+private fun String.takeWhole(maxLength: Int): String {
+    val cut = take(maxLength)
+    return if (cut.length == maxLength && cut.last().isHighSurrogate()) cut.dropLast(1) else cut
 }

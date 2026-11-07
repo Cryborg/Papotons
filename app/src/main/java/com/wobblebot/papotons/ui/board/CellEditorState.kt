@@ -29,7 +29,15 @@ data class CellEditorState(
     val writeToken: Long = 0,
     /** Un picto choisi dans la recherche, pas encore gardé sur l'appareil (il l'est à l'« Enregistrer »). */
     val chosenPictogram: ChosenPictogram? = null,
+    /** Une photo prise ou choisie, prête (nom de fichier), pas encore écrite dans la case. */
+    val chosenPhoto: String? = null,
+    /** Une photo en préparation : « Enregistrer » attend. */
+    val isImportingPhoto: Boolean = false,
+    /** Pourquoi la dernière photo n'a pas pu servir. */
+    val photoFailure: PhotoFailure? = null,
 )
+
+enum class PhotoFailure { UnusableImage, NoPhotoApp }
 
 @Immutable
 data class ChosenPictogram(val id: Long, val image: ImageBitmap)

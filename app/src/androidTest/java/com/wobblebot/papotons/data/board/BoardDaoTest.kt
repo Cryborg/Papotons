@@ -116,7 +116,7 @@ class BoardDaoTest {
         boardDao.insertAll(boards, listOf(link(1, 0, 9), link(9, 0, 3), link(3, 0, 7), word(1, 0, "reste")))
         val folderCellId = checkNotNull(boardDao.observeBoard(1).first()).cells.single { it.linkedBoardId == 9L }.id
 
-        assertEquals(3, boardDao.deleteCellAndOrphanBoards(folderCellId, setOf(1L)))
+        assertEquals(3, boardDao.deleteCellAndOrphanBoards(folderCellId, setOf(1L)).boardCount)
 
         assertEquals(1, boardDao.countBoards())
         assertEquals(listOf("reste"), checkNotNull(boardDao.observeBoard(1).first()).cells.map { it.label })
@@ -131,7 +131,7 @@ class BoardDaoTest {
         boardDao.insertAll(boards, listOf(link(1, 0, 2), link(1, 1, 4), link(2, 0, 3), link(2, 1, 4), link(3, 0, 2)))
         val folderCellId = checkNotNull(boardDao.observeBoard(1).first()).cells.single { it.linkedBoardId == 2L }.id
 
-        assertEquals(0, boardDao.deleteCellAndOrphanBoards(folderCellId, setOf(1L)))
+        assertEquals(0, boardDao.deleteCellAndOrphanBoards(folderCellId, setOf(1L)).boardCount)
 
         // Le cycle A↔B reste (rien ne s'efface sans certitude), S aussi : l'accueil la vise encore.
         assertTrue(boardDao.boardExists(2))
@@ -156,14 +156,29 @@ class BoardDaoTest {
         boardDao.insertAll(listOf(home, folderBoard), listOf(word(0, 0, "je"), folder))
         val folderCellId = checkNotNull(boardDao.observeBoard(home.id).first()).cells.single { it.linkedBoardId != null }.id
 
-        boardDao.updateCellContentAndFolderName(folderCellId, folderBoard.id, "Jeux", 9813, "NOUN")
+        boardDao.updateCellContentAndFolderName(folderCellId, null, folderBoard.id, "Jeux", 9813, "NOUN", "photo.jpg", "Les jeux")
 
         val cells = checkNotNull(boardDao.observeBoard(home.id).first()).cells.associateBy { it.label }
         val edited = cells.getValue("Jeux")
         assertEquals(Triple(1, 1, 9813L), Triple(edited.row, edited.column, edited.pictogramId))
         assertEquals("NOUN", edited.category)
+        assertEquals("photo.jpg" to "Les jeux", edited.photoFile to edited.spokenText)
         assertEquals("je", cells.getValue("je").label)
         assertEquals("Jeux", checkNotNull(boardDao.observeBoard(folderBoard.id).first()).board.name)
         assertEquals("home", checkNotNull(boardDao.observeBoard(home.id).first()).board.name)
+    }
+
+    @Test
+    fun deletingAFolderGivesBackThePhotosOfTheCellsItTook() = runBlocking {
+        val boards = listOf(home, BoardEntity(9, "A", 1, 2))
+        val folderCell = CellEntity(boardId = 1, row = 0, column = 0, label = "A", linkedBoardId = 9, pictogramId = null, category = null, photoFile = "dossier.jpg")
+        val inside = CellEntity(boardId = 9, row = 0, column = 0, label = "Mamie", linkedBoardId = null, pictogramId = null, category = null, photoFile = "mamie.jpg")
+        val stays = CellEntity(boardId = 1, row = 0, column = 1, label = "Papi", linkedBoardId = null, pictogramId = null, category = null, photoFile = "papi.jpg")
+        boardDao.insertAll(boards, listOf(folderCell, inside, stays))
+        val folderCellId = checkNotNull(boardDao.observeBoard(1).first()).cells.single { it.linkedBoardId == 9L }.id
+
+        val deleted = boardDao.deleteCellAndOrphanBoards(folderCellId, setOf(1L))
+
+        assertEquals(setOf("dossier.jpg", "mamie.jpg"), deleted.photoFiles.toSet())
     }
 }

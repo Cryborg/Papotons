@@ -28,6 +28,7 @@ room = "2.8.5"
 kotlinxSerialization = "1.8.1"
 
 playAppUpdate = "2.1.0"
+exifinterface = "1.4.2"
 
 junit = "4.13.2"
 mockk = "1.14.11"
@@ -62,6 +63,8 @@ androidx-room-runtime = { group = "androidx.room", name = "room-runtime", versio
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 kotlinx-serialization-bom = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-bom", version.ref = "kotlinxSerialization" }
+
+androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
 
 # Brique mise-a-jour
 play-app-update-ktx = { group = "com.google.android.play", name = "app-update-ktx", version.ref = "playAppUpdate" }

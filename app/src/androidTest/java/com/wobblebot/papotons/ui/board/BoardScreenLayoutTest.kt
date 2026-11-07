@@ -34,6 +34,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.Cell
+import com.wobblebot.papotons.domain.Picture
 import com.wobblebot.papotons.domain.SentenceToken
 import com.wobblebot.papotons.domain.WordCategory
 import com.wobblebot.papotons.domain.layoutGrid
@@ -60,6 +61,7 @@ private const val TABLET_FONT_SCALE = 1.15f
 // Plus de mots qu'il n'en tient dans la phrase, même sur tablette.
 private const val LONG_SENTENCE_WORD_COUNT = 30
 private const val BUNDLED_PICTOGRAM_ID = 6632L
+private val BUNDLED_PICTURE = Picture.Pictogram(BUNDLED_PICTOGRAM_ID)
 private const val MIN_PICTOGRAM_SHARE = 0.4f
 private const val CENTER_TOLERANCE_DP = 2f
 // Un peu au-dessus du seuil où l'alerte de voix s'écrit (WRITTEN_ALERT_MIN_BAR_WIDTH, plus marges et insets).
@@ -108,8 +110,8 @@ class BoardScreenLayoutTest {
 
         // Des mots avec un picto, deux (élision) ou aucun : la barre ne grandit pour aucun d'eux.
         val words = listOf("oui", "non", "encore", "aide", "fini", "pas", "tu")
-        val message = words.map { SentenceToken(it, persistentListOf(BUNDLED_PICTOGRAM_ID)) } +
-            SentenceToken("j'ai", persistentListOf(BUNDLED_PICTOGRAM_ID, BUNDLED_PICTOGRAM_ID)) +
+        val message = words.map { SentenceToken(it, persistentListOf(BUNDLED_PICTURE)) } +
+            SentenceToken("j'ai", persistentListOf(BUNDLED_PICTURE, BUNDLED_PICTURE)) +
             SentenceToken("vite", persistentListOf())
         state = homeState.copy(message = message.toImmutableList())
         composeRule.onNodeWithContentDescription("oui non encore aide fini pas tu j'ai vite").assertIsDisplayed()
@@ -263,7 +265,7 @@ class BoardScreenLayoutTest {
     fun aMessageWordIsCenteredUnderItsPictogram() {
         val image = context.assets.open("pictograms/$BUNDLED_PICTOGRAM_ID.png").use(BitmapFactory::decodeStream).asImageBitmap()
         // Un mot plus large que son picto : c'est le cas où un alignement à gauche se verrait.
-        val state = homeState.copy(message = persistentListOf(SentenceToken("aujourd'hui", persistentListOf(BUNDLED_PICTOGRAM_ID))))
+        val state = homeState.copy(message = persistentListOf(SentenceToken("aujourd'hui", persistentListOf(BUNDLED_PICTURE))))
         composeRule.setContent {
             CompositionLocalProvider(LocalPictogramImages provides { image }) {
                 PapotonsTheme { BoardScreen(state = state, actions = noActions) }

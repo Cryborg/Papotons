@@ -42,13 +42,13 @@ class BoardEditingTest {
         val dao = FakeBoardDao(listOf(home), listOf(cell(1, HOME_BOARD_ID, 0, 0, "je")))
         val repository = repository(dao)
 
-        repository.addWord(HOME_BOARD_ID, 1, 2, CellContent("eau", 32464, WordCategory.NOUN))
+        repository.addWord(HOME_BOARD_ID, 1, 2, CellContent("eau", 32464, WordCategory.NOUN, null, null))
 
         val added = dao.cells.value.single { it.label == "eau" }
         assertEquals(Triple(HOME_BOARD_ID, 1, 2), Triple(added.boardId, added.row, added.column))
         assertEquals(32464L, added.pictogramId)
         assertEquals("NOUN", added.category)
-        assertThrows(SQLiteConstraintException::class.java) { runBlocking { repository.addWord(HOME_BOARD_ID, 0, 0, CellContent("x", null, null)) } }
+        assertThrows(SQLiteConstraintException::class.java) { runBlocking { repository.addWord(HOME_BOARD_ID, 0, 0, CellContent("x", null, null, null, null)) } }
         assertEquals(listOf("je", "eau"), dao.cells.value.map { it.label })
     }
 
@@ -56,7 +56,7 @@ class BoardEditingTest {
     fun `a folder brings its own empty board named after it`() = runTest {
         val dao = FakeBoardDao(listOf(home))
 
-        repository(dao).addFolder(HOME_BOARD_ID, 1, 0, CellContent("Animaux", null, WordCategory.NOUN))
+        repository(dao).addFolder(HOME_BOARD_ID, 1, 0, CellContent("Animaux", null, WordCategory.NOUN, null, null))
 
         val folderCell = dao.cells.value.single()
         val folderBoard = dao.boards.value.single { it.id == folderCell.linkedBoardId }
@@ -71,7 +71,7 @@ class BoardEditingTest {
         val repository = repository(dao)
         val folderCell = checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.single()
 
-        repository.updateCell(folderCell, CellContent("new", 7, WordCategory.VERB))
+        repository.updateCell(folderCell, CellContent("new", 7, WordCategory.VERB, null, null))
 
         val updated = dao.cells.value.single()
         assertEquals(Triple("new", 7L, "VERB"), Triple(updated.label, updated.pictogramId, updated.category))
@@ -134,7 +134,7 @@ class BoardEditingTest {
         val dao = FakeBoardDao(listOf(home, BoardEntity(2, "keep", 1, 1)), listOf(cell(2, HOME_BOARD_ID, 0, 0, "je")))
         val repository = repository(dao)
 
-        repository.updateCell(checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.single(), CellContent("moi", null, null))
+        repository.updateCell(checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.single(), CellContent("moi", null, null, null, null))
 
         assertEquals("keep", dao.boards.value.single { it.id == 2L }.name)
     }
@@ -145,9 +145,9 @@ class BoardEditingTest {
         val dao = FakeBoardDao(listOf(home), listOf(cell(1, HOME_BOARD_ID, 0, 0, "je")))
         val repository = repository(dao)
         val edits = listOf<suspend () -> Unit>(
-            { repository.addWord(HOME_BOARD_ID, 0, 1, CellContent("eau", null, null)) },
-            { repository.addFolder(HOME_BOARD_ID, 0, 2, CellContent("Jeux", null, null)) },
-            { repository.updateCell(checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.first(), CellContent("moi", null, null)) },
+            { repository.addWord(HOME_BOARD_ID, 0, 1, CellContent("eau", null, null, null, null)) },
+            { repository.addFolder(HOME_BOARD_ID, 0, 2, CellContent("Jeux", null, null, null, null)) },
+            { repository.updateCell(checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.first(), CellContent("moi", null, null, null, null)) },
             { repository.deleteCell(checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.first(), HOME_BOARD_ID, HOME_BOARD_ID) },
         )
         for ((index, edit) in edits.withIndex()) {
@@ -167,8 +167,38 @@ class BoardEditingTest {
         File(folder.root, "$CORRUPTED_DATABASES_DIRECTORY.edited/occupied").mkdirs()
         val dao = FakeBoardDao(listOf(home))
 
-        assertThrows(IOException::class.java) { runBlocking { repository(dao).addWord(HOME_BOARD_ID, 0, 0, CellContent("eau", null, null)) } }
+        assertThrows(IOException::class.java) { runBlocking { repository(dao).addWord(HOME_BOARD_ID, 0, 0, CellContent("eau", null, null, null, null)) } }
 
         assertEquals(emptyList<CellEntity>(), dao.cells.value)
+    }
+
+    @Test
+    fun `a deleted folder gives back the photos of every cell it took`() = runTest {
+        val dao = FakeBoardDao(
+            listOf(home, BoardEntity(9, "A", 1, 2)),
+            listOf(
+                cell(1, HOME_BOARD_ID, 0, 0, "A", linkedBoardId = 9).copy(photoFile = "folder.jpg"),
+                cell(2, 9, 0, 0, "Mamie").copy(photoFile = "mamie.jpg"),
+                cell(3, HOME_BOARD_ID, 0, 1, "reste").copy(photoFile = "reste.jpg"),
+            ),
+        )
+        val repository = repository(dao)
+        val folderCell = checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.single { it.label == "A" }
+
+        val photos = repository.deleteCell(folderCell, HOME_BOARD_ID, HOME_BOARD_ID)
+
+        assertEquals(setOf("folder.jpg", "mamie.jpg"), photos.toSet())
+    }
+
+    @Test
+    fun `editing only the label keeps the photo and what the cell says`() = runTest {
+        val dao = FakeBoardDao(listOf(home), listOf(cell(1, HOME_BOARD_ID, 0, 0, "Mamie").copy(photoFile = "m.jpg", spokenText = "Mamie Jeanne")))
+        val repository = repository(dao)
+        val cell = checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.single()
+
+        repository.updateCell(cell, CellContent("Mamou", cell.pictogramId, cell.category, cell.photoFile, cell.spokenText))
+
+        val updated = dao.cells.value.single()
+        assertEquals(Triple("Mamou", "m.jpg", "Mamie Jeanne"), Triple(updated.label, updated.photoFile, updated.spokenText))
     }
 }

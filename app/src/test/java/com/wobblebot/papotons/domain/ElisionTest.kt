@@ -7,8 +7,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ElisionTest {
-    private fun verb(label: String) = SentenceWord(label, WordCategory.VERB, pictogramId = null)
-    private fun word(label: String, category: WordCategory? = null) = SentenceWord(label, category, pictogramId = null)
+    private fun verb(label: String) = SentenceWord(label, WordCategory.VERB, picture = null)
+    private fun word(label: String, category: WordCategory? = null) = SentenceWord(label, category, picture = null)
     private val subject = word("je", WordCategory.PEOPLE)
 
     private fun texts(words: List<SentenceWord>) = sentenceTokens(words).map { it.text }
@@ -59,16 +59,16 @@ class ElisionTest {
     fun `each word keeps the pictogram of its cell and an elision keeps both`() {
         val tokens = sentenceTokens(
             listOf(
-                SentenceWord("je", WordCategory.PEOPLE, pictogramId = 10),
-                SentenceWord("ai", WordCategory.VERB, pictogramId = 20),
-                SentenceWord("faim", WordCategory.NOUN, pictogramId = 30),
-                SentenceWord("vite", null, pictogramId = null),
-                SentenceWord("je", WordCategory.PEOPLE, pictogramId = null),
-                SentenceWord("aime", WordCategory.VERB, pictogramId = 40),
+                SentenceWord("je", WordCategory.PEOPLE, picture = Picture.Pictogram(10)),
+                SentenceWord("ai", WordCategory.VERB, picture = Picture.Pictogram(20)),
+                SentenceWord("faim", WordCategory.NOUN, picture = Picture.Pictogram(30)),
+                SentenceWord("vite", null, picture = null),
+                SentenceWord("je", WordCategory.PEOPLE, picture = null),
+                SentenceWord("aime", WordCategory.VERB, picture = Picture.Pictogram(40)),
             ),
         )
 
-        assertEquals(listOf(listOf(10L, 20L), listOf(30L), emptyList(), listOf(40L)), tokens.map { it.pictogramIds })
+        assertEquals(listOf(listOf(10L, 20L), listOf(30L), emptyList(), listOf(40L)), tokens.map { token -> token.pictures.map { (it as Picture.Pictogram).id } })
     }
 
     @Test
@@ -105,5 +105,17 @@ class ElisionTest {
         for (label in vowelVerbs) {
             assertEquals(label, expected.getValue(label), afterSubject(label))
         }
+    }
+
+    @Test
+    fun `an elision keeps a photo and a pictogram in order`() {
+        val tokens = sentenceTokens(
+            listOf(
+                SentenceWord("je", WordCategory.PEOPLE, Picture.Photo("moi.jpg")),
+                SentenceWord("ai", WordCategory.VERB, Picture.Pictogram(20)),
+            ),
+        )
+
+        assertEquals(listOf(listOf(Picture.Photo("moi.jpg"), Picture.Pictogram(20))), tokens.map { it.pictures })
     }
 }

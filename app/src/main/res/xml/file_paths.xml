@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Seul le fichier de prise de vue est exposé, à l'appli photo du système. -->
+<paths>
+    <cache-path name="camera" path="camera/" />
+</paths>

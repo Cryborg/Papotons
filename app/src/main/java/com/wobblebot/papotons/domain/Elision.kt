@@ -16,14 +16,14 @@ internal const val VOWELS = "aàâäeéèêëiîïoôöuùûüyÿœæ"
 private val INFINITIVE_ENDINGS = listOf("er", "ir", "re")
 
 /** Un mot de la phrase en cours, tel qu'il a été touché. */
-data class SentenceWord(val label: String, val category: WordCategory?, val pictogramId: Long?)
+data class SentenceWord(val label: String, val category: WordCategory?, val picture: Picture?)
 
 /**
- * Un mot de la phrase tel qu'il s'affiche et se dit, avec le picto de chaque case touchée qui en a
- * un : une élision en garde jusqu'à deux (« j'ai » : celui de « je », puis celui du verbe).
+ * Un mot de la phrase tel qu'il s'affiche et se dit, avec l'image de chaque case touchée qui en a
+ * une : une élision en garde jusqu'à deux (« j'ai » : celle de « je », puis celle du verbe).
  */
 @Immutable
-data class SentenceToken(val text: String, val pictogramIds: ImmutableList<Long>)
+data class SentenceToken(val text: String, val pictures: ImmutableList<Picture>)
 
 /**
  * Les mots à afficher et à dire : « je » devant un verbe conjugué qui commence par une voyelle
@@ -38,17 +38,17 @@ fun sentenceTokens(words: List<SentenceWord>): List<SentenceToken> = buildList {
         val next = words.getOrNull(index + 1)
         if (next != null && word.label.equals(ELIDABLE_SUBJECT, ignoreCase = true) && next.isElidingVerb()) {
             // take(1) garde la casse : « Je ai » donne « J'ai ».
-            add(SentenceToken(word.label.take(1) + APOSTROPHE + next.label, pictogramIdsOf(word, next)))
+            add(SentenceToken(word.label.take(1) + APOSTROPHE + next.label, picturesOf(word, next)))
             index += 2
         } else {
-            add(SentenceToken(word.label, pictogramIdsOf(word)))
+            add(SentenceToken(word.label, picturesOf(word)))
             index += 1
         }
     }
 }
 
-private fun pictogramIdsOf(vararg words: SentenceWord): ImmutableList<Long> =
-    words.mapNotNull { it.pictogramId }.toImmutableList()
+private fun picturesOf(vararg words: SentenceWord): ImmutableList<Picture> =
+    words.mapNotNull { it.picture }.toImmutableList()
 
 private fun SentenceWord.isElidingVerb(): Boolean {
     if (category != WordCategory.VERB) return false

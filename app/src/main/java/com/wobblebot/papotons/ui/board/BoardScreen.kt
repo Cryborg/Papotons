@@ -2,12 +2,16 @@ package com.wobblebot.papotons.ui.board
 
 import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.pm.PackageManager
 import android.content.Intent
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -85,6 +89,9 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
     // Devant le contrôle, pas derrière : le restaurer ne fait que redemander la réponse.
     var gatedAction by rememberSaveable { mutableStateOf<GatedAction?>(null) }
     val activity = LocalActivity.current
+    val canTakePhoto = remember(context) { context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) }
+    val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture(), viewModel::onCameraResult)
+    val choosePhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia(), viewModel::onPhotoResult)
     val actions = remember(viewModel) {
         BoardActions(
             onCellClick = viewModel::onCellClick,
@@ -108,7 +115,8 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
     // Un vrai départ (écran éteint, autre appli) termine l'édition : la tablette rendue à l'enfant
     // n'y est jamais. Une rotation, qui passe aussi par ON_STOP, la garde.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
-        if (activity?.isChangingConfigurations != true) viewModel.onStopEditing()
+        // L'appli photo et le sélecteur font passer par ON_STOP sans que l'adulte soit parti.
+        if (activity?.isChangingConfigurations != true && !viewModel.isAwaitingPhoto) viewModel.onStopEditing()
     }
     // À l'accueil, le retour arrière garde son sens habituel (quitter l'appli) ; en édition, il la termine.
     BackHandler(enabled = state.board?.canGoBack == true, onBack = viewModel::onBack)
@@ -143,6 +151,27 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
             onOpenFolder = viewModel::onEditorOpenFolder,
             onSearchPictogram = viewModel::onSearchOpen,
             onRemovePictogram = viewModel::onChosenPictogramRemoved,
+            onTakePhoto = if (canTakePhoto) {
+                {
+                    try {
+                        takePhoto.launch(viewModel.onCameraRequested())
+                    } catch (exception: ActivityNotFoundException) {
+                        Log.w(TAG, "No camera app", exception)
+                        viewModel.onPhotoRequestFailed()
+                    }
+                }
+            } else {
+                null
+            },
+            onChoosePhoto = {
+                try {
+                    viewModel.onGalleryRequested()
+                    choosePhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                } catch (exception: ActivityNotFoundException) {
+                    Log.w(TAG, "No photo picker", exception)
+                    viewModel.onPhotoRequestFailed()
+                }
+            },
             onClose = viewModel::onEditorClose,
         )
     }

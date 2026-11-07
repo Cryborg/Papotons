@@ -2,6 +2,7 @@ package com.wobblebot.papotons
 
 import android.app.Application
 import android.util.Log
+import com.wobblebot.papotons.data.photo.CellPhotos
 import com.wobblebot.papotons.data.pictogram.PictogramImages
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -17,6 +18,9 @@ class PapotonsApplication : Application() {
     @Inject
     lateinit var pictogramImages: PictogramImages
 
+    @Inject
+    lateinit var cellPhotos: CellPhotos
+
     // Une erreur imprévue au chargement des images se journalise : elle ne doit pas faire planter
     // l'appli, qui parle sans elles.
     private val applicationScope = CoroutineScope(
@@ -27,5 +31,6 @@ class PapotonsApplication : Application() {
         super.onCreate()
         // Une fois par processus, pendant le carton du studio : la grille trouve ses pictos prêts.
         applicationScope.launch { pictogramImages.loadBundled() }
+        applicationScope.launch { cellPhotos.cleanUp() }
     }
 }

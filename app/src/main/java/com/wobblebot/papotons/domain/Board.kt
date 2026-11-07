@@ -24,7 +24,24 @@ data class Cell(
     /** Identifiant ARASAAC du picto, `null` pour une case en texte seul. */
     val pictogramId: Long? = null,
     val category: WordCategory? = null,
-)
+    /** Photo prise ou choisie par l'adulte (nom dans `files/photos/`) : elle l'emporte sur le picto. */
+    val photoFile: String? = null,
+    /** Ce que la case dit, s'il diffère de son libellé (« Mamie » affiché, « Mamie Jeanne » dit). */
+    val spokenText: String? = null,
+) {
+    val picture: Picture? get() = photoFile?.let(Picture::Photo) ?: pictogramId?.let(Picture::Pictogram)
+
+    /** Ce qui se dit et entre dans la phrase. */
+    val spoken: String get() = spokenText ?: label
+}
+
+/** L'image d'une case ou d'un mot de la phrase. */
+@Immutable
+sealed interface Picture {
+    data class Pictogram(val id: Long) : Picture
+
+    data class Photo(val fileName: String) : Picture
+}
 
 @Immutable
 data class Board(
@@ -59,4 +76,9 @@ data class CellContent(
     val label: String,
     val pictogramId: Long?,
     val category: WordCategory?,
+    // Sans valeur par défaut : un chemin d'écriture (édition, import) qui les oublierait effacerait la
+    // photo ou le texte dit d'une case, et doit donc ne pas compiler.
+    val photoFile: String?,
+    /** `null` : la case dit son libellé. */
+    val spokenText: String?,
 )

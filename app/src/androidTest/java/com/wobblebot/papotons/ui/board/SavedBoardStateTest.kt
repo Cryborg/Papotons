@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.os.Parcel
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.wobblebot.papotons.domain.Picture
 import com.wobblebot.papotons.domain.SentenceWord
 import com.wobblebot.papotons.domain.WordCategory
 import org.junit.Assert.assertEquals
@@ -19,8 +20,9 @@ class SavedBoardStateTest {
     @Test
     fun theSavedStackAndSentenceComeBackThroughAParcel() {
         val words = listOf(
-            SentenceWord("je", WordCategory.PEOPLE, 6632),
+            SentenceWord("je", WordCategory.PEOPLE, Picture.Pictogram(6632)),
             SentenceWord("ai", WordCategory.VERB, null),
+            SentenceWord("Mamie Jeanne", WordCategory.PEOPLE, Picture.Photo("a1b2.jpg")),
         )
         val handle = SavedStateHandle()
         handle[NAVIGATION_KEY] = longArrayOf(1, 2, 3)

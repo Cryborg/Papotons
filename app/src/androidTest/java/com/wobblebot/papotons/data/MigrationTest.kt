@@ -46,4 +46,28 @@ class MigrationTest {
             database.close()
         }
     }
+
+    @Test
+    fun version2CellsGainEmptyPhotoAndSpokenText() {
+        helper.createDatabase(DATABASE_NAME, 2).apply {
+            execSQL("INSERT INTO boards (id, name, row_count, column_count) VALUES (1, 'home', 2, 2)")
+            execSQL(
+                "INSERT INTO cells (id, board_id, grid_row, grid_column, label, linked_board_id, pictogram_id, word_category) " +
+                    "VALUES (1, 1, 1, 0, 'eau', NULL, 32464, 'NOUN')"
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(DATABASE_NAME, 3, true).close()
+
+        val database = buildDatabase(InstrumentationRegistry.getInstrumentation().targetContext, DATABASE_NAME)
+        try {
+            val cell = runBlocking { checkNotNull(database.boardDao().observeBoard(1).first()) }.cells.single()
+            assertEquals(Triple("eau", 1 to 0, 32464L), Triple(cell.label, cell.row to cell.column, cell.pictogramId))
+            assertNull(cell.photoFile)
+            assertNull(cell.spokenText)
+        } finally {
+            database.close()
+        }
+    }
 }

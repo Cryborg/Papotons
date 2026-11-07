@@ -6,11 +6,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.Icon
@@ -23,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
@@ -41,6 +44,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.Cell
+import com.wobblebot.papotons.domain.Picture
 import com.wobblebot.papotons.ui.theme.wordCategoryBackground
 import kotlinx.collections.immutable.ImmutableList
 
@@ -49,6 +53,7 @@ private val GRID_PADDING = 8.dp
 // 8 dp au moins entre deux cibles : un appui qui tremble ne doit pas toucher la voisine.
 private val CELL_SPACING = 8.dp
 private val CELL_CONTENT_PADDING = 6.dp
+private val PHOTO_SHAPE = RoundedCornerShape(6.dp)
 
 // Dossier : contour épais, et icône au-dessus du libellé (texte seul) ou marque dans le coin, au-dessus
 // du picto qui descend d'autant (une marque devant le libellé ne laissait rien au mot sur téléphone).
@@ -156,7 +161,7 @@ private fun CellButton(cell: Cell, isEditing: Boolean, onClick: () -> Unit) {
     ) {
         // fillMaxSize : sans lui, le contenu d'une case en texte seul se colle en haut à gauche.
         Box(modifier = Modifier.fillMaxSize()) {
-            val pictogramId = cell.pictogramId
+            val picture = cell.picture
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -164,11 +169,11 @@ private fun CellButton(cell: Cell, isEditing: Boolean, onClick: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                if (pictogramId != null) {
+                if (picture != null) {
                     // Parts fixes : la taille adaptative du libellé ne peut pas écraser le picto,
                     // et la place est réservée avant même que l'image ne soit décodée.
-                    Pictogram(
-                        pictogramId,
+                    CellPicture(
+                        picture,
                         Modifier
                             .weight(PICTOGRAM_WEIGHT)
                             .fillMaxWidth()
@@ -180,7 +185,7 @@ private fun CellButton(cell: Cell, isEditing: Boolean, onClick: () -> Unit) {
                     CellLabel(cell.label, LABEL_MAX_FONT_SIZE, Modifier)
                 }
             }
-            if (isFolder && pictogramId != null) {
+            if (isFolder && picture != null) {
                 FolderIcon(
                     Modifier
                         .align(Alignment.TopStart)
@@ -213,6 +218,36 @@ private fun AddSlot(row: Int, column: Int, onClick: () -> Unit) {
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(painterResource(R.drawable.ic_add), contentDescription = null, tint = MaterialTheme.colorScheme.outline)
+        }
+    }
+}
+
+/** L'image d'une case ou d'un mot : picto ARASAAC ou photo de l'adulte. */
+@Composable
+internal fun CellPicture(picture: Picture, modifier: Modifier) {
+    when (picture) {
+        is Picture.Pictogram -> Pictogram(picture.id, modifier)
+        is Picture.Photo -> Photo(picture.fileName, modifier)
+    }
+}
+
+/** Comme un picto : place tenue avant le décodage, décodée à la demande. */
+@Composable
+private fun Photo(fileName: String, modifier: Modifier) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        val image = LocalPhotoImages.current(fileName)
+        val load = LocalPhotoLoader.current
+        // Relancé si l'image sort du cache borné pendant qu'elle est à l'écran.
+        LaunchedEffect(fileName, image == null) { if (image == null) load(fileName) }
+        if (image != null) {
+            Image(
+                bitmap = image,
+                contentDescription = null,
+                modifier = Modifier
+                    .aspectRatio(1f)
+                    .clip(PHOTO_SHAPE),
+                contentScale = ContentScale.Fit,
+            )
         }
     }
 }

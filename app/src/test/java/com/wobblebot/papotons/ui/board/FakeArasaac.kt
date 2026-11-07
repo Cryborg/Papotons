@@ -1,6 +1,8 @@
 package com.wobblebot.papotons.ui.board
 
+import android.net.Uri
 import androidx.compose.ui.graphics.ImageBitmap
+import com.wobblebot.papotons.data.photo.PhotoStore
 import com.wobblebot.papotons.data.pictogram.ArasaacClient
 import com.wobblebot.papotons.data.pictogram.ArasaacException
 import com.wobblebot.papotons.data.pictogram.PictogramResult
@@ -70,5 +72,44 @@ class FakePictogramStore : PictogramStore {
         storeGate?.await()
         if (canStore) stored[pictogramId] = bytes
         return canStore
+    }
+}
+
+class FakePhotoStore : PhotoStore {
+    var prepareCount = 0
+        private set
+    val committed = mutableSetOf<String>()
+    val deleted = mutableListOf<String>()
+    var canPrepare = true
+    var canCommit = true
+
+    /** Retient la préparation tant qu'il n'est pas complété (photo de 12 Mpx sur tablette modeste). */
+    var prepareGate: CompletableDeferred<Unit>? = null
+    var cameraCaptureDiscarded = 0
+        private set
+
+    override suspend fun prepare(source: Uri): String? {
+        prepareGate?.await()
+        prepareCount++
+        return if (canPrepare) "photo$prepareCount.jpg" else null
+    }
+
+    /** Retient la validation tant qu'il n'est pas complété (renommage lent). */
+    var commitGate: CompletableDeferred<Unit>? = null
+
+    override suspend fun commit(name: String): Boolean {
+        commitGate?.await()
+        if (canCommit) committed += name
+        return canCommit
+    }
+
+    override suspend fun delete(name: String) {
+        deleted += name
+    }
+
+    override fun freshCameraCapture(): Uri = mockk(relaxed = true)
+
+    override fun discardCameraCapture() {
+        cameraCaptureDiscarded++
     }
 }

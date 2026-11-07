@@ -137,8 +137,8 @@ private fun SentenceWordCard(word: SentenceToken) {
         // Le picto prend la hauteur que le mot lui laisse : une police agrandie le rapetisse au lieu
         // de couper le mot. Un mot sans picto garde sa ligne, celle des autres mots.
         Row(modifier = Modifier.weight(1f)) {
-            for (pictogramId in word.pictogramIds) {
-                Pictogram(pictogramId, Modifier.aspectRatio(1f, matchHeightConstraintsFirst = true))
+            for (picture in word.pictures) {
+                CellPicture(picture, Modifier.aspectRatio(1f, matchHeightConstraintsFirst = true))
             }
         }
         Text(text = word.text, style = MaterialTheme.typography.titleLarge, maxLines = 1, softWrap = false)

@@ -21,6 +21,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wobblebot.papotons.data.pictogram.PictogramImages
 import com.wobblebot.papotons.ui.board.BoardRoute
 import com.wobblebot.papotons.ui.board.BoardViewModel
+import com.wobblebot.papotons.data.photo.CellPhotos
+import com.wobblebot.papotons.ui.board.LocalPhotoImages
+import com.wobblebot.papotons.ui.board.LocalPhotoLoader
 import com.wobblebot.papotons.ui.board.LocalPictogramImages
 import com.wobblebot.papotons.ui.board.LocalPictogramLoader
 import com.wobblebot.papotons.ui.splash.StudioSplashScreen
@@ -38,6 +41,9 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
     @Inject
     lateinit var pictogramImages: PictogramImages
+
+    @Inject
+    lateinit var cellPhotos: CellPhotos
 
     private lateinit var inAppUpdateManager: InAppUpdateManager
 
@@ -57,7 +63,12 @@ class MainActivity : ComponentActivity() {
         inAppUpdateManager = InAppUpdateManager(this)
         setContent {
             PapotonsTheme {
-                CompositionLocalProvider(LocalPictogramImages provides pictogramImages::image, LocalPictogramLoader provides pictogramImages::ensureLoaded) {
+                CompositionLocalProvider(
+                    LocalPictogramImages provides pictogramImages::image,
+                    LocalPictogramLoader provides pictogramImages::ensureLoaded,
+                    LocalPhotoImages provides cellPhotos::image,
+                    LocalPhotoLoader provides cellPhotos::ensureLoaded,
+                ) {
                     PapotonsApp(inAppUpdateManager)
                 }
             }

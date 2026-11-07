@@ -52,4 +52,8 @@ data class CellEntity(
      * d'une version future) se relit sans planter, ce que le convertisseur d'enum de Room ne fait pas.
      */
     @ColumnInfo(name = "word_category") val category: String?,
+    /** Photo de l'adulte, nom dans `files/photos/` ; `null` sans photo. Valeur par défaut : le vocabulaire de base n'en a pas. */
+    @ColumnInfo(name = "photo_file") val photoFile: String? = null,
+    /** Ce que dit la case ; `null` : son libellé. */
+    @ColumnInfo(name = "spoken_text") val spokenText: String? = null,
 )
