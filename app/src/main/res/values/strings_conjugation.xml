@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Page des formes d'un verbe, ouverte par un appui long sur la case. -->
+    <string name="conjugation_long_click_label">voir les formes du verbe</string>
+    <!-- Titre de volet pour TalkBack, non affiché. -->
+    <string name="conjugation_page_title">Formes du verbe %1$s</string>
+    <string name="conjugation_infinitive_description">%1$s, infinitif</string>
+    <!-- Lue par TalkBack sur chaque forme, la forme d'abord (Voice Access la reconnaît ainsi) : « ai eu, je, passé composé ». -->
+    <string name="conjugation_form_description">%3$s, %1$s, %2$s</string>
+    <!-- En-têtes des colonnes, dans l'ordre du temps qui passe. -->
+    <string name="conjugation_tense_past_compound">passé composé</string>
+    <string name="conjugation_tense_imperfect">imparfait</string>
+    <string name="conjugation_tense_present">présent</string>
+    <string name="conjugation_tense_near_future">futur proche</string>
+    <string name="conjugation_tense_future">futur</string>
+    <!-- En-têtes des lignes. -->
+    <string name="conjugation_person_first_singular">je</string>
+    <string name="conjugation_person_second_singular">tu</string>
+    <string name="conjugation_person_third_singular">il, elle</string>
+    <string name="conjugation_person_first_plural">nous</string>
+    <string name="conjugation_person_second_plural">vous</string>
+    <string name="conjugation_person_third_plural">ils, elles</string>
+</resources>

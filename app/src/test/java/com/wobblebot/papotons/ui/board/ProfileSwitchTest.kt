@@ -55,7 +55,7 @@ class ProfileSwitchTest {
     }
 
     private fun TestScope.startViewModel(): BoardViewModel {
-        val viewModel = BoardViewModel(repository, speaker, FakeMediaVolume(), FakeArasaacClient(), FakePictogramStore(), FakePhotoStore(), SavedStateHandle())
+        val viewModel = BoardViewModel(repository, speaker, FakeMediaVolume(), FakeArasaacClient(), FakePictogramStore(), FakePhotoStore(), FakeConjugations(), SavedStateHandle())
         backgroundScope.launch { viewModel.uiState.collect {} }
         return viewModel
     }

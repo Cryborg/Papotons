@@ -35,13 +35,14 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 
 ## Idées
 
-- **IDEE-1** Grammaire française, sur le modèle de Proloquo : un appui long sur un verbe ouvre une page de ses formes, par personne (« avoir besoin » : ai besoin, as besoin, a besoin, avons besoin, avez besoin, ont besoin) et aux temps principaux (passé composé « ai eu besoin », futur proche « vais avoir besoin », futur « aurai besoin » ; l'imparfait à trancher). Toucher une forme l'ajoute à la phrase et ramène à la grille. Même geste pour les accords (petit, petite, petits) et les pluriels. À concevoir :
-  - Une seule disposition pour tous les verbes (personnes en lignes, temps en colonnes) : la forme voulue est toujours au même endroit (invariant 3).
-  - Tables de conjugaison générées par `tools/arasaac/` avec une bibliothèque de conjugaison (licence à vérifier), embarquées (invariant 2), jamais saisies à la main. Une locution (« avoir besoin ») conjugue son verbe de tête.
-  - Lemme stocké sur la case : aujourd'hui seul le libellé l'est, et « veux » ne dit pas « vouloir ». Migration Room non destructive (invariant 4) ; pour une case de l'utilisateur, lemme deviné depuis le libellé et corrigeable dans l'éditeur.
-  - Élision complète une fois les formes connues : « j'ouvre », « j'habite » (`Elision.kt` les écarte aujourd'hui).
-  - Appui long risqué pour les troubles moteurs (un appui qui traîne ouvre la page) : délai réglable ou geste désactivable dans les Réglages, repère sur les cases qui ont des variantes, action TalkBack équivalente.
-  - Conjugaison automatique selon le sujet déjà dans la phrase (« tu » puis « vouloir » donne « veux »). Tranché : en option dans les Réglages, désactivée par défaut, la page de formes reste toujours là.
+- **IDEE-1** Grammaire française, suite de la page des formes d'un verbe (appui long, `docs/designs/IDEE-1.md`) :
+  - Conjugaison automatique selon le sujet déjà dans la phrase (« tu » puis « vouloir » donne « veux »). Tranché : en option dans les Réglages, désactivée par défaut, la page des formes reste toujours là.
+  - Appui long risqué pour les troubles moteurs (un appui qui traîne ouvre la page) : délai réglable ou geste désactivable dans les Réglages, repère sur les cases qui ont des formes (à voir au test fermé).
+  - Page des formes pour les grandes cases (3 × 4) : la page fixe de 7 × 6 y est trop dense.
+  - Accords : petit, petite, petits ; « suis allée » (le passé composé est au masculin).
+  - Verbes pronominaux (« se laver ») et impersonnels (« pleuvoir »), absents de `tools/conjugaison/verbs.txt`.
+  - Locution négative (« veux pas ») : le reste du libellé suit chaque forme, ce qui donne « ai voulu pas » au lieu de « n'ai pas voulu ». Refuser la page, ou placer la négation.
+  - Verbe stocké sur la case (migration Room non destructive, invariant 4), si la recherche par le libellé bute sur une vraie ambiguïté.
 - **IDEE-2** Grilles évolutives : cases masquées qu'on dévoile au fur et à mesure.
 - **IDEE-3** Verrouillage de l'appli (épinglage d'écran / lock task mode).
 - **IDEE-4** Statistiques d'usage locales pour l'orthophoniste (jamais envoyées nulle part).
