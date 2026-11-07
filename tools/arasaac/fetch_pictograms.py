@@ -8,6 +8,8 @@ jamais dans l'appli. Dépend de Pillow. Les fichiers produits sont versionnés t
 Usage :
   python3 -I tools/arasaac/fetch_pictograms.py select --cache DIR [--sheet planche.png]
   python3 -I tools/arasaac/fetch_pictograms.py generate --cache DIR
+  python3 -I tools/arasaac/fetch_pictograms.py boards --out DIR   (hors ligne : une image par grille,
+      à sa vraie disposition, pour faire valider le vocabulaire de base au test fermé)
 
 Règles qui protègent les grilles déjà installées (invariants 3 et 4) :
 - choices.json est un verrou versionné : un mot garde son picto, et une fois livré (présent dans
@@ -352,6 +354,60 @@ def contact_sheet(cache, choices, sheet):
     canvas.save(sheet)
 
 
+BOARD_TILE_PIXELS = 150
+BOARD_LABEL_PIXELS = 30
+BOARD_TITLE_PIXELS = 50
+BOARD_GAP_PIXELS = 8
+BOARD_FONT = pathlib.Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+BOARD_FONT_SIZE = 18
+BOARD_TITLE_FONT_SIZE = 28
+EMPTY_SLOT_COLOR = "#eeeeee"
+
+
+def board_images(out):
+    """Chaque grille du vocabulaire de base telle qu'elle s'affiche : positions, pictos embarqués,
+    couleurs de catégorie, emplacements libres. Hors ligne (pictos des assets)."""
+    from PIL import Image, ImageDraw, ImageFont
+    # DejaVu : la police par défaut de Pillow n'a pas « œ » (sœur).
+    font = ImageFont.truetype(str(BOARD_FONT), BOARD_FONT_SIZE) if BOARD_FONT.exists() else ImageFont.load_default()
+    title_font = ImageFont.truetype(str(BOARD_FONT), BOARD_TITLE_FONT_SIZE) if BOARD_FONT.exists() else font
+    choices, colors, vocabulary = read_lock(), theme_colors(), cells()
+    out.mkdir(parents=True, exist_ok=True)
+    tile, label, gap = BOARD_TILE_PIXELS, BOARD_LABEL_PIXELS, BOARD_GAP_PIXELS
+    for key, french, _english, rows, columns in BOARDS:
+        width = columns * (tile + gap) + gap
+        height = BOARD_TITLE_PIXELS + rows * (tile + label + gap) + gap
+        canvas = Image.new("RGB", (width, height), "white")
+        draw = ImageDraw.Draw(canvas)
+        draw.text((gap, gap), french, fill="black", font=title_font)
+        placed = {(cell.row, cell.column): cell for cell in vocabulary if cell.board == key}
+        for row in range(rows):
+            for column in range(columns):
+                x = gap + column * (tile + gap)
+                y = BOARD_TITLE_PIXELS + row * (tile + label + gap)
+                cell = placed.get((row, column))
+                fill = colors[cell.category] if cell else EMPTY_SLOT_COLOR
+                draw.rounded_rectangle((x, y, x + tile - 1, y + tile + label - 1), radius=12, fill=fill, outline="#888888")
+                if cell is None:
+                    continue
+                size = tile - 2 * gap
+                image = Image.open(ASSETS / f"{choices[cell.key]}.png").convert("RGBA").resize((size, size))
+                canvas.paste(image, (x + gap, y + gap), image)
+                if cell.target:
+                    # Un dossier, marqué comme dans l'appli : une icône de dossier dans le coin.
+                    draw.rectangle((x + gap, y + gap + 6, x + gap + 30, y + gap + 26), fill="black")
+                    draw.rectangle((x + gap, y + gap + 2, x + gap + 12, y + gap + 8), fill="black")
+                text_font, size_points = font, BOARD_FONT_SIZE
+                while draw.textlength(cell.french, font=text_font) > tile - gap and size_points > 10 and BOARD_FONT.exists():
+                    size_points -= 1
+                    text_font = ImageFont.truetype(str(BOARD_FONT), size_points)
+                text_width = draw.textlength(cell.french, font=text_font)
+                draw.text((x + max(0, (tile - text_width) / 2), y + tile - gap // 2), cell.french, fill="black", font=text_font)
+        target = out / f"{BOARD_IDS[key]:02d}-{key}.png"
+        canvas.save(target)
+        print(f"{target}")
+
+
 def xml_text(text):
     text = text.replace(SPACE_BEFORE_QUESTION_MARK, NO_BREAK_SPACE_BEFORE_QUESTION_MARK)
     text = text.replace("\\", "\\\\").replace("&", "&amp;").replace("<", "&lt;")
@@ -485,10 +541,18 @@ object CoreVocabulary {{
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("step", choices=["select", "generate"])
-    parser.add_argument("--cache", type=pathlib.Path, required=True)
+    parser.add_argument("step", choices=["select", "generate", "boards"])
+    parser.add_argument("--cache", type=pathlib.Path)
     parser.add_argument("--sheet", type=pathlib.Path)
+    parser.add_argument("--out", type=pathlib.Path)
     arguments = parser.parse_args()
+    if arguments.step == "boards":
+        if arguments.out is None:
+            parser.error("boards demande --out")
+        board_images(arguments.out)
+        return
+    if arguments.cache is None:
+        parser.error(f"{arguments.step} demande --cache")
     arguments.cache.mkdir(parents=True, exist_ok=True)
     if arguments.step == "select":
         select(arguments.cache, arguments.sheet)
