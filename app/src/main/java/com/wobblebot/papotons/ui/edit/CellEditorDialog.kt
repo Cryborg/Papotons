@@ -31,6 +31,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -72,10 +73,11 @@ private const val MAX_SPOKEN_TEXT_LENGTH = 200
 private const val MAX_LABEL_LENGTH = 200
 
 /**
- * L'éditeur d'une case, en plein écran. Le brouillon survit à la rotation (`rememberSaveable`) ;
- * son ouverture, elle, vient du ViewModel (jamais restaurée sans contrôle parental).
+ * L'éditeur d'une case, en plein écran. Le brouillon survit à la rotation (`rememberSaveable`), rangé
+ * sous l'ouverture (`state.openingId`) : après la mort du processus, il n'est jamais repris par
+ * l'éditeur d'une autre case. Son ouverture, elle, vient du ViewModel (jamais restaurée sans
+ * contrôle parental).
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CellEditorDialog(
     state: CellEditorState,
@@ -89,15 +91,33 @@ fun CellEditorDialog(
     onChoosePhoto: () -> Unit,
     onClose: () -> Unit,
 ) {
+    key(state.openingId) {
+        CellEditor(state, onSave, onDelete, onOpenFolder, onSearchPictogram, onRemovePictogram, onTakePhoto, onChoosePhoto, onClose)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CellEditor(
+    state: CellEditorState,
+    onSave: (CellContent, asFolder: Boolean) -> Unit,
+    onDelete: () -> Unit,
+    onOpenFolder: () -> Unit,
+    onSearchPictogram: (query: String) -> Unit,
+    onRemovePictogram: () -> Unit,
+    onTakePhoto: (() -> Unit)?,
+    onChoosePhoto: () -> Unit,
+    onClose: () -> Unit,
+) {
     val existing = (state.target as? EditTarget.ExistingCell)?.cell
-    var label by rememberSaveable(state.target) { mutableStateOf(existing?.label.orEmpty()) }
-    var pictogramId by rememberSaveable(state.target) { mutableStateOf(existing?.pictogramId) }
-    var categoryName by rememberSaveable(state.target) { mutableStateOf(existing?.category?.name) }
-    var photoFile by rememberSaveable(state.target) { mutableStateOf(existing?.photoFile) }
-    var spokenText by rememberSaveable(state.target) { mutableStateOf(existing?.spokenText.orEmpty()) }
-    var asFolder by rememberSaveable(state.target) { mutableStateOf(false) }
-    var isLabelMissing by rememberSaveable(state.target) { mutableStateOf(false) }
-    var isDeleteConfirmOpen by rememberSaveable(state.target) { mutableStateOf(false) }
+    var label by rememberSaveable { mutableStateOf(existing?.label.orEmpty()) }
+    var pictogramId by rememberSaveable { mutableStateOf(existing?.pictogramId) }
+    var categoryName by rememberSaveable { mutableStateOf(existing?.category?.name) }
+    var photoFile by rememberSaveable { mutableStateOf(existing?.photoFile) }
+    var spokenText by rememberSaveable { mutableStateOf(existing?.spokenText.orEmpty()) }
+    var asFolder by rememberSaveable { mutableStateOf(false) }
+    var isLabelMissing by rememberSaveable { mutableStateOf(false) }
+    var isDeleteConfirmOpen by rememberSaveable { mutableStateOf(false) }
     val isFolder = existing?.linkedBoardId != null || (existing == null && asFolder)
     val labelFocus = remember { FocusRequester() }
     // Un picto choisi dans la recherche remplace celui du brouillon.

@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.ImageBitmap
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
+import java.util.UUID
 import com.wobblebot.papotons.domain.Cell
 
 /** La case qu'ouvre l'éditeur : un emplacement libre à remplir, ou une case existante. */
@@ -22,6 +23,13 @@ enum class EditFailure { SlotTakenOrCellGone, Storage }
 @Immutable
 data class CellEditorState(
     val target: EditTarget,
+    /**
+     * Unique par ouverture, gardé par `copy` : le brouillon de l'éditeur (`rememberSaveable`) se range
+     * sous lui. Il survit à la rotation avec le ViewModel, jamais à la mort du processus : un brouillon
+     * restauré ne se retrouve pas dans l'éditeur d'une autre case ouverte ensuite. Un UUID et non un
+     * compteur : un compteur repartirait de 1 après la mort du processus et retrouverait la clé d'avant.
+     */
+    val openingId: String = UUID.randomUUID().toString(),
     /** Une écriture en cours : « Enregistrer » et « Supprimer » attendent, un double appui n'écrit pas deux fois. */
     val isWriting: Boolean = false,
     val failure: EditFailure? = null,
