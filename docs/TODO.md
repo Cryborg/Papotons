@@ -42,7 +42,7 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
   - Lemme stocké sur la case : aujourd'hui seul le libellé l'est, et « veux » ne dit pas « vouloir ». Migration Room non destructive (invariant 4) ; pour une case de l'utilisateur, lemme deviné depuis le libellé et corrigeable dans l'éditeur.
   - Élision complète une fois les formes connues : « j'ouvre », « j'habite » (`Elision.kt` les écarte aujourd'hui).
   - Appui long risqué pour les troubles moteurs (un appui qui traîne ouvre la page) : délai réglable ou geste désactivable dans les Réglages, repère sur les cases qui ont des variantes, action TalkBack équivalente.
-  - Plus tard : conjuguer selon le sujet déjà dans la phrase (« tu » puis « vouloir » donne « veux »).
+  - Conjugaison automatique selon le sujet déjà dans la phrase (« tu » puis « vouloir » donne « veux »). Tranché : en option dans les Réglages, désactivée par défaut, la page de formes reste toujours là.
 - **IDEE-2** Grilles évolutives : cases masquées qu'on dévoile au fur et à mesure.
 - **IDEE-3** Verrouillage de l'appli (épinglage d'écran / lock task mode).
 - **IDEE-4** Statistiques d'usage locales pour l'orthophoniste (jamais envoyées nulle part).
