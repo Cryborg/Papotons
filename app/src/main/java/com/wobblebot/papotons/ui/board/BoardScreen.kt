@@ -56,9 +56,12 @@ import com.wobblebot.papotons.ui.backup.RestoreConfirmDialog
 import com.wobblebot.papotons.ui.edit.CellEditorDialog
 import com.wobblebot.papotons.ui.edit.ParentalGateDialog
 import com.wobblebot.papotons.ui.edit.PictogramSearchDialog
+import com.wobblebot.papotons.ui.settings.ProfileActions
+import com.wobblebot.papotons.ui.settings.ProfilesViewModel
 import com.wobblebot.papotons.ui.settings.SettingsDialog
 import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 
 private const val TAG = "BoardScreen"
 
@@ -91,9 +94,23 @@ private enum class GatedAction { OpenSettings, AcknowledgeLostBoards, RestoreBac
 
 /** Branche [BoardScreen] sur son ViewModel : retour arrière, premier plan, modale de la voix. */
 @Composable
-fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState, backupViewModel: BackupViewModel = hiltViewModel()) {
+fun BoardRoute(
+    viewModel: BoardViewModel,
+    state: BoardUiState,
+    backupViewModel: BackupViewModel = hiltViewModel(),
+    profilesViewModel: ProfilesViewModel = hiltViewModel(),
+) {
     val context = LocalContext.current
     val backupState by backupViewModel.uiState.collectAsStateWithLifecycle()
+    val profilesState by profilesViewModel.uiState.collectAsStateWithLifecycle()
+    val profileActions = remember(profilesViewModel) {
+        ProfileActions(
+            onChosen = profilesViewModel::onSwitch,
+            onCreate = profilesViewModel::onCreate,
+            onRename = profilesViewModel::onRename,
+            onDelete = profilesViewModel::onDelete,
+        )
+    }
     val backupFileNamePattern = stringResource(R.string.backup_file_name)
     var isSpeechDialogOpen by rememberSaveable { mutableStateOf(false) }
     var areSettingsUnreachable by rememberSaveable { mutableStateOf(false) }
@@ -150,10 +167,16 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState, backupViewModel: 
         if (!state.isEditing) backupViewModel.onEditingEnded()
     }
     BoardScreen(state = state, actions = actions, hasUnsavedChanges = backupState.hasUnsavedChanges)
+    // Un échec d'une ouverture précédente ne s'affiche plus.
+    LaunchedEffect(state.isSettingsOpen) {
+        if (state.isSettingsOpen) profilesViewModel.onShown()
+    }
     if (state.isSettingsOpen) {
         SettingsDialog(
             boardSize = state.boardSize,
             settingFailure = state.settingFailure,
+            profiles = profilesState,
+            profileActions = profileActions,
             onBoardSizeChosen = viewModel::onBoardSizeChosen,
             onEditBoards = viewModel::onStartEditing,
             // La sauvegarde n'existe qu'en édition : on y entre, comme « Restaurer » des grilles perdues.
@@ -308,6 +331,8 @@ private fun BackupDialogs(
     if (pending != null) {
         RestoreConfirmDialog(
             fileName = pending.fileName,
+            currentProfileNames = state.currentProfileNames,
+            restoredProfileNames = pending.profileNames.toImmutableList(),
             boardCount = pending.boardCount,
             cellCount = pending.cellCount,
             onConfirm = onConfirmRestore,

@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flatMapLatest
@@ -89,7 +90,7 @@ class BoardViewModel @Inject constructor(
      */
     private val savedState: SavedStateHandle,
 ) : ViewModel() {
-    /** Pile des grilles ouvertes, l'accueil en bas. Vide tant que l'accueil n'est pas prêt. */
+    /** Pile des grilles ouvertes, l'écran de départ en bas. Vide tant qu'il n'est pas prêt. */
     private val navigation = MutableStateFlow<PersistentList<Long>>(persistentListOf())
     private val message = MutableStateFlow(restoredMessage())
 
@@ -147,7 +148,11 @@ class BoardViewModel @Inject constructor(
         if (stack.isEmpty()) {
             flowOf(null)
         } else {
-            repository.observeBoard(stack.last()).mapNotNull { board -> display(board, stack) }
+            // L'id d'origine du bas de la pile dit la taille de ses cases, même ouvert dans un dossier.
+            // `distinctUntilChanged` : toute écriture dans `boards` relit l'id d'origine, sans raison de redessiner.
+            combine(repository.observeBoard(stack.last()), repository.observeCoreBoardId(stack.first()).distinctUntilChanged()) { board, rootCoreBoardId ->
+                board to rootCoreBoardId
+            }.mapNotNull { (board, rootCoreBoardId) -> display(board, stack, rootCoreBoardId) }
         }
     }
 
@@ -191,8 +196,11 @@ class BoardViewModel @Inject constructor(
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), BoardUiState())
 
-    /** L'ouverture de l'accueil en cours, pour ne pas la lancer deux fois. */
+    /** L'ouverture de l'écran de départ en cours, pour ne pas la lancer deux fois. */
     private var homeOpening: Job? = null
+
+    /** La réouverture après un changement d'utilisateur ou une restauration, tant qu'elle attend [homeOpening]. */
+    private var reopening: Job? = null
 
     init {
         // On n'observe rien avant la fin de l'insertion : sinon l'accueil serait lu absent
@@ -207,7 +215,11 @@ class BoardViewModel @Inject constructor(
         }
         viewModelScope.launch {
             // Un compteur, pas un événement : une restauration faite quand l'écran n'écoutait pas compte aussi.
-            repository.replacements.drop(1).collect { onBoardsReplaced() }
+            // Toutes les grilles remplacées : la pile et l'éditeur visent peut-être des grilles qui n'existent plus.
+            repository.replacements.drop(1).collect { reopenFromStart() }
+        }
+        viewModelScope.launch {
+            repository.profileSwitches.drop(1).collect { onProfileSwitched() }
         }
         viewModelScope.launch {
             mediaVolume.isMuted.collect { isMuted -> if (!isMuted) isVolumeLockedDialogOpen.value = false }
@@ -296,8 +308,10 @@ class BoardViewModel @Inject constructor(
         sizeChoice?.cancel()
         settingFailure.value = null
         sizeChoice = viewModelScope.launch {
+            // Après un changement d'utilisateur en cours : sinon la taille s'appliquerait à l'utilisateur d'avant.
+            reopening?.join()
             homeOpening?.join()
-            val isAvailable = try {
+            val startBoardId = try {
                 repository.setStartBoard(size)
             } catch (exception: IOException) {
                 Log.e(TAG, "Board size $size could not be saved", exception)
@@ -308,7 +322,7 @@ class BoardViewModel @Inject constructor(
                 settingFailure.value = SettingFailure.NotSaved
                 return@launch
             }
-            if (isAvailable) navigation.value = persistentListOf(size.homeBoardId) else settingFailure.value = SettingFailure.Unavailable
+            if (startBoardId != null) navigation.value = persistentListOf(startBoardId) else settingFailure.value = SettingFailure.Unavailable
         }
     }
 
@@ -321,14 +335,30 @@ class BoardViewModel @Inject constructor(
         discardUnsavedPhoto()
     }
 
-    /** Toutes les grilles ont été remplacées : la pile et l'éditeur visent peut-être des grilles qui n'existent plus. */
-    private fun onBoardsReplaced() {
+    /** Un autre utilisateur : ses grilles, et pas la phrase de l'autre. */
+    private fun onProfileSwitched() {
+        speaker.stop()
+        message.value = persistentListOf()
+        reopenFromStart()
+    }
+
+    /**
+     * Repart de l'écran de départ, éditeur fermé. Un choix de taille déjà lancé est annulé (il ouvrirait
+     * l'accueil d'avant), un choix lancé ensuite attend cette réouverture ; une ouverture en cours a
+     * pu lire l'utilisateur d'avant : on l'attend, puis on relit.
+     */
+    private fun reopenFromStart() {
+        sizeChoice?.cancel()
+        settingFailure.value = null
         editor.value = null
         onSearchClose()
         chosenBytes = null
         discardUnsavedPhoto()
-        navigation.value = persistentListOf()
-        reopenHome()
+        reopening = viewModelScope.launch {
+            homeOpening?.join()
+            navigation.value = persistentListOf()
+            reopenHome()
+        }
     }
 
     fun onEmptySlotClick(row: Int, column: Int) {
@@ -509,6 +539,8 @@ class BoardViewModel @Inject constructor(
     /** [asFolder] ne compte que pour une nouvelle case : une case existante garde son type. */
     fun onEditorSave(content: CellContent, asFolder: Boolean) {
         if (editor.value?.isImportingPhoto == true) return
+        // À l'appui : à la taille des dossiers du jeu affiché, pas de celui ouvert quand l'écriture aboutit.
+        val folderSize = BoardSize.withHome(uiState.value.board?.rootCoreBoardId) ?: BoardSize.STANDARD
         writeFromEditor { target, writeToken ->
             // La photo validée d'abord ; validation idempotente : un nouvel essai après un échec en
             // base réutilise le même fichier.
@@ -526,7 +558,7 @@ class BoardViewModel @Inject constructor(
                 // Seule la photo choisie dans cet éditeur est à valider : une photo déjà dans la case l'est,
                 // et l'exiger bloquerait l'édition d'une case dont le fichier a disparu.
                 if (ownedPhoto != null && !photos.commit(ownedPhoto)) throw IOException("Photo could not be committed")
-                writeCellContent(target, content, asFolder)
+                writeCellContent(target, content, asFolder, folderSize)
             } catch (exception: Exception) {
                 if (ownedPhoto != null) {
                     // Rendue à son éditeur s'il est toujours là ; sinon elle n'est plus à personne, et
@@ -543,7 +575,7 @@ class BoardViewModel @Inject constructor(
     }
 
     /** Picto choisi gardé, case écrite, puis ancienne photo effacée si elle n'appartient plus à personne. */
-    private suspend fun writeCellContent(target: EditTarget, content: CellContent, asFolder: Boolean) {
+    private suspend fun writeCellContent(target: EditTarget, content: CellContent, asFolder: Boolean, folderSize: BoardSize) {
         // Le picto choisi d'abord : la case ne vise jamais un picto absent de l'appareil (invariant 2).
         val chosen = chosenBytes
         if (chosen != null && content.pictogramId == chosen.first && !pictogramStore.store(chosen.first, chosen.second)) {
@@ -552,9 +584,8 @@ class BoardViewModel @Inject constructor(
         when (target) {
             is EditTarget.NewCell ->
                 if (asFolder) {
-                    // À la taille des dossiers du jeu ouvert : un dossier de grandes cases reste en grandes cases.
-                    val size = BoardSize.withHome(navigation.value.firstOrNull()) ?: BoardSize.STANDARD
-                    repository.addFolder(target.boardId, target.row, target.column, content, size)
+                    // Un dossier de grandes cases reste en grandes cases.
+                    repository.addFolder(target.boardId, target.row, target.column, content, folderSize)
                 } else {
                     repository.addWord(target.boardId, target.row, target.column, content)
                 }
@@ -675,7 +706,7 @@ class BoardViewModel @Inject constructor(
     private fun restoredMessage(): PersistentList<SentenceWord> =
         savedState.get<ArrayList<SavedWord>>(MESSAGE_KEY).orEmpty().map { it.toSentenceWord() }.toPersistentList()
 
-    private fun display(board: Board?, stack: PersistentList<Long>): DisplayedBoard? {
+    private fun display(board: Board?, stack: PersistentList<Long>, rootCoreBoardId: Long?): DisplayedBoard? {
         if (board == null) {
             Log.e(TAG, "Board ${stack.last()} not found (stack $stack)")
             // Seulement si la pile n'a pas bougé entre-temps : sinon on dépilerait la grille d'un autre appui.
@@ -691,7 +722,7 @@ class BoardViewModel @Inject constructor(
             name = board.name,
             grid = layoutGrid(board.rowCount, board.columnCount, board.cells),
             canGoBack = stack.size > 1,
-            rootBoardId = stack.first(),
+            rootCoreBoardId = rootCoreBoardId,
         )
     }
 }

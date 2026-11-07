@@ -10,6 +10,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import com.wobblebot.papotons.data.CORRUPTED_DATABASES_DIRECTORY
 import com.wobblebot.papotons.data.FakePreferences
+import com.wobblebot.papotons.data.profile.FIRST_PROFILE_ID
+import com.wobblebot.papotons.data.profile.ProfileEntity
 import com.wobblebot.papotons.data.createPreferences
 import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
@@ -551,7 +553,7 @@ class BoardRepositoryTest {
         dao.insertFailure = IllegalStateException("disk full")
 
         try {
-            repository.replaceAll(BackupContent(dao.boards.value, emptyList()))
+            repository.replaceAll(BackupContent(dao.profiles.value, dao.boards.value, emptyList()))
             fail("The insert should fail")
         } catch (exception: IllegalStateException) {
             // Échec après le drapeau : un faux « non sauvegardé » ne coûte rien.
@@ -591,7 +593,11 @@ class BoardRepositoryTest {
         val dao = homeOnly()
         val repository = BoardRepository(dao, preferences, context)
         val restored = BackupContent(
-            listOf(BoardEntity(id = HOME_BOARD_ID, name = "restored", rowCount = 2, columnCount = 2), BoardEntity(id = 9, name = "nine", rowCount = 1, columnCount = 1)),
+            listOf(ProfileEntity(FIRST_PROFILE_ID, "Léo", startBoardId = null)),
+            listOf(
+                BoardEntity(id = HOME_BOARD_ID, name = "restored", rowCount = 2, columnCount = 2, profileId = FIRST_PROFILE_ID, coreBoardId = HOME_BOARD_ID),
+                BoardEntity(id = 9, name = "nine", rowCount = 1, columnCount = 1, profileId = FIRST_PROFILE_ID, coreBoardId = null),
+            ),
             listOf(CellEntity(id = 77, boardId = 9, row = 0, column = 0, label = "x", linkedBoardId = null, pictogramId = null, category = null)),
         )
 
@@ -613,7 +619,7 @@ class BoardRepositoryTest {
         val repository = BoardRepository(dao, FakePreferences(), context)
 
         try {
-            repository.replaceAll(BackupContent(listOf(BoardEntity(id = HOME_BOARD_ID, name = "restored", rowCount = 1, columnCount = 1)), emptyList()))
+            repository.replaceAll(BackupContent(dao.profiles.value, listOf(BoardEntity(id = HOME_BOARD_ID, name = "restored", rowCount = 1, columnCount = 1, profileId = FIRST_PROFILE_ID)), emptyList()))
             fail("The restore should fail")
         } catch (exception: IOException) {
             // Le marqueur d'abord : rien n'est écrit sans lui.

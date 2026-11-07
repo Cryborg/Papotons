@@ -13,6 +13,9 @@ import com.wobblebot.papotons.data.backup.RefusalReason
 import com.wobblebot.papotons.data.board.BoardRepository
 import com.wobblebot.papotons.ui.board.PHOTO_REQUEST_TIMEOUT_MS
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +44,8 @@ data class BackupUiState(
     val pendingRestore: PendingRestore? = null,
     /** Vrai aussi quand on ne sait pas : la pastille se trompe du bon côté. */
     val hasUnsavedChanges: Boolean = true,
+    /** Les utilisateurs actuels, que la restauration remplacerait : la confirmation les nomme. */
+    val currentProfileNames: ImmutableList<String> = persistentListOf(),
 )
 
 /**
@@ -54,8 +59,12 @@ class BackupViewModel @Inject constructor(
 ) : ViewModel() {
     private val dialog = MutableStateFlow(BackupUiState())
 
-    val uiState: StateFlow<BackupUiState> = combine(dialog, repository.observeUnsavedChanges()) { state, hasUnsavedChanges ->
-        state.copy(hasUnsavedChanges = hasUnsavedChanges)
+    val uiState: StateFlow<BackupUiState> = combine(
+        dialog,
+        repository.observeUnsavedChanges(),
+        repository.observeProfiles(),
+    ) { state, hasUnsavedChanges, profiles ->
+        state.copy(hasUnsavedChanges = hasUnsavedChanges, currentProfileNames = profiles.map { it.name }.toImmutableList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), BackupUiState())
 
     /** Remplaçable dans les tests. */

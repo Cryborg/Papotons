@@ -8,16 +8,19 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
+import com.wobblebot.papotons.R
 import com.wobblebot.papotons.data.CorruptedDatabaseCopies
 import com.wobblebot.papotons.data.backup.BackupContent
 import com.wobblebot.papotons.data.photo.CELL_PHOTOS_DIRECTORY
 import com.wobblebot.papotons.data.photo.CELL_PHOTO_NAME
 import com.wobblebot.papotons.data.pictogram.DOWNLOADED_PICTOGRAMS_DIRECTORY
+import com.wobblebot.papotons.data.profile.isValidProfileName
 import com.wobblebot.papotons.domain.Board
 import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.CellContent
 import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
+import com.wobblebot.papotons.domain.Profile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -81,8 +84,11 @@ private val HAS_UNSAVED_CHANGES = booleanPreferencesKey("has_unsaved_changes")
 /** Quand (ms) la base a été trouvée vide alors qu'elle avait déjà été remplie. Retirée par l'adulte. */
 private val BOARDS_LOST_AT = longPreferencesKey("boards_lost_at")
 
-/** L'écran de départ choisi dans les Réglages (l'accueil d'une taille). Absent : [HOME_BOARD_ID]. */
-private val START_BOARD_ID = longPreferencesKey("start_board_id")
+/**
+ * L'utilisateur ouvert au dernier lancement. Pas dans la sauvegarde `.obz` : en changer n'est pas une
+ * modification des grilles. Absent ou disparu : le plus petit utilisateur qui a des grilles.
+ */
+private val CURRENT_PROFILE_ID = longPreferencesKey("current_profile_id")
 
 @Singleton
 class BoardRepository @Inject constructor(
@@ -98,8 +104,18 @@ class BoardRepository @Inject constructor(
 
     private val replacementCount = MutableStateFlow(0)
 
-    /** Monte à chaque restauration : l'écran repart de l'accueil, la grille ouverte n'existe peut-être plus. */
+    /** Monte à chaque restauration : l'écran repart de l'écran de départ, la grille ouverte n'existe peut-être plus. */
     val replacements: StateFlow<Int> = replacementCount.asStateFlow()
+
+    private val profileSwitchCount = MutableStateFlow(0)
+
+    /** Monte à chaque changement d'utilisateur : l'écran repart de l'écran de départ du nouveau. */
+    val profileSwitches: StateFlow<Int> = profileSwitchCount.asStateFlow()
+
+    private val openProfile = MutableStateFlow<Long?>(null)
+
+    /** L'utilisateur ouvert : posé par [switchProfile], confirmé (ou replié) par [ensureHomeBoard] ; `null` avant. */
+    val openProfileId: StateFlow<Long?> = openProfile.asStateFlow()
 
     /** Avant toute édition possible : seules les images plus anciennes sont candidates au ménage. */
     private val createdAtMs = System.currentTimeMillis()
@@ -118,10 +134,11 @@ class BoardRepository @Inject constructor(
     internal var fileDispatcher: CoroutineDispatcher = Dispatchers.IO
 
     /**
-     * Insère le vocabulaire de base dans une base vide, puis rend l'id de la grille à ouvrir : l'écran
-     * de départ choisi (l'accueil d'une taille) s'il en est un, sinon l'accueil standard. Une
+     * Insère le vocabulaire de base dans une base vide, puis rend l'id de la grille à ouvrir : celle de
+     * l'utilisateur ouvert (le dernier, sinon le plus petit qui a des grilles), son écran de départ
+     * choisi (l'accueil d'une taille) s'il en est un, sinon son accueil standard. Une
      * base vide qui avait déjà été remplie (corrompue, effacée) reçoit aussi le vocabulaire de base,
-     * pour qu'on puisse parler, et lève l'alerte de [observeLostBoards]. Une base qui a perdu son
+     * pour qu'on puisse parler, et lève l'alerte de [observeLostBoards]. Un utilisateur qui a perdu son
      * accueil ouvre sa plus petite grille : ni plantage en boucle ni chargement sans fin, et rien
      * n'est effacé (invariant 4).
      */
@@ -132,8 +149,8 @@ class BoardRepository @Inject constructor(
         val isDatabaseEmpty = boardDao.countBoards() == 0
         if (isDatabaseEmpty) wasFoundEmpty = true
         raiseLostBoardsIfNeeded(isDatabaseEmpty)
-        val seed = CoreVocabulary.build(context::getString)
-        val isSeeded = boardDao.seedIfEmpty(seed.boards, seed.cells)
+        val seed = coreVocabulary()
+        val isSeeded = boardDao.seedIfEmpty(seed, context.getString(R.string.profile_default_name))
         if (isSeeded) {
             wasFoundEmpty = true
             Log.i(TAG, "Core vocabulary inserted: ${seed.boards.size} boards, ${seed.cells.size} cells")
@@ -142,22 +159,105 @@ class BoardRepository @Inject constructor(
         // lancement suivant marque sans alerte.
         markSeeded(isFreshSeed = isSeeded && !copies().hasCopies())
         hasOpenedHome = true
-        return openableStartBoard(readStartBoardId())
+        val profileId = openableProfile(readCurrentProfileId())
+        openProfile.value = profileId
+        return openableStartBoard(profileId)
     }
 
-    /** [startBoardId] s'il est un écran de départ, sinon l'accueil standard, sinon la plus petite grille. */
-    private suspend fun openableStartBoard(startBoardId: Long): Long {
-        if (isStartBoard(startBoardId)) return startBoardId
-        if (startBoardId != HOME_BOARD_ID) {
-            Log.e(TAG, "Start board $startBoardId missing or opened by a folder, opening home instead")
-            forgetStartBoard()
-        }
-        if (boardDao.boardExists(HOME_BOARD_ID)) return HOME_BOARD_ID
+    private fun coreVocabulary() = CoreVocabulary.build(context::getString)
+
+    /** [savedProfileId] s'il a des grilles, sinon le plus petit utilisateur qui en a, retenu pour la suite. */
+    private suspend fun openableProfile(savedProfileId: Long?): Long {
+        if (savedProfileId != null && boardDao.hasBoards(savedProfileId)) return savedProfileId
         // Jamais nul : la base n'est pas vide après seedIfEmpty.
-        val fallbackBoardId = checkNotNull(boardDao.smallestBoardId()) { "No board after seeding" }
-        Log.e(TAG, "Home board $HOME_BOARD_ID missing, opening board $fallbackBoardId instead")
+        val fallbackProfileId = checkNotNull(boardDao.smallestProfileWithBoards()) { "No board after seeding" }
+        if (savedProfileId != null) Log.w(TAG, "Profile $savedProfileId missing or without boards, opening profile $fallbackProfileId")
+        try {
+            // Seulement si personne n'a changé d'utilisateur depuis la lecture.
+            preferences.edit { settings -> if (settings[CURRENT_PROFILE_ID] == savedProfileId) settings[CURRENT_PROFILE_ID] = fallbackProfileId }
+        } catch (exception: IOException) {
+            Log.e(TAG, "Open profile could not be saved", exception)
+        }
+        return fallbackProfileId
+    }
+
+    /**
+     * L'écran de départ choisi par [profileId] s'il est encore un écran de départ à lui (une
+     * restauration peut en apporter un qui vise la grille d'un autre), sinon son accueil standard,
+     * sinon sa plus petite grille. Chaque étape ne regarde que ses grilles.
+     */
+    private suspend fun openableStartBoard(profileId: Long): Long {
+        val chosen = boardDao.profile(profileId)?.startBoardId
+        if (chosen != null) {
+            if (boardDao.isStartBoardOf(chosen, profileId)) return chosen
+            // Gardé tel quel : l'effacer serait une écriture de grilles (pastille « non sauvegardé »)
+            // pour un repli qui se refait seul. D'où un avertissement à chaque ouverture, pas une erreur.
+            Log.w(TAG, "Start board $chosen of profile $profileId missing, a folder, or not its own; opening its home")
+        }
+        boardDao.startBoardCopyOf(profileId, HOME_BOARD_ID)?.let { return it }
+        // Jamais nul : openableProfile ne rend qu'un utilisateur qui a des grilles.
+        val fallbackBoardId = checkNotNull(boardDao.smallestBoardIdOf(profileId)) { "No board for profile $profileId" }
+        Log.e(TAG, "Home board of profile $profileId missing, opening board $fallbackBoardId instead")
         return fallbackBoardId
     }
+
+    /** Une lecture ratée ne doit jamais empêcher de parler : le repli de [openableProfile]. */
+    private suspend fun readCurrentProfileId(): Long? = try {
+        preferences.data.first()[CURRENT_PROFILE_ID]
+    } catch (exception: IOException) {
+        Log.e(TAG, "Open profile could not be read", exception)
+        null
+    }
+
+    fun observeProfiles(): Flow<List<Profile>> = boardDao.observeProfiles().map { profiles -> profiles.map { Profile(it.id, it.name) } }
+
+    /** Un nouvel utilisateur avec un vocabulaire de base neuf, en taille standard ; il ne devient pas l'utilisateur ouvert. */
+    suspend fun createProfile(name: String): Long {
+        require(isValidProfileName(name)) { "Invalid profile name" }
+        val seed = coreVocabulary()
+        val profileId = write { boardDao.insertProfileWithCoreVocabulary(name, seed) }
+        Log.i(TAG, "Profile $profileId created with ${seed.boards.size} boards")
+        return profileId
+    }
+
+    suspend fun renameProfile(profileId: Long, name: String) {
+        require(isValidProfileName(name)) { "Invalid profile name" }
+        val count = write { boardDao.renameProfile(profileId, name) }
+        if (count == 0) throw ProfileNotFoundException(profileId)
+    }
+
+    /**
+     * Ouvre [profileId] : écrit hors de [write] (l'utilisateur ouvert n'est pas dans la sauvegarde),
+     * puis l'écran repart de son écran de départ ([profileSwitches]). Un échec d'écriture remonte,
+     * rien ne change.
+     */
+    suspend fun switchProfile(profileId: Long) {
+        preferences.edit { settings -> settings[CURRENT_PROFILE_ID] = profileId }
+        // Tout de suite, sans attendre la réouverture : une suppression ou un choix de taille qui suit
+        // vise le nouvel utilisateur.
+        openProfile.value = profileId
+        Log.i(TAG, "Switched to profile $profileId")
+        profileSwitchCount.update { it + 1 }
+    }
+
+    /**
+     * Supprime [profileId] et toutes ses grilles ; jamais le dernier qui a des grilles
+     * ([LastProfileException]). L'utilisateur ouvert passe d'abord au plus ancien des autres qui en a,
+     * puis est supprimé : si la suppression échoue ensuite, l'autre reste ouvert. Rend les photos de
+     * ses cases, à effacer : une photo n'appartient qu'à une case.
+     */
+    suspend fun deleteProfile(profileId: Long): List<String> {
+        if (profileId == openProfile.value) {
+            val other = boardDao.smallestOtherProfileWithBoards(profileId) ?: throw LastProfileException(profileId)
+            switchProfile(other)
+        }
+        val deleted = write { boardDao.deleteProfile(profileId) }
+        Log.i(TAG, "Profile $profileId deleted with ${deleted.boardCount} boards")
+        return deleted.photoFiles
+    }
+
+    /** `null` pour une grille de l'adulte : c'est par lui que l'écran connaît la taille de ses cases. */
+    fun observeCoreBoardId(boardId: Long): Flow<Long?> = boardDao.observeCoreBoardId(boardId)
 
     /**
      * Vrai tant qu'une perte des grilles constatée par [ensureHomeBoard] (au lancement, ou quand
@@ -183,50 +283,26 @@ class BoardRepository @Inject constructor(
     }
 
     /**
-     * Retient l'accueil de [size] comme écran de départ. Faux, sans rien écrire, si ces grilles n'ont
-     * pas cet accueil (sauvegarde d'avant les tailles, où l'id peut être un dossier de l'adulte). Un
-     * échec d'écriture remonte, rien n'est retenu. Pas une modification des grilles : la sauvegarde
-     * `.obz` n'en dépend pas, le drapeau « non sauvegardé » reste tel quel.
+     * Retient l'accueil de [size] de l'utilisateur ouvert comme son écran de départ, et rend son id.
+     * `null`, sans rien écrire, si cet utilisateur n'a pas cet accueil (grilles d'avant les tailles).
+     * Une écriture de grilles : l'écran de départ part dans la sauvegarde `.obz`. Un échec remonte.
      */
-    suspend fun setStartBoard(size: BoardSize): Boolean {
-        // L'accueil standard s'ouvre toujours au lancement s'il existe : il se choisit de même.
-        val isAvailable = if (size == BoardSize.STANDARD) boardDao.boardExists(HOME_BOARD_ID) else isStartBoard(size.homeBoardId)
-        if (!isAvailable) {
-            Log.e(TAG, "Home board of $size missing or opened by a folder, size not available")
-            return false
+    suspend fun setStartBoard(size: BoardSize): Long? {
+        val profileId = checkNotNull(openProfile.value) { "No open profile before the home board" }
+        val boardId = boardDao.startBoardCopyOf(profileId, size.homeBoardId)
+        if (boardId == null) {
+            Log.e(TAG, "Home board of $size missing or opened by a folder for profile $profileId, size not available")
+            return null
         }
-        preferences.edit { settings -> settings[START_BOARD_ID] = size.homeBoardId }
-        return true
+        val count = write { boardDao.setStartBoard(profileId, boardId) }
+        if (count == 0) throw ProfileNotFoundException(profileId)
+        return boardId
     }
 
     /**
-     * Un choix devenu invalide (grilles restaurées) est oublié : sinon une restauration suivante qui
-     * ramènerait cet accueil rouvrirait une taille que personne n'a choisie depuis. Au mieux : un
-     * échec laisse seulement le repli recommencer au lancement suivant.
+     * Un dossier : une grille vide, nommée comme lui, à la taille des dossiers de [size], et la case qui
+     * l'ouvre. La grille appartient à l'utilisateur de la grille [boardId] (posé par le DAO).
      */
-    private suspend fun forgetStartBoard() {
-        try {
-            preferences.edit { settings -> settings.remove(START_BOARD_ID) }
-        } catch (exception: IOException) {
-            Log.e(TAG, "Invalid start board could not be forgotten", exception)
-        }
-    }
-
-    /** Une lecture ratée ne doit jamais empêcher de parler : l'accueil standard. */
-    private suspend fun readStartBoardId(): Long = try {
-        preferences.data.first()[START_BOARD_ID] ?: HOME_BOARD_ID
-    } catch (exception: IOException) {
-        Log.e(TAG, "Start board could not be read, opening home", exception)
-        HOME_BOARD_ID
-    }
-
-    /**
-     * Un écran de départ est une grille qui existe et qu'aucune case n'ouvre : dans une base d'avant
-     * les tailles, l'id d'un accueil de taille peut être celui d'un dossier de l'adulte.
-     */
-    private suspend fun isStartBoard(boardId: Long): Boolean = boardDao.boardExists(boardId) && boardDao.countLinksTo(boardId) == 0
-
-    /** Un dossier : une grille vide, nommée comme lui, à la taille des dossiers de [size], et la case qui l'ouvre. */
     suspend fun addFolder(boardId: Long, row: Int, column: Int, content: CellContent, size: BoardSize) {
         val board = BoardEntity(name = content.label, rowCount = size.folderRowCount, columnCount = size.folderColumnCount)
         write { boardDao.insertFolder(board, content.toEntity(boardId, row, column, linkedBoardId = null)) }
@@ -248,12 +324,13 @@ class BoardRepository @Inject constructor(
 
     /**
      * Supprime la case et, pour un dossier, les grilles de son sous-arbre que plus rien ne vise.
-     * Les accueils des tailles, la grille qui porte la case et [openRootBoardId] ne sont jamais supprimés : une base
+     * Les accueils des tailles (de tous les utilisateurs), la grille qui porte la case et [openRootBoardId] ne sont jamais supprimés : une base
      * vidée par l'édition passerait pour une perte des grilles. Rend les photos des cases supprimées :
      * à effacer, une photo n'appartenant qu'à une case.
      */
     suspend fun deleteCell(cell: Cell, boardId: Long, openRootBoardId: Long): List<String> {
-        val kept = BoardSize.entries.mapTo(mutableSetOf()) { it.homeBoardId } + boardId + openRootBoardId
+        val sizeHomes = boardDao.copiesOf(BoardSize.entries.mapTo(mutableSetOf()) { it.homeBoardId })
+        val kept = sizeHomes.toSet() + boardId + openRootBoardId
         val deleted = write { boardDao.deleteCellAndOrphanBoards(cell.id, kept) }
         Log.i(TAG, "Cell ${cell.id} deleted with ${deleted.boardCount} boards")
         return deleted.photoFiles
@@ -301,11 +378,11 @@ class BoardRepository @Inject constructor(
         .combine(unsavedInProcess) { isUnsaved, isUnsavedInProcess -> isUnsaved || isUnsavedInProcess }
         .distinctUntilChanged()
 
-    /** Toutes les grilles et cases, et le compte d'écritures au moment de les lire (pour [markSaved]). */
+    /** Tous les utilisateurs, grilles et cases, et le compte d'écritures au moment de les lire (pour [markSaved]). */
     suspend fun snapshot(): Pair<BackupContent, Long> {
         val count = writeCount.get()
-        val (boards, cells) = boardDao.snapshot()
-        return BackupContent(boards, cells) to count
+        val (profiles, boards, cells) = boardDao.snapshot()
+        return BackupContent(profiles, boards, cells) to count
     }
 
     /** Après un export réussi : sauvegardé, sauf si une écriture a eu lieu depuis l'instantané. */
@@ -323,12 +400,13 @@ class BoardRepository @Inject constructor(
     }
 
     /**
-     * Remplace toutes les grilles par [content] (déjà validé), en une transaction : un échec laisse
-     * la base d'avant. Puis l'alerte de perte est acquittée et l'écran repart de l'accueil.
+     * Remplace tous les utilisateurs et leurs grilles par [content] (déjà validé), en une transaction :
+     * un échec laisse la base d'avant. Puis l'alerte de perte est acquittée et l'écran repart de
+     * l'écran de départ (d'un autre utilisateur si l'ouvert n'existe plus).
      */
     suspend fun replaceAll(content: BackupContent) {
-        write { boardDao.replaceAll(content.boards, content.cells.map { it.copy(id = 0) }) }
-        Log.i(TAG, "Boards replaced: ${content.boards.size} boards, ${content.cells.size} cells")
+        write { boardDao.replaceAll(content.profiles, content.boards, content.cells.map { it.copy(id = 0) }) }
+        Log.i(TAG, "Boards replaced: ${content.profiles.size} profiles, ${content.boards.size} boards, ${content.cells.size} cells")
         acknowledgeLostBoards()
         markSaved(writeCount.get())
         replacementCount.update { it + 1 }

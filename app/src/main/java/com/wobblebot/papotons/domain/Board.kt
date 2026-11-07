@@ -5,7 +5,7 @@ import androidx.compose.runtime.Immutable
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 
-/** La grille ouverte au lancement et par le bouton « Accueil ». */
+/** L'accueil standard dans `CoreVocabulary` : chaque utilisateur en a une copie (`core_board_id`) ; celle de la graine ou de la migration garde cet id. */
 const val HOME_BOARD_ID = 1L
 
 private const val TAG = "Board"

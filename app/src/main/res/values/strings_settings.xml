@@ -5,7 +5,7 @@
     <string name="settings_title">Réglages</string>
     <string name="settings_close">Fermer</string>
     <string name="settings_edit_description">Ajouter, changer ou supprimer des cases et des dossiers.</string>
-    <string name="settings_backup_description">Enregistrer les grilles dans un fichier, ou les restaurer.</string>
+    <string name="settings_backup_description">Enregistrer les grilles de tous les utilisateurs dans un fichier, ou les restaurer.</string>
     <string name="settings_about_description">Crédits des pictogrammes, confidentialité, licence et version.</string>
     <!-- Taille des cases : un jeu de grilles par taille, chacun avec ses positions fixes. -->
     <string name="settings_board_size">Taille des cases</string>

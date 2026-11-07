@@ -2,6 +2,9 @@ package com.wobblebot.papotons.data.backup
 
 import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.board.CellEntity
+import com.wobblebot.papotons.data.profile.MAX_PROFILES
+import com.wobblebot.papotons.data.profile.MAX_PROFILE_NAME_LENGTH
+import com.wobblebot.papotons.data.profile.ProfileEntity
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -11,13 +14,15 @@ import org.junit.Test
 
 private const val PHOTO = "0a1b2c3d-0000-4000-8000-00000000000a.jpg"
 private const val MISSING_PHOTO = "0a1b2c3d-0000-4000-8000-00000000000b.jpg"
+private const val DEFAULT_NAME = "Utilisateur"
 
 class BackupArchiveTest {
-    private val home = BoardEntity(id = 1, name = "Accueil", rowCount = 2, columnCount = 3)
-    private val food = BoardEntity(id = 7, name = "Manger", rowCount = 1, columnCount = 2)
+    private val leo = ProfileEntity(id = 1, name = "Léo", startBoardId = 7)
+    private val home = BoardEntity(id = 1, name = "Accueil", rowCount = 2, columnCount = 3, profileId = 1, coreBoardId = 1)
+    private val food = BoardEntity(id = 7, name = "Manger", rowCount = 1, columnCount = 2, profileId = 1, coreBoardId = 2)
 
     /** Une grille inatteignable : elle existe en base, elle revient. */
-    private val unreachable = BoardEntity(id = 12, name = "Ancienne", rowCount = 1, columnCount = 1)
+    private val unreachable = BoardEntity(id = 12, name = "Ancienne", rowCount = 1, columnCount = 1, profileId = 1, coreBoardId = null)
 
     private fun cell(id: Long, boardId: Long, row: Int, column: Int, label: String = "c$id") = CellEntity(
         id = id, boardId = boardId, row = row, column = column, label = label, linkedBoardId = null,
@@ -35,16 +40,16 @@ class BackupArchiveTest {
         cell(6, 12, 0, 0, "vieux"),
     )
 
-    private val content = BackupContent(listOf(home, food, unreachable), cells)
+    private val content = BackupContent(listOf(leo), listOf(home, food, unreachable), cells)
 
     private fun entries(value: BackupContent = content) =
         backupEntries(value, pictogramsInArchive = setOf(6632, 31, 4610), photosInArchive = setOf(PHOTO))
 
     /** La restauration telle que l'appli la fait : le manifeste, puis chaque grille, puis le validateur. */
     private fun restore(archive: Map<String, String>): BackupContent {
-        val boardPaths = readManifest(checkNotNull(archive[MANIFEST_PATH]))
-        val boards = boardPaths.map { readBoard(checkNotNull(archive[it])) }
-        return BackupContent(boards.map { it.first }, boards.flatMap { it.second }).also(::validate)
+        val manifest = readManifest(checkNotNull(archive[MANIFEST_PATH]))
+        val boards = manifest.boardPaths.map { readBoard(checkNotNull(archive[it])) }
+        return backupContent(manifest, boards.map { it.first }, boards.flatMap { it.second }, DEFAULT_NAME).also(::validate)
     }
 
     private fun assertRefused(reason: RefusalReason, block: () -> Unit) {
@@ -122,9 +127,9 @@ class BackupArchiveTest {
 
     @Test
     fun `a backup without boards is refused, it would look like lost boards`() {
-        assertRefused(RefusalReason.Invalid) { validate(BackupContent(emptyList(), emptyList())) }
+        assertRefused(RefusalReason.Invalid) { validate(BackupContent(listOf(leo), emptyList(), emptyList())) }
         // Toutes les cases supprimées : un accueil vide existe en base, il se sauvegarde.
-        validate(BackupContent(listOf(home), emptyList()))
+        validate(BackupContent(listOf(leo), listOf(home), emptyList()))
     }
 
     @Test
@@ -203,7 +208,7 @@ class BackupArchiveTest {
     @Test
     fun `the root is the home board, or the smallest one without it`() {
         assertEquals("boards/1.obf", JSONObject(checkNotNull(entries()[MANIFEST_PATH])).getString("root"))
-        val withoutHome = BackupContent(listOf(food, unreachable), cells.filter { it.boardId != 1L })
+        val withoutHome = BackupContent(listOf(leo), listOf(food, unreachable), cells.filter { it.boardId != 1L })
         assertEquals("boards/7.obf", JSONObject(checkNotNull(entries(withoutHome)[MANIFEST_PATH])).getString("root"))
         assertEquals(withoutHome.boards.toSet(), restore(entries(withoutHome)).boards.toSet())
     }
@@ -250,7 +255,7 @@ class BackupArchiveTest {
         val big = BoardEntity(id = 50, name = "grosse", rowCount = MAX_GRID_SIDE, columnCount = MAX_GRID_SIDE)
         val bigCells = (0 until 1_000).map { index -> cell(5000L + index, 50, index / MAX_GRID_SIDE, index % MAX_GRID_SIDE, text) }
 
-        assertRefused(RefusalReason.TooLarge) { entries(BackupContent(content.boards + big, cells + bigCells)) }
+        assertRefused(RefusalReason.TooLarge) { entries(content.copy(boards = content.boards + big.copy(profileId = 1), cells = cells + bigCells)) }
     }
 
     @Test
@@ -262,8 +267,8 @@ class BackupArchiveTest {
 
     @Test
     fun `too many boards or cells are refused`() {
-        val boards = (1L..MAX_BOARDS + 1).map { BoardEntity(id = it, name = "b$it", rowCount = 1, columnCount = 1) }
-        assertRefused(RefusalReason.TooLarge) { validate(BackupContent(boards, boards.map { cell(it.id, it.id, 0, 0) })) }
+        val boards = (1L..MAX_BOARDS + 1).map { BoardEntity(id = it, name = "b$it", rowCount = 1, columnCount = 1, profileId = 1) }
+        assertRefused(RefusalReason.TooLarge) { validate(BackupContent(listOf(leo), boards, boards.map { cell(it.id, it.id, 0, 0) })) }
         val manifest = JSONObject(checkNotNull(entries()[MANIFEST_PATH]))
         val paths = manifest.getJSONObject("paths").getJSONObject("boards")
         for (id in 100L..100L + MAX_BOARDS) paths.put(id.toString(), boardPath(id))
@@ -277,5 +282,101 @@ class BackupArchiveTest {
         val pictogram31 = (0 until images.length()).map { images.getJSONObject(it) }.single { it.optLong("ext_papotons_arasaac_id") == 31L }
 
         assertEquals("Sergio Palao", pictogram31.getJSONObject("license").getString("author_name"))
+    }
+
+    @Test
+    fun `every profile comes back with its boards, origins and start board`() {
+        val anna = ProfileEntity(id = 4, name = "Anna", startBoardId = null)
+        val annaHome = BoardEntity(id = 1000, name = "Accueil", rowCount = 2, columnCount = 3, profileId = 4, coreBoardId = 1)
+        val twoProfiles = content.copy(profiles = listOf(leo, anna), boards = content.boards + annaHome, cells = cells + cell(20, 1000, 0, 0, "moi"))
+
+        val restored = restore(entries(twoProfiles))
+
+        assertEquals(twoProfiles.profiles, restored.profiles)
+        assertEquals(twoProfiles.boards.toSet(), restored.boards.toSet())
+        assertEquals(listOf(1L, 1L, 1L, 4L), restored.boards.sortedBy { it.id }.map { it.profileId })
+    }
+
+    @Test
+    fun `a backup from before profiles becomes a single profile`() {
+        val archive = entries().toMutableMap()
+        val manifest = JSONObject(checkNotNull(archive[MANIFEST_PATH])).put("ext_papotons_backup", 1).apply { remove("ext_papotons_profiles") }
+        archive[MANIFEST_PATH] = manifest.toString()
+        for (board in content.boards) {
+            archive[boardPath(board.id)] = JSONObject(checkNotNull(archive[boardPath(board.id)]))
+                .apply { remove("ext_papotons_profile_id"); remove("ext_papotons_core_board_id") }.toString()
+        }
+
+        val restored = restore(archive)
+
+        assertEquals(listOf(ProfileEntity(1, DEFAULT_NAME, startBoardId = null)), restored.profiles)
+        // 7 est visé par un dossier : avant les tailles, c'était un dossier de l'adulte, pas l'accueil moyen.
+        assertEquals(mapOf(1L to 1L, 7L to null, 12L to 12L), restored.boards.associate { it.id to it.coreBoardId })
+        assertTrue(restored.boards.all { it.profileId == 1L })
+    }
+
+    @Test
+    fun `a folder that opens another profile's board is refused`() {
+        val anna = ProfileEntity(id = 2, name = "Anna", startBoardId = null)
+        val annaHome = BoardEntity(id = 1000, name = "Accueil", rowCount = 1, columnCount = 1, profileId = 2, coreBoardId = 1)
+        val crossing = content.copy(profiles = listOf(leo, anna), boards = content.boards + annaHome, cells = cells + cell(20, 1000, 0, 0).copy(linkedBoardId = 7))
+
+        assertRefused(RefusalReason.Invalid) { validate(crossing) }
+    }
+
+    @Test
+    fun `a backup without profile is refused`() {
+        assertRefused(RefusalReason.Invalid) { validate(content.copy(profiles = emptyList())) }
+    }
+
+    @Test
+    fun `a board of a missing profile is refused`() {
+        assertRefused(RefusalReason.Invalid) { validate(content.copy(boards = listOf(home, food, unreachable.copy(profileId = 3)))) }
+        // Format 2 sans `ext_papotons_profile_id` : la grille arrive sans utilisateur.
+        assertRefused(RefusalReason.Invalid) { validate(content.copy(boards = listOf(home, food, unreachable.copy(profileId = 0)))) }
+    }
+
+    @Test
+    fun `a profile without boards is refused, it could never be opened`() {
+        assertRefused(RefusalReason.Invalid) { validate(content.copy(profiles = listOf(leo, ProfileEntity(2, "Anna", null)))) }
+    }
+
+    @Test
+    fun `a profile name must be filled and not too long`() {
+        assertRefused(RefusalReason.Invalid) { validate(content.copy(profiles = listOf(leo.copy(name = " ")))) }
+        assertRefused(RefusalReason.Invalid) { validate(content.copy(profiles = listOf(leo.copy(name = "x".repeat(MAX_PROFILE_NAME_LENGTH + 1))))) }
+        validate(content.copy(profiles = listOf(leo.copy(name = "x".repeat(MAX_PROFILE_NAME_LENGTH)))))
+    }
+
+    @Test
+    fun `profile ids are unique`() {
+        assertRefused(RefusalReason.Invalid) { validate(content.copy(profiles = listOf(leo, leo))) }
+    }
+
+    @Test
+    fun `the largest number of profiles passes, one more is refused`() {
+        fun withProfiles(count: Int): BackupContent {
+            val profiles = (1L..count).map { ProfileEntity(it, "p$it", startBoardId = null) }
+            val boards = profiles.map { BoardEntity(id = it.id, name = "b", rowCount = 1, columnCount = 1, profileId = it.id) }
+            return BackupContent(profiles, boards, emptyList())
+        }
+
+        validate(withProfiles(MAX_PROFILES))
+        assertRefused(RefusalReason.TooLarge) { validate(withProfiles(MAX_PROFILES + 1)) }
+    }
+
+    @Test
+    fun `the root for other readers is the home of the first profile`() {
+        // Le premier utilisateur (id 1) a son accueil à 1001 ; la grille 1 est l'accueil d'un autre.
+        val first = ProfileEntity(id = 1, name = "Léo", startBoardId = null)
+        val second = ProfileEntity(id = 4, name = "Anna", startBoardId = null)
+        val boards = listOf(
+            BoardEntity(id = 1, name = "Accueil", rowCount = 1, columnCount = 1, profileId = 4, coreBoardId = 1),
+            BoardEntity(id = 1001, name = "Accueil", rowCount = 1, columnCount = 1, profileId = 1, coreBoardId = 1),
+        )
+
+        val manifest = JSONObject(checkNotNull(entries(BackupContent(listOf(second, first), boards, emptyList()))[MANIFEST_PATH]))
+
+        assertEquals("boards/1001.obf", manifest.getString("root"))
     }
 }

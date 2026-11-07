@@ -5,6 +5,8 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.wobblebot.papotons.data.PapotonsDatabase
+import com.wobblebot.papotons.data.profile.ProfileEntity
+import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -16,14 +18,16 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
+private val LEO = ProfileEntity(id = 1, name = "Léo", startBoardId = null)
+
 /** Ce que le DAO factice des tests JVM ne sait pas faire : index, clés étrangères, conflits. */
 @RunWith(AndroidJUnit4::class)
 class BoardDaoTest {
     private lateinit var database: PapotonsDatabase
     private lateinit var boardDao: BoardDao
 
-    private val home = BoardEntity(id = 1, name = "home", rowCount = 2, columnCount = 2)
-    private val folderBoard = BoardEntity(id = 2, name = "folder", rowCount = 1, columnCount = 1)
+    private val home = BoardEntity(id = 1, name = "home", rowCount = 2, columnCount = 2, profileId = 1)
+    private val folderBoard = BoardEntity(id = 2, name = "folder", rowCount = 1, columnCount = 1, profileId = 1)
 
     private fun word(row: Int, column: Int, label: String) =
         CellEntity(boardId = home.id, row = row, column = column, label = label, linkedBoardId = null, pictogramId = null, category = null)
@@ -35,6 +39,8 @@ class BoardDaoTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         database = Room.inMemoryDatabaseBuilder(context, PapotonsDatabase::class.java).build()
         boardDao = database.boardDao()
+        // Toute grille vise un utilisateur (clé étrangère) : celui des grilles de ces tests.
+        runBlocking { boardDao.insertProfile(LEO) }
     }
 
     @After
@@ -44,8 +50,8 @@ class BoardDaoTest {
 
     @Test
     fun seedingFillsAnEmptyDatabaseOnlyOnce() = runBlocking {
-        assertTrue(boardDao.seedIfEmpty(listOf(home, folderBoard), listOf(word(0, 0, "je"), folder)))
-        assertFalse(boardDao.seedIfEmpty(listOf(home.copy(id = 3)), emptyList()))
+        assertTrue(boardDao.seedIfEmpty(VocabularySeed(listOf(home, folderBoard), listOf(word(0, 0, "je"), folder)), "Léo"))
+        assertFalse(boardDao.seedIfEmpty(VocabularySeed(listOf(home.copy(id = 3)), emptyList()), "Léo"))
 
         val stored = checkNotNull(boardDao.observeBoard(home.id).first())
         assertEquals(setOf("je", "folder"), stored.cells.map { it.label }.toSet())
@@ -55,11 +61,11 @@ class BoardDaoTest {
     @Test
     fun aFailedSeedLeavesNothingBehindAndCanBeRetried() = runBlocking {
         assertThrows(SQLiteConstraintException::class.java) {
-            runBlocking { boardDao.seedIfEmpty(listOf(home), listOf(word(0, 0, "a"), word(0, 0, "b"))) }
+            runBlocking { boardDao.seedIfEmpty(VocabularySeed(listOf(home), listOf(word(0, 0, "a"), word(0, 0, "b"))), "Léo") }
         }
 
         assertEquals(0, boardDao.countBoards())
-        assertTrue(boardDao.seedIfEmpty(listOf(home), listOf(word(0, 0, "a"))))
+        assertTrue(boardDao.seedIfEmpty(VocabularySeed(listOf(home), listOf(word(0, 0, "a"))), "Léo"))
     }
 
     @Test
@@ -110,7 +116,7 @@ class BoardDaoTest {
     fun deletingANestedFolderRemovesItsWholeSubtreeWhateverTheIdOrder() = runBlocking {
         // Accueil → A (id 9) → B (id 3) → C (id 7) : un enfant d'id plus petit que son parent ferait
         // échouer RESTRICT si les grilles partaient avant ce qui les vise.
-        val boards = listOf(home, BoardEntity(9, "A", 1, 2), BoardEntity(3, "B", 1, 2), BoardEntity(7, "C", 1, 1))
+        val boards = listOf(home, BoardEntity(9, "A", 1, 2, profileId = 1), BoardEntity(3, "B", 1, 2, profileId = 1), BoardEntity(7, "C", 1, 1, profileId = 1))
         fun link(boardId: Long, column: Int, target: Long) =
             CellEntity(boardId = boardId, row = 0, column = column, label = "to$target", linkedBoardId = target, pictogramId = null, category = null)
         boardDao.insertAll(boards, listOf(link(1, 0, 9), link(9, 0, 3), link(3, 0, 7), word(1, 0, "reste")))
@@ -125,7 +131,7 @@ class BoardDaoTest {
     @Test
     fun aBoardStillLinkedElsewhereAndACycleSurviveAFolderDeletion() = runBlocking {
         // A et B se visent l'un l'autre (cycle) ; S est visée par A et par l'accueil.
-        val boards = listOf(home, BoardEntity(2, "A", 1, 3), BoardEntity(3, "B", 1, 1), BoardEntity(4, "S", 1, 1))
+        val boards = listOf(home, BoardEntity(2, "A", 1, 3, profileId = 1), BoardEntity(3, "B", 1, 1, profileId = 1), BoardEntity(4, "S", 1, 1, profileId = 1))
         fun link(boardId: Long, column: Int, target: Long) =
             CellEntity(boardId = boardId, row = 0, column = column, label = "to$target", linkedBoardId = target, pictogramId = null, category = null)
         boardDao.insertAll(boards, listOf(link(1, 0, 2), link(1, 1, 4), link(2, 0, 3), link(2, 1, 4), link(3, 0, 2)))
@@ -170,7 +176,7 @@ class BoardDaoTest {
 
     @Test
     fun deletingAFolderGivesBackThePhotosOfTheCellsItTook() = runBlocking {
-        val boards = listOf(home, BoardEntity(9, "A", 1, 2))
+        val boards = listOf(home, BoardEntity(9, "A", 1, 2, profileId = 1))
         val folderCell = CellEntity(boardId = 1, row = 0, column = 0, label = "A", linkedBoardId = 9, pictogramId = null, category = null, photoFile = "dossier.jpg")
         val inside = CellEntity(boardId = 9, row = 0, column = 0, label = "Mamie", linkedBoardId = null, pictogramId = null, category = null, photoFile = "mamie.jpg")
         val stays = CellEntity(boardId = 1, row = 0, column = 1, label = "Papi", linkedBoardId = null, pictogramId = null, category = null, photoFile = "papi.jpg")
@@ -205,7 +211,7 @@ class BoardDaoTest {
         boardDao.insertAll(listOf(home, folderBoard), listOf(word(0, 0, "je"), folder))
 
         assertThrows(SQLiteConstraintException::class.java) {
-            runBlocking { boardDao.replaceAll(listOf(home.copy(name = "new")), listOf(word(0, 0, "a"), word(0, 0, "b"))) }
+            runBlocking { boardDao.replaceAll(listOf(LEO), listOf(home.copy(name = "new")), listOf(word(0, 0, "a"), word(0, 0, "b"))) }
         }
 
         assertEquals(listOf("home", "folder"), boardDao.allBoards().map { it.name })
@@ -216,9 +222,92 @@ class BoardDaoTest {
     fun aReplacementRemovesEveryOldBoardAndCell() = runBlocking {
         boardDao.insertAll(listOf(home, folderBoard), listOf(word(0, 0, "je"), folder))
 
-        boardDao.replaceAll(listOf(home.copy(name = "new")), listOf(word(1, 1, "a")))
+        boardDao.replaceAll(listOf(LEO), listOf(home.copy(name = "new")), listOf(word(1, 1, "a")))
 
         assertEquals(listOf(home.copy(name = "new")), boardDao.allBoards())
         assertEquals(listOf("a"), boardDao.allCells().map { it.label })
+    }
+
+    @Test
+    fun aBoardWithoutAProfileIsRefused() {
+        assertThrows(SQLiteConstraintException::class.java) {
+            runBlocking { boardDao.insertAll(listOf(BoardEntity(id = 5, name = "orphan", rowCount = 1, columnCount = 1)), emptyList()) }
+        }
+    }
+
+    /** Le RESTRICT réel des dossiers imbriqués : les cases d'abord, puis les grilles, puis l'utilisateur ; l'autre reste. */
+    @Test
+    fun aProfileIsCreatedWithItsVocabularyAndDeletedWithAllItsBoards() = runBlocking {
+        val seed = CoreVocabulary.build { "label$it" }
+        assertTrue(boardDao.seedIfEmpty(seed, "Léo"))
+        val leoBoards = boardDao.allBoards()
+
+        val anna = boardDao.insertProfileWithCoreVocabulary("Anna", seed)
+        val annaHome = checkNotNull(boardDao.startBoardCopyOf(anna, HOME_BOARD_ID))
+        val nested = boardDao.insertFolder(BoardEntity(name = "dossier", rowCount = 1, columnCount = 1), word(6, 7, "dossier").copy(boardId = annaHome))
+        boardDao.insertFolder(BoardEntity(name = "dedans", rowCount = 1, columnCount = 1), word(0, 0, "dedans").copy(boardId = nested))
+        assertEquals(anna, boardDao.profileOf(nested))
+
+        boardDao.insertCell(word(6, 7, "Papi").copy(boardId = HOME_BOARD_ID, photoFile = "leo.jpg"))
+        boardDao.insertCell(word(6, 6, "Mamie").copy(boardId = annaHome, photoFile = "anna.jpg"))
+        val leoCells = boardDao.allCells().filter { cell -> leoBoards.any { it.id == cell.boardId } }
+
+        val deleted = boardDao.deleteProfile(anna)
+
+        assertEquals(seed.boards.size + 2, deleted.boardCount)
+        assertEquals(listOf("anna.jpg"), deleted.photoFiles)
+        assertEquals(leoBoards, boardDao.allBoards())
+        assertEquals(leoCells, boardDao.allCells())
+        assertThrows(LastProfileException::class.java) { runBlocking { boardDao.deleteProfile(LEO.id) } }
+        assertEquals(listOf(LEO.id), boardDao.allProfiles().map { it.id })
+    }
+
+    /** Chaque requête par utilisateur ne regarde que ses grilles : le SQL réel, que le DAO factice imite. */
+    @Test
+    fun startBoardQueriesStayWithinTheProfile() = runBlocking {
+        val seed = CoreVocabulary.build { "label$it" }
+        boardDao.seedIfEmpty(seed, "Léo")
+        val anna = boardDao.insertProfileWithCoreVocabulary("Anna", seed)
+        val annaMedium = checkNotNull(boardDao.startBoardCopyOf(anna, 7))
+
+        assertTrue(annaMedium >= FIRST_USER_BOARD_ID)
+        assertEquals(7L, boardDao.startBoardCopyOf(LEO.id, 7))
+        assertTrue(boardDao.isStartBoardOf(annaMedium, anna))
+        assertFalse(boardDao.isStartBoardOf(7, anna))
+        assertFalse(boardDao.isStartBoardOf(annaMedium, LEO.id))
+        assertEquals(setOf(7L, 13L, annaMedium, checkNotNull(boardDao.startBoardCopyOf(anna, 13))), boardDao.copiesOf(setOf(7L, 13L)).toSet())
+        assertEquals(anna, boardDao.smallestOtherProfileWithBoards(LEO.id))
+    }
+
+    @Test
+    fun aBoardOpenedByAFolderIsNeverAStartBoard() = runBlocking {
+        boardDao.insertAll(listOf(home, folderBoard), listOf(folder))
+
+        assertTrue(boardDao.isStartBoardOf(home.id, LEO.id))
+        assertFalse(boardDao.isStartBoardOf(folderBoard.id, LEO.id))
+    }
+
+    /** Ensemble ou pas du tout : un utilisateur sans grille ne s'ouvrirait jamais et bloquerait l'export. */
+    @Test
+    fun aProfileWhoseVocabularyFailsIsNotCreated() = runBlocking {
+        boardDao.insertAll(listOf(home), emptyList())
+        val clashing = VocabularySeed(listOf(home), listOf(word(0, 0, "a"), word(0, 0, "b")))
+
+        assertThrows(SQLiteConstraintException::class.java) {
+            runBlocking { boardDao.insertProfileWithCoreVocabulary("Anna", clashing) }
+        }
+
+        assertEquals(listOf(LEO), boardDao.allProfiles())
+        assertEquals(listOf(home), boardDao.allBoards())
+    }
+
+    @Test
+    fun reseedingRemovesOnlyTheProfilesLeftWithoutBoards() = runBlocking {
+        boardDao.insertProfile(ProfileEntity(id = 5, name = "Anna", startBoardId = null))
+
+        assertTrue(boardDao.seedIfEmpty(VocabularySeed(listOf(home), listOf(word(0, 0, "je"))), "Léo"))
+
+        assertEquals(listOf(LEO), boardDao.allProfiles())
+        assertTrue(boardDao.allBoards().all { it.profileId == LEO.id })
     }
 }

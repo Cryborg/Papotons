@@ -39,8 +39,10 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.BoardSize
-import com.wobblebot.papotons.ui.board.SettingFailure
+import com.wobblebot.papotons.domain.Profile
 import com.wobblebot.papotons.ui.about.AboutDialog
+import com.wobblebot.papotons.ui.board.SettingFailure
+import kotlinx.collections.immutable.persistentListOf
 
 private val SETTINGS_PADDING = 16.dp
 private val SECTION_SPACING = 8.dp
@@ -55,6 +57,8 @@ fun SettingsDialog(
     /** La taille de la grille ouverte, `null` pour un écran qui n'est l'accueil d'aucune taille. */
     boardSize: BoardSize?,
     settingFailure: SettingFailure?,
+    profiles: ProfilesUiState,
+    profileActions: ProfileActions,
     onBoardSizeChosen: (BoardSize) -> Unit,
     onEditBoards: () -> Unit,
     onBackup: () -> Unit,
@@ -97,9 +101,12 @@ fun SettingsDialog(
                         .padding(SETTINGS_PADDING),
                     verticalArrangement = Arrangement.spacedBy(SECTION_SPACING),
                 ) {
+                    ProfilesSection(profiles, profileActions, SETTINGS_PADDING)
+                    HorizontalDivider()
                     SettingsEntry(R.string.edit_open, R.string.settings_edit_description, onEditBoards)
                     HorizontalDivider()
-                    BoardSizeChoice(boardSize, settingFailure, onBoardSizeChosen)
+                    val openProfileName = profiles.profiles.firstOrNull { it.id == profiles.openProfileId }?.name
+                    BoardSizeChoice(boardSize, openProfileName, settingFailure, onBoardSizeChosen)
                     HorizontalDivider()
                     SettingsEntry(R.string.backup_open, R.string.settings_backup_description, onBackup)
                     HorizontalDivider()
@@ -141,10 +148,11 @@ private val BoardSize.description: Int
 
 /** Appliquée dès l'appui : la grille de la taille choisie s'ouvre derrière les Réglages. */
 @Composable
-private fun BoardSizeChoice(current: BoardSize?, failure: SettingFailure?, onChosen: (BoardSize) -> Unit) {
+private fun BoardSizeChoice(current: BoardSize?, profileName: String?, failure: SettingFailure?, onChosen: (BoardSize) -> Unit) {
     Column(modifier = Modifier.selectableGroup()) {
         Text(
-            text = stringResource(R.string.settings_board_size),
+            // Elle ne vaut que pour l'utilisateur ouvert.
+            text = if (profileName != null) stringResource(R.string.settings_board_size_of, profileName) else stringResource(R.string.settings_board_size),
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier
                 .padding(horizontal = SETTINGS_PADDING)
@@ -187,6 +195,8 @@ private fun SettingsDialogPreview() {
     SettingsDialog(
         boardSize = BoardSize.STANDARD,
         settingFailure = null,
+        profiles = ProfilesUiState(persistentListOf(Profile(1, "Léo"), Profile(2, "Anna")), openProfileId = 1),
+        profileActions = ProfileActions(onChosen = {}, onCreate = {}, onRename = { _, _ -> }, onDelete = {}),
         onBoardSizeChosen = {},
         onEditBoards = {},
         onBackup = {},

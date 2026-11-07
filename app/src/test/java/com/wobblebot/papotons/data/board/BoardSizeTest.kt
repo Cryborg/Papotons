@@ -1,31 +1,25 @@
 package com.wobblebot.papotons.data.board
 
 import android.content.Context
-import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.core.mutablePreferencesOf
 import com.wobblebot.papotons.data.FakePreferences
+import com.wobblebot.papotons.data.profile.FIRST_PROFILE_ID
+import com.wobblebot.papotons.data.profile.ProfileEntity
 import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.CellContent
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.IOException
 
-/** Copie de la clé privée du dépôt : un renommage perdrait le choix de tous les utilisateurs. */
-private val START_BOARD_ID = longPreferencesKey("start_board_id")
-
-/** Les tailles de cases (MVP-8) côté données : écran de départ, dossiers de l'adulte. */
+/** Les tailles de cases (MVP-8) côté données : écran de départ par utilisateur, dossiers de l'adulte. */
 class BoardSizeTest {
     @get:Rule
     val folder = TemporaryFolder()
@@ -35,50 +29,32 @@ class BoardSizeTest {
         every { filesDir } answers { folder.root }
     }
 
-    private fun seededDao(): FakeBoardDao {
+    private fun seededDao(startBoardId: Long? = null): FakeBoardDao {
         val seed = CoreVocabulary.build { "label$it" }
-        return FakeBoardDao(seed.boards, seed.cells)
+        return FakeBoardDao(seed.boards, seed.cells, listOf(ProfileEntity(FIRST_PROFILE_ID, "Léo", startBoardId)))
     }
 
     @Test
     fun `the launch opens the home of the chosen size`() = runTest {
-        val preferences = FakePreferences(mutablePreferencesOf(START_BOARD_ID to BoardSize.LARGE_CELLS.homeBoardId))
+        val dao = seededDao(startBoardId = BoardSize.LARGE_CELLS.homeBoardId)
 
-        assertEquals(BoardSize.LARGE_CELLS.homeBoardId, BoardRepository(seededDao(), preferences, context).ensureHomeBoard())
+        assertEquals(BoardSize.LARGE_CELLS.homeBoardId, BoardRepository(dao, FakePreferences(), context).ensureHomeBoard())
     }
 
     @Test
-    fun `an unreadable choice opens the standard home instead of crashing`() = runTest {
-        val preferences = FakePreferences(mutablePreferencesOf(START_BOARD_ID to BoardSize.MEDIUM.homeBoardId))
-        val repository = BoardRepository(seededDao(), preferences, context)
-        repository.ensureHomeBoard()
+    fun `unreadable preferences still open the chosen start board`() = runTest {
+        val preferences = FakePreferences().apply { readFailure = IOException("unreadable") }
+        val dao = seededDao(startBoardId = BoardSize.MEDIUM.homeBoardId)
 
-        preferences.readFailure = IOException("unreadable")
-
-        assertEquals(HOME_BOARD_ID, repository.ensureHomeBoard())
-        // Lue de nouveau, la préférence n'a pas été écrasée par le repli.
-        preferences.readFailure = null
-        assertEquals(BoardSize.MEDIUM.homeBoardId, repository.ensureHomeBoard())
+        assertEquals(BoardSize.MEDIUM.homeBoardId, BoardRepository(dao, preferences, context).ensureHomeBoard())
     }
 
-    /** Grilles restaurées sans cet accueil : repli, et le choix est oublié pour ne pas revenir plus tard. */
+    /** Grilles restaurées sans cet accueil : repli sur l'accueil standard, sans plantage. */
     @Test
-    fun `a choice whose home is gone opens the standard home and is forgotten`() = runTest {
-        val preferences = FakePreferences(mutablePreferencesOf(START_BOARD_ID to BoardSize.LARGE_CELLS.homeBoardId))
-        val dao = FakeBoardDao(listOf(BoardEntity(HOME_BOARD_ID, "home", 2, 2)))
+    fun `a choice whose home is gone opens the standard home`() = runTest {
+        val dao = FakeBoardDao(listOf(BoardEntity(HOME_BOARD_ID, "home", 2, 2)), profiles = listOf(ProfileEntity(FIRST_PROFILE_ID, "Léo", startBoardId = 13)))
 
-        assertEquals(HOME_BOARD_ID, BoardRepository(dao, preferences, context).ensureHomeBoard())
-        assertNull(preferences.current[START_BOARD_ID])
-    }
-
-    /** L'oubli est au mieux : s'il ne s'écrit pas, on parle quand même, sans plantage à chaque lancement. */
-    @Test
-    fun `a choice that cannot be forgotten still opens the standard home`() = runTest {
-        val preferences = FakePreferences(mutablePreferencesOf(START_BOARD_ID to BoardSize.LARGE_CELLS.homeBoardId))
-        preferences.writeFailure = IOException("read only")
-        val dao = FakeBoardDao(listOf(BoardEntity(HOME_BOARD_ID, "home", 2, 2)))
-
-        assertEquals(HOME_BOARD_ID, BoardRepository(dao, preferences, context).ensureHomeBoard())
+        assertEquals(HOME_BOARD_ID, BoardRepository(dao, FakePreferences(), context).ensureHomeBoard())
     }
 
     /** Base d'avant les tailles : l'id 7 y est un dossier de l'adulte, pas un accueil. */
@@ -91,20 +67,21 @@ class BoardSizeTest {
         val repository = BoardRepository(dao, FakePreferences(), context)
         repository.ensureHomeBoard()
 
-        assertFalse(repository.setStartBoard(BoardSize.MEDIUM))
+        assertNull(repository.setStartBoard(BoardSize.MEDIUM))
         assertEquals(HOME_BOARD_ID, repository.ensureHomeBoard())
     }
 
     @Test
-    fun `a choice that cannot be written changes nothing and says so`() = runTest {
-        val preferences = FakePreferences()
-        val repository = BoardRepository(seededDao(), preferences, context)
+    fun `a chosen size is kept on the open profile and goes into the backup`() = runTest {
+        val dao = seededDao()
+        val repository = BoardRepository(dao, FakePreferences(), context)
         repository.ensureHomeBoard()
-        preferences.writeFailure = IOException("disk full")
 
-        assertThrows(IOException::class.java) { runBlocking { repository.setStartBoard(BoardSize.MEDIUM) } }
-        preferences.writeFailure = null
-        assertEquals(HOME_BOARD_ID, repository.ensureHomeBoard())
+        assertEquals(BoardSize.MEDIUM.homeBoardId, repository.setStartBoard(BoardSize.MEDIUM))
+
+        assertEquals(BoardSize.MEDIUM.homeBoardId, dao.profiles.value.single().startBoardId)
+        assertEquals(BoardSize.MEDIUM.homeBoardId, repository.ensureHomeBoard())
+        assertTrue(repository.observeUnsavedChanges().first())
     }
 
     @Test
@@ -130,7 +107,7 @@ class BoardSizeTest {
         assertEquals(listOf(1000L, 1001L, 1002L), dao.cells.value.sortedBy { it.column }.map { it.linkedBoardId })
 
         // Une base restaurée peut déjà dépasser la réserve.
-        dao.boards.value += BoardEntity(1500, "restored", 1, 1)
+        dao.boards.value += BoardEntity(1500, "restored", 1, 1, profileId = FIRST_PROFILE_ID)
         repository.addFolder(HOME_BOARD_ID, 1, 0, CellContent("next", null, null, null, null), BoardSize.STANDARD)
         assertEquals(1501L, dao.cells.value.single { it.label == "next" }.linkedBoardId)
     }
@@ -143,8 +120,11 @@ class BoardSizeTest {
     @Test
     fun `deleting a folder never deletes the home of a size`() = runTest {
         for (size in BoardSize.entries) {
+            // Accueils posés explicitement : sinon la commodité du faux DAO prendrait un 7 visé pour un dossier.
+            val sizeHome = BoardEntity(size.homeBoardId, "size home", 1, 1, profileId = FIRST_PROFILE_ID, coreBoardId = size.homeBoardId)
             val dao = FakeBoardDao(
-                listOf(BoardEntity(HOME_BOARD_ID, "home", 2, 2)) + listOfNotNull(BoardEntity(size.homeBoardId, "size home", 1, 1).takeIf { size != BoardSize.STANDARD }) + BoardEntity(500, "other", 1, 1),
+                listOf(BoardEntity(HOME_BOARD_ID, "home", 2, 2, profileId = FIRST_PROFILE_ID, coreBoardId = HOME_BOARD_ID)) +
+                    listOfNotNull(sizeHome.takeIf { size != BoardSize.STANDARD }) + BoardEntity(500, "other", 1, 1),
                 listOf(CellEntity(id = 1, boardId = 500, row = 0, column = 0, label = "door", linkedBoardId = size.homeBoardId, pictogramId = null, category = null)),
             )
             val repository = BoardRepository(dao, FakePreferences(), context)

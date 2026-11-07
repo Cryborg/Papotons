@@ -1,12 +1,19 @@
 package com.wobblebot.papotons.data.board
 
 import android.database.sqlite.SQLiteException
+import android.util.Log
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import com.wobblebot.papotons.data.backup.MAX_BOARDS
+import com.wobblebot.papotons.data.profile.FIRST_PROFILE_ID
+import com.wobblebot.papotons.data.profile.MAX_PROFILES
+import com.wobblebot.papotons.data.profile.ProfileEntity
 import kotlinx.coroutines.flow.Flow
+
+private const val TAG = "BoardDao"
 
 /** Ce qu'une suppression a emporté : les photos de ses cases n'ont plus de raison d'exister. */
 data class DeletedCells(val boardCount: Int, val photoFiles: List<String>)
@@ -21,10 +28,26 @@ class CellNotFoundException(cellId: Long) : SQLiteException("Cell $cellId not fo
 class CellChangedException(cellId: Long) : SQLiteException("Cell $cellId changed since it was read")
 
 /**
- * Les grilles créées par l'adulte commencent ici : 1 à 999 restent au vocabulaire de base, qui peut
- * encore ajouter des grilles à id fixe après les premières installations.
+ * Les grilles créées par l'adulte, et les copies du vocabulaire de base des utilisateurs ajoutés,
+ * commencent ici : 1 à 999 restent aux ids de `CoreVocabulary` (la copie de la graine ou de la
+ * migration), qui peut encore ajouter des grilles à id fixe après les premières installations.
  */
 const val FIRST_USER_BOARD_ID = 1000L
+
+/** Supprimer le dernier utilisateur qui a des grilles viderait la base : refusé. */
+class LastProfileException(profileId: Long) : SQLiteException("Profile $profileId is the last one with boards")
+
+/** L'utilisateur visé a disparu entre la lecture et l'écriture. */
+class ProfileNotFoundException(profileId: Long) : SQLiteException("Profile $profileId not found")
+
+/** Déjà [MAX_PROFILES] utilisateurs, ou trop de grilles : la sauvegarde refuserait le suivant. */
+class TooManyProfilesException : SQLiteException("Too many profiles")
+
+/** La grille parente d'un nouveau dossier a disparu : on ne sait pas à quel utilisateur le rattacher. */
+class BoardNotFoundException(boardId: Long) : SQLiteException("Board $boardId not found")
+
+/** Toute la base, lue d'un coup : une sauvegarde cohérente. */
+data class DatabaseSnapshot(val profiles: List<ProfileEntity>, val boards: List<BoardEntity>, val cells: List<CellEntity>)
 
 /** Les pictos (embarqués ou téléchargés) et les photos visés par les cases, lus d'un coup avec le nombre de grilles. */
 data class ReferencedImages(val boardCount: Int, val pictogramIds: Set<Long>, val photoFiles: Set<String>)
@@ -37,9 +60,6 @@ abstract class BoardDao {
     @Query("SELECT EXISTS(SELECT 1 FROM boards WHERE id = :boardId)")
     abstract suspend fun boardExists(boardId: Long): Boolean
 
-    @Query("SELECT MIN(id) FROM boards")
-    abstract suspend fun smallestBoardId(): Long?
-
     @Query("SELECT MAX(id) FROM boards")
     abstract suspend fun largestBoardId(): Long?
 
@@ -49,12 +69,132 @@ abstract class BoardDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     abstract suspend fun insertAll(boards: List<BoardEntity>, cells: List<CellEntity>)
 
-    /** Insère [boards] et [cells] si aucune grille n'existe encore. Vrai si l'insertion a eu lieu. */
+    /**
+     * Insère [seed] (ids fixes de `CoreVocabulary`) si aucune grille n'existe encore, chez le plus
+     * petit utilisateur, créé sous le nom [defaultProfileName] s'il n'y en a aucun. Vrai si
+     * l'insertion a eu lieu.
+     */
     @Transaction
-    open suspend fun seedIfEmpty(boards: List<BoardEntity>, cells: List<CellEntity>): Boolean {
+    open suspend fun seedIfEmpty(seed: VocabularySeed, defaultProfileName: String): Boolean {
         if (countBoards() > 0) return false
-        insertAll(boards, cells)
+        val profileId = smallestProfileId() ?: insertProfile(ProfileEntity(FIRST_PROFILE_ID, defaultProfileName, startBoardId = null))
+        insertAll(seed.boards.map { it.copy(profileId = profileId, coreBoardId = it.id) }, seed.cells)
+        // Les autres, restés sans grille (base abîmée), ne s'ouvriraient jamais et rendraient l'export impossible.
+        val removed = deleteProfilesWithoutBoards()
+        if (removed > 0) Log.w(TAG, "$removed profiles without boards removed while reseeding")
         return true
+    }
+
+    @Query("DELETE FROM profiles WHERE id NOT IN (SELECT profile_id FROM boards)")
+    abstract suspend fun deleteProfilesWithoutBoards(): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertProfile(profile: ProfileEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertProfiles(profiles: List<ProfileEntity>)
+
+    @Query("SELECT * FROM profiles ORDER BY id")
+    abstract suspend fun allProfiles(): List<ProfileEntity>
+
+    @Query("SELECT * FROM profiles ORDER BY id")
+    abstract fun observeProfiles(): Flow<List<ProfileEntity>>
+
+    @Query("SELECT * FROM profiles WHERE id = :profileId")
+    abstract suspend fun profile(profileId: Long): ProfileEntity?
+
+    @Query("SELECT COUNT(*) FROM profiles")
+    abstract suspend fun countProfiles(): Int
+
+    @Query("SELECT MIN(id) FROM profiles")
+    abstract suspend fun smallestProfileId(): Long?
+
+    @Query("UPDATE profiles SET name = :name WHERE id = :profileId")
+    abstract suspend fun renameProfile(profileId: Long, name: String): Int
+
+    @Query("UPDATE profiles SET start_board_id = :boardId WHERE id = :profileId")
+    abstract suspend fun setStartBoard(profileId: Long, boardId: Long): Int
+
+    @Query("DELETE FROM profiles WHERE id = :profileId")
+    abstract suspend fun deleteProfileRow(profileId: Long): Int
+
+    @Query("SELECT EXISTS(SELECT 1 FROM boards WHERE profile_id = :profileId)")
+    abstract suspend fun hasBoards(profileId: Long): Boolean
+
+    /** Le plus petit utilisateur qui a des grilles. */
+    @Query("SELECT MIN(profile_id) FROM boards")
+    abstract suspend fun smallestProfileWithBoards(): Long?
+
+    /** Le plus petit utilisateur, autre que [profileId], qui a des grilles. */
+    @Query("SELECT MIN(profile_id) FROM boards WHERE profile_id != :profileId")
+    abstract suspend fun smallestOtherProfileWithBoards(profileId: Long): Long?
+
+    @Query("SELECT profile_id FROM boards WHERE id = :boardId")
+    abstract suspend fun profileOf(boardId: Long): Long?
+
+    @Query("SELECT MIN(id) FROM boards WHERE profile_id = :profileId")
+    abstract suspend fun smallestBoardIdOf(profileId: Long): Long?
+
+    /** Un écran de départ de l'utilisateur : une grille à lui qu'aucune case n'ouvre. */
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM boards WHERE id = :boardId AND profile_id = :profileId " +
+            "AND id NOT IN (SELECT linked_board_id FROM cells WHERE linked_board_id IS NOT NULL))"
+    )
+    abstract suspend fun isStartBoardOf(boardId: Long, profileId: Long): Boolean
+
+    /** La copie de la grille [coreBoardId] du vocabulaire de base chez l'utilisateur, si aucune case ne l'ouvre. */
+    @Query(
+        "SELECT id FROM boards WHERE profile_id = :profileId AND core_board_id = :coreBoardId " +
+            "AND id NOT IN (SELECT linked_board_id FROM cells WHERE linked_board_id IS NOT NULL) ORDER BY id LIMIT 1"
+    )
+    abstract suspend fun startBoardCopyOf(profileId: Long, coreBoardId: Long): Long?
+
+    /** Les grilles, de tous les utilisateurs, copies de [coreBoardIds]. */
+    @Query("SELECT id FROM boards WHERE core_board_id IN (:coreBoardIds)")
+    abstract suspend fun copiesOf(coreBoardIds: Set<Long>): List<Long>
+
+    /** `null` pour une grille de l'adulte ou absente. */
+    @Query("SELECT core_board_id FROM boards WHERE id = :boardId")
+    abstract fun observeCoreBoardId(boardId: Long): Flow<Long?>
+
+    /**
+     * Un nouvel utilisateur et sa copie du vocabulaire de base ([seed], ids de `CoreVocabulary`),
+     * ensemble ou pas du tout ; jamais au-delà de [MAX_PROFILES]. Rend son id.
+     */
+    @Transaction
+    open suspend fun insertProfileWithCoreVocabulary(name: String, seed: VocabularySeed): Long {
+        // Au-delà, la sauvegarde refuserait la base : l'export doit rester possible (invariant 4).
+        if (countProfiles() >= MAX_PROFILES || countBoards() + seed.boards.size > MAX_BOARDS) throw TooManyProfilesException()
+        val profileId = insertProfile(ProfileEntity(name = name, startBoardId = null))
+        val firstBoardId = maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID)
+        val copy = seed.forProfile(profileId, firstBoardId)
+        insertAll(copy.boards, copy.cells)
+        return profileId
+    }
+
+    @Query("SELECT photo_file FROM cells WHERE photo_file IS NOT NULL AND board_id IN (SELECT id FROM boards WHERE profile_id = :profileId)")
+    abstract suspend fun photoFilesOfProfile(profileId: Long): List<String>
+
+    @Query("DELETE FROM cells WHERE board_id IN (SELECT id FROM boards WHERE profile_id = :profileId)")
+    abstract suspend fun deleteCellsOfProfile(profileId: Long): Int
+
+    @Query("DELETE FROM boards WHERE profile_id = :profileId")
+    abstract suspend fun deleteBoardsOfProfile(profileId: Long): Int
+
+    /**
+     * Un utilisateur et toutes ses grilles, ensemble ou pas du tout ; jamais le dernier qui a des
+     * grilles (la base se viderait, et passerait pour perdue au lancement suivant). Ses cases
+     * d'abord : un dossier vise sa grille en RESTRICT, et aucun dossier ne vise la grille d'un autre
+     * utilisateur. Rend les grilles supprimées et les photos de ses cases, à effacer ensuite.
+     */
+    @Transaction
+    open suspend fun deleteProfile(profileId: Long): DeletedCells {
+        if (smallestOtherProfileWithBoards(profileId) == null) throw LastProfileException(profileId)
+        val photoFiles = photoFilesOfProfile(profileId)
+        deleteCellsOfProfile(profileId)
+        val boardCount = deleteBoardsOfProfile(profileId)
+        deleteProfileRow(profileId)
+        return DeletedCells(boardCount = boardCount, photoFiles = photoFiles)
     }
 
     @Query("SELECT * FROM boards ORDER BY id")
@@ -63,9 +203,9 @@ abstract class BoardDao {
     @Query("SELECT * FROM cells ORDER BY board_id, grid_row, grid_column")
     abstract suspend fun allCells(): List<CellEntity>
 
-    /** Toutes les grilles et toutes les cases, lues ensemble : une sauvegarde cohérente. */
+    /** Tous les utilisateurs, toutes les grilles et toutes les cases, lus ensemble. */
     @Transaction
-    open suspend fun snapshot(): Pair<List<BoardEntity>, List<CellEntity>> = allBoards() to allCells()
+    open suspend fun snapshot(): DatabaseSnapshot = DatabaseSnapshot(allProfiles(), allBoards(), allCells())
 
     @Query("DELETE FROM cells")
     abstract suspend fun deleteAllCells()
@@ -73,14 +213,20 @@ abstract class BoardDao {
     @Query("DELETE FROM boards")
     abstract suspend fun deleteAllBoards()
 
+    @Query("DELETE FROM profiles")
+    abstract suspend fun deleteAllProfiles()
+
     /**
      * Remplace toute la base, ensemble ou pas du tout : une restauration qui échoue laisse les grilles
-     * d'avant. Les cases d'abord : un dossier vise sa grille en RESTRICT.
+     * d'avant. Les cases d'abord (un dossier vise sa grille en RESTRICT), puis les grilles (elles
+     * visent leur utilisateur en RESTRICT) ; à l'insertion, l'ordre inverse.
      */
     @Transaction
-    open suspend fun replaceAll(boards: List<BoardEntity>, cells: List<CellEntity>) {
+    open suspend fun replaceAll(profiles: List<ProfileEntity>, boards: List<BoardEntity>, cells: List<CellEntity>) {
         deleteAllCells()
         deleteAllBoards()
+        deleteAllProfiles()
+        insertProfiles(profiles)
         insertAll(boards, cells)
     }
 
@@ -161,11 +307,15 @@ abstract class BoardDao {
 
     /**
      * Une nouvelle grille et la case-dossier qui l'ouvre, ensemble ou pas du tout. Rend l'id de la
-     * grille, jamais sous [FIRST_USER_BOARD_ID].
+     * grille, jamais sous [FIRST_USER_BOARD_ID]. La grille appartient à l'utilisateur de la grille qui
+     * porte la case, lu ici, jamais à l'utilisateur ouvert : un dossier ne relie jamais deux
+     * utilisateurs (la sauvegarde le refuserait), même écrit pendant un changement d'utilisateur.
      */
     @Transaction
     open suspend fun insertFolder(board: BoardEntity, folderCell: CellEntity): Long {
-        val boardId = insertBoard(board.copy(id = maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID)))
+        val profileId = profileOf(folderCell.boardId) ?: throw BoardNotFoundException(folderCell.boardId)
+        val newId = maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID)
+        val boardId = insertBoard(board.copy(id = newId, profileId = profileId, coreBoardId = null))
         insertCell(folderCell.copy(linkedBoardId = boardId))
         return boardId
     }

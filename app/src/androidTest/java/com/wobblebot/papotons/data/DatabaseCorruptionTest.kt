@@ -3,6 +3,7 @@ package com.wobblebot.papotons.data
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.wobblebot.papotons.data.board.BoardEntity
+import com.wobblebot.papotons.data.profile.ProfileEntity
 import com.wobblebot.papotons.data.board.BoardWithCells
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -38,7 +39,10 @@ class DatabaseCorruptionTest {
     @Test
     fun aCorruptedDatabaseIsCopiedBeforeBeingReplaced() {
         buildDatabase(context, DATABASE_NAME).apply {
-            runBlocking { boardDao().insertAll(listOf(BoardEntity(id = 1, name = "home", rowCount = 1, columnCount = 1)), emptyList()) }
+            runBlocking {
+                boardDao().insertProfile(ProfileEntity(id = 1, name = "Léo", startBoardId = null))
+                boardDao().insertAll(listOf(BoardEntity(id = 1, name = "home", rowCount = 1, columnCount = 1, profileId = 1)), emptyList())
+            }
             close()
         }
         val databaseFile = context.getDatabasePath(DATABASE_NAME)
@@ -87,7 +91,8 @@ class DatabaseCorruptionTest {
                 val collector = launch(Dispatchers.Default) { database.boardDao().observeBoard(1).collect { emissions.send(it) } }
                 assertNull(withTimeout(EMISSION_TIMEOUT_MS) { emissions.receive() })
 
-                database.boardDao().insertAll(listOf(BoardEntity(id = 1, name = "home", rowCount = 1, columnCount = 1)), emptyList())
+                database.boardDao().insertProfile(ProfileEntity(id = 1, name = "Léo", startBoardId = null))
+                database.boardDao().insertAll(listOf(BoardEntity(id = 1, name = "home", rowCount = 1, columnCount = 1, profileId = 1)), emptyList())
 
                 assertNotNull(withTimeout(EMISSION_TIMEOUT_MS) { emissions.receive() })
                 collector.cancel()

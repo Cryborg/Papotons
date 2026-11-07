@@ -11,6 +11,7 @@ import com.wobblebot.papotons.data.backup.BackupStore
 import com.wobblebot.papotons.data.backup.PendingRestore
 import com.wobblebot.papotons.data.backup.RefusalReason
 import com.wobblebot.papotons.data.board.BoardEntity
+import com.wobblebot.papotons.data.profile.ProfileEntity
 import com.wobblebot.papotons.data.board.BoardRepository
 import com.wobblebot.papotons.data.board.CellEntity
 import com.wobblebot.papotons.data.board.FakeBoardDao
@@ -51,7 +52,7 @@ class FakeBackupStore : BackupStore {
     var restoreGate: CompletableDeferred<Unit>? = null
     val pending = PendingRestore(
         "papotons.obz",
-        BackupContent(listOf(BoardEntity(1, "home", 1, 1)), listOf(CellEntity(boardId = 1, row = 0, column = 0, label = "je", linkedBoardId = null, pictogramId = null, category = null))),
+        BackupContent(listOf(ProfileEntity(1, "Léo", null)), listOf(BoardEntity(1, "home", 1, 1, profileId = 1)), listOf(CellEntity(boardId = 1, row = 0, column = 0, label = "je", linkedBoardId = null, pictogramId = null, category = null))),
     )
 
     override suspend fun export(destination: Uri): Int {
@@ -107,6 +108,23 @@ class BackupViewModelTest {
             viewModel.elapsedRealtimeMs = { nowMs }
             backgroundScope.launch { viewModel.uiState.collect {} }
         }
+
+    /** La confirmation de restauration nomme ceux qu'elle remplacerait, à jour. */
+    @Test
+    fun `the current profile names are known and follow changes`() = runTest(dispatcher) {
+        val labels = mockk<Context> {
+            every { getString(any()) } answers { "label${firstArg<Int>()}" }
+            every { filesDir } answers { context.filesDir }
+        }
+        val repository = BoardRepository(FakeBoardDao(), preferences, labels)
+        repository.ensureHomeBoard()
+        repository.renameProfile(1, "Léo")
+        val viewModel = BackupViewModel(store, repository).also { backgroundScope.launch { it.uiState.collect {} } }
+
+        assertEquals(listOf("Léo"), viewModel.uiState.value.currentProfileNames)
+        repository.createProfile("Anna")
+        assertEquals(listOf("Léo", "Anna"), viewModel.uiState.value.currentProfileNames)
+    }
 
     @Test
     fun `a backup saved in time is written and said`() = runTest(dispatcher) {

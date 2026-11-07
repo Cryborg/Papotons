@@ -3,13 +3,22 @@ package com.wobblebot.papotons.data.backup
 import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.board.CellEntity
 import com.wobblebot.papotons.data.photo.CELL_PHOTO_NAME
+import com.wobblebot.papotons.data.profile.FIRST_PROFILE_ID
+import com.wobblebot.papotons.data.profile.MAX_PROFILES
+import com.wobblebot.papotons.data.profile.isValidProfileName
+import com.wobblebot.papotons.data.profile.NO_PROFILE
+import com.wobblebot.papotons.data.profile.ProfileEntity
+import com.wobblebot.papotons.data.profile.legacyCoreBoardId
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 
 /** Version du format de sauvegarde écrite par cette version de l'appli ; une plus récente est refusée. */
-const val BACKUP_FORMAT_VERSION = 1
+const val BACKUP_FORMAT_VERSION = 2
+
+/** Le format d'avant les utilisateurs : toutes ses grilles deviennent celles d'un seul. */
+private const val SINGLE_PROFILE_FORMAT_VERSION = 1
 
 const val MANIFEST_PATH = "manifest.json"
 private const val OPEN_BOARD_FORMAT = "open-board-0.1"
@@ -65,6 +74,10 @@ private const val KEY_CATEGORY = "ext_papotons_word_category"
 private const val KEY_PICTOGRAM_ID = "ext_papotons_pictogram_id"
 private const val KEY_PHOTO = "ext_papotons_photo"
 private const val KEY_ARASAAC_ID = "ext_papotons_arasaac_id"
+private const val KEY_PROFILES = "ext_papotons_profiles"
+private const val KEY_START_BOARD_ID = "ext_papotons_start_board_id"
+private const val KEY_PROFILE_ID = "ext_papotons_profile_id"
+private const val KEY_CORE_BOARD_ID = "ext_papotons_core_board_id"
 
 /** Licence des pictos ARASAAC (invariant 5), sans adresse : aucune URL dans le code (invariant 1, `InvariantsTest`). */
 private val ARASAAC_LICENSE = mapOf(
@@ -73,8 +86,8 @@ private val ARASAAC_LICENSE = mapOf(
     "copyright_notice" to "Pictogrammes ARASAAC, propriété du gouvernement d'Aragon",
 )
 
-/** Toutes les grilles et toutes les cases : ce qu'une sauvegarde porte et ce qu'une restauration remet. */
-data class BackupContent(val boards: List<BoardEntity>, val cells: List<CellEntity>)
+/** Tous les utilisateurs, toutes les grilles et toutes les cases : ce qu'une sauvegarde porte et ce qu'une restauration remet. */
+data class BackupContent(val profiles: List<ProfileEntity>, val boards: List<BoardEntity>, val cells: List<CellEntity>)
 
 /** Pourquoi une sauvegarde est refusée, à l'export comme à la restauration. */
 enum class RefusalReason { NotPapotons, Unreadable, TooLarge, Invalid }
@@ -101,23 +114,40 @@ internal fun refuse(reason: RefusalReason, detail: String): Nothing = throw Back
  * refusée par Papotons.
  */
 fun validate(content: BackupContent) {
-    val (boards, cells) = content
+    val (profiles, boards, cells) = content
     // Sans grille, la base restaurée passerait pour perdue au lancement suivant. Un accueil sans
     // case, lui, existe en base (toutes les cases supprimées) et se sauvegarde.
     if (boards.isEmpty()) refuse(RefusalReason.Invalid, "No board")
+    if (profiles.isEmpty()) refuse(RefusalReason.Invalid, "No profile")
+    if (profiles.size > MAX_PROFILES) refuse(RefusalReason.TooLarge, "${profiles.size} profiles")
     if (boards.size > MAX_BOARDS || cells.size > MAX_CELLS) refuse(RefusalReason.TooLarge, "${boards.size} boards, ${cells.size} cells")
-    val boardIds = HashSet<Long>()
+    val profileIds = HashSet<Long>()
+    for (profile in profiles) {
+        if (profile.id !in 1..MAX_BOARD_ID || !profileIds.add(profile.id)) refuse(RefusalReason.Invalid, "Profile id ${profile.id} out of range or repeated")
+        // Un nom vide ou trop long ne se saisit pas dans l'appli ; l'écran de départ, lui, est revalidé au lancement.
+        if (!isValidProfileName(profile.name)) refuse(RefusalReason.Invalid, "Profile ${profile.id} name")
+    }
+    val profileOfBoard = HashMap<Long, Long>()
     for (board in boards) {
-        if (board.id !in 1..MAX_BOARD_ID || !boardIds.add(board.id)) refuse(RefusalReason.Invalid, "Board id ${board.id} out of range or repeated")
+        if (board.id !in 1..MAX_BOARD_ID || profileOfBoard.containsKey(board.id)) refuse(RefusalReason.Invalid, "Board id ${board.id} out of range or repeated")
+        if (board.profileId !in profileIds) refuse(RefusalReason.Invalid, "Board ${board.id} of missing profile ${board.profileId}")
         if (board.rowCount !in 1..MAX_GRID_SIDE || board.columnCount !in 1..MAX_GRID_SIDE) refuse(RefusalReason.Invalid, "Board ${board.id} size")
         checkLength(board.name, board.id)
+        profileOfBoard[board.id] = board.profileId
     }
+    // Un utilisateur sans grille ne s'ouvrirait jamais, et l'appli n'en produit pas (créé avec son
+    // vocabulaire, supprimé avec ses grilles, en transaction).
+    (profileIds - profileOfBoard.values.toSet()).firstOrNull()?.let { refuse(RefusalReason.Invalid, "Profile $it without boards") }
     val positions = HashSet<Triple<Long, Int, Int>>()
     for (cell in cells) {
-        if (cell.boardId !in boardIds) refuse(RefusalReason.Invalid, "Cell in missing board ${cell.boardId}")
+        val profileId = profileOfBoard[cell.boardId] ?: refuse(RefusalReason.Invalid, "Cell in missing board ${cell.boardId}")
         if (!positions.add(Triple(cell.boardId, cell.row, cell.column))) refuse(RefusalReason.Invalid, "Two cells at one place in board ${cell.boardId}")
         val linked = cell.linkedBoardId
-        if (linked != null && linked !in boardIds) refuse(RefusalReason.Invalid, "Folder in board ${cell.boardId} opens missing board $linked")
+        if (linked != null) {
+            val linkedProfileId = profileOfBoard[linked] ?: refuse(RefusalReason.Invalid, "Folder in board ${cell.boardId} opens missing board $linked")
+            // Un tel dossier empêcherait de supprimer l'un des deux utilisateurs (RESTRICT).
+            if (linkedProfileId != profileId) refuse(RefusalReason.Invalid, "Folder in board ${cell.boardId} opens board $linked of another profile")
+        }
         // Un id nul ou négatif deviendrait un nom de fichier que le ménage ne reconnaîtrait jamais.
         cell.pictogramId?.let { if (it < 1) refuse(RefusalReason.Invalid, "Pictogram id in board ${cell.boardId}") }
         val photo = cell.photoFile
@@ -142,7 +172,9 @@ private fun checkLength(text: String, boardId: Long) {
 fun backupEntries(content: BackupContent, pictogramsInArchive: Set<Long>, photosInArchive: Set<String>): Map<String, String> {
     validate(content)
     val cellsByBoard = content.cells.groupBy { it.boardId }
-    val rootId = if (content.boards.any { it.id == HOME_BOARD_ID }) HOME_BOARD_ID else content.boards.minOf { it.id }
+    // Pour les autres lecteurs seulement : l'accueil standard du premier utilisateur.
+    val firstProfileId = content.profiles.minOf { it.id }
+    val rootId = content.boards.firstOrNull { it.profileId == firstProfileId && it.coreBoardId == HOME_BOARD_ID }?.id ?: content.boards.minOf { it.id }
     val boardPaths = JSONObject()
     val imagePaths = JSONObject()
     val entries = LinkedHashMap<String, String>()
@@ -193,6 +225,8 @@ fun backupEntries(content: BackupContent, pictogramsInArchive: Set<Long>, photos
             .put(KEY_GRID, JSONObject().put(KEY_ROWS, board.rowCount).put(KEY_COLUMNS, board.columnCount).put(KEY_ORDER, order(board, cells)))
             .put(KEY_BUTTONS, buttons)
             .put(KEY_IMAGES, JSONArray(images.values))
+            .put(KEY_PROFILE_ID, board.profileId)
+        board.coreBoardId?.let { boardJson.put(KEY_CORE_BOARD_ID, it) }
         entries[boardPath(board.id)] = boardJson.toString()
     }
     val manifest = JSONObject()
@@ -200,6 +234,11 @@ fun backupEntries(content: BackupContent, pictogramsInArchive: Set<Long>, photos
         .put(KEY_ROOT, boardPath(rootId))
         .put(KEY_PATHS, JSONObject().put(KEY_BOARDS, boardPaths).put(KEY_IMAGES, imagePaths))
         .put(KEY_BACKUP, BACKUP_FORMAT_VERSION)
+        .put(KEY_PROFILES, JSONArray(content.profiles.map { profile ->
+            JSONObject().put(KEY_ID, profile.id).put(KEY_NAME, profile.name).also { json ->
+                profile.startBoardId?.let { json.put(KEY_START_BOARD_ID, it) }
+            }
+        }))
     val all = linkedMapOf(MANIFEST_PATH to manifest.toString()) + entries
     // Ce que la restauration refuserait ne s'écrit pas : une sauvegarde de Papotons se restaure toujours.
     val sizes = all.mapValues { (_, text) -> text.toByteArray(Charsets.UTF_8).size.toLong() }
@@ -216,18 +255,48 @@ private fun order(board: BoardEntity, cells: List<CellEntity>): JSONArray {
     })
 }
 
-/** Les chemins des grilles d'une sauvegarde de Papotons, ou un refus. */
-fun readManifest(text: String): List<String> = parse {
+/** Le manifeste d'une sauvegarde de Papotons : ses grilles, et ses utilisateurs (`null` au format 1, d'avant eux). */
+data class BackupManifest(val boardPaths: List<String>, val profiles: List<ProfileEntity>?)
+
+/** Le manifeste d'une sauvegarde de Papotons, ou un refus. */
+fun readManifest(text: String): BackupManifest = parse {
     val manifest = JSONObject(text)
     val version = manifest.opt(KEY_BACKUP) as? Number ?: refuse(RefusalReason.NotPapotons, "No backup mark")
-    if (version.toLong() !in 1..BACKUP_FORMAT_VERSION.toLong()) refuse(RefusalReason.NotPapotons, "Backup format $version")
+    if (version.toLong() !in SINGLE_PROFILE_FORMAT_VERSION..BACKUP_FORMAT_VERSION.toLong()) refuse(RefusalReason.NotPapotons, "Backup format $version")
     val paths = manifest.optJSONObject(KEY_PATHS) ?: refuse(RefusalReason.Unreadable, "No paths")
     val boards = paths.optJSONObject(KEY_BOARDS) ?: refuse(RefusalReason.Unreadable, "No board paths")
     if (boards.length() > MAX_BOARDS) refuse(RefusalReason.TooLarge, "${boards.length()} boards")
     val boardPaths = boards.keys().asSequence().map { boards.opt(it) as? String ?: refuse(RefusalReason.Unreadable, "Board path") }.toList()
     // Un même chemin listé mille fois ferait relire mille fois la même grille.
     if (boardPaths.size != boardPaths.toSet().size) refuse(RefusalReason.Invalid, "Repeated board path")
-    boardPaths
+    if (version.toLong() == SINGLE_PROFILE_FORMAT_VERSION.toLong()) return@parse BackupManifest(boardPaths, profiles = null)
+    val profiles = manifest.optJSONArray(KEY_PROFILES) ?: refuse(RefusalReason.Invalid, "No profiles")
+    if (profiles.length() > MAX_PROFILES) refuse(RefusalReason.TooLarge, "${profiles.length()} profiles")
+    BackupManifest(boardPaths, (0 until profiles.length()).map { index ->
+        val profile = profiles.optJSONObject(index) ?: refuse(RefusalReason.Invalid, "Profile $index")
+        ProfileEntity(
+            id = profile.longOrNull(KEY_ID) ?: refuse(RefusalReason.Invalid, "Profile $index without id"),
+            name = profile.stringOrNull(KEY_NAME) ?: refuse(RefusalReason.Invalid, "Profile $index without name"),
+            startBoardId = profile.longOrNull(KEY_START_BOARD_ID),
+        )
+    })
+}
+
+/**
+ * Le contenu d'une sauvegarde à partir de son manifeste et de ses grilles lues. Au format 1, toutes
+ * les grilles deviennent celles d'un seul utilisateur, nommé [defaultProfileName], et les copies du
+ * vocabulaire de base sont reconnues comme le fait la migration 3 → 4.
+ */
+fun backupContent(manifest: BackupManifest, boards: List<BoardEntity>, cells: List<CellEntity>, defaultProfileName: String): BackupContent {
+    if (manifest.profiles != null) return BackupContent(manifest.profiles, boards, cells)
+    val linkedBoardIds = cells.mapNotNullTo(HashSet()) { it.linkedBoardId }
+    return BackupContent(
+        profiles = listOf(ProfileEntity(FIRST_PROFILE_ID, defaultProfileName, startBoardId = null)),
+        boards = boards.map { board ->
+            board.copy(profileId = FIRST_PROFILE_ID, coreBoardId = legacyCoreBoardId(board.id, isLinked = board.id in linkedBoardIds))
+        },
+        cells = cells,
+    )
 }
 
 /** Une grille et ses cases (ids de cases à zéro : la base en donne de neufs). */
@@ -240,6 +309,9 @@ fun readBoard(text: String): Pair<BoardEntity, List<CellEntity>> = parse {
         name = json.stringOrNull(KEY_NAME) ?: refuse(RefusalReason.Invalid, "Board $boardId without name"),
         rowCount = grid.intOrNull(KEY_ROWS) ?: refuse(RefusalReason.Invalid, "Board $boardId without rows"),
         columnCount = grid.intOrNull(KEY_COLUMNS) ?: refuse(RefusalReason.Invalid, "Board $boardId without columns"),
+        // Absent au format 1 : posé ensuite par [backupContent] ; au format 2, un absent est refusé par [validate].
+        profileId = json.longOrNull(KEY_PROFILE_ID) ?: NO_PROFILE,
+        coreBoardId = json.longOrNull(KEY_CORE_BOARD_ID),
     )
     val buttons = json.optJSONArray(KEY_BUTTONS) ?: JSONArray()
     if (buttons.length() > MAX_CELLS) refuse(RefusalReason.TooLarge, "Board $boardId: ${buttons.length()} buttons")

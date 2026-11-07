@@ -6,7 +6,7 @@
     <string name="backup_title">Sauvegarde des grilles</string>
     <string name="backup_unsaved">Des changements ne sont pas encore sauvegardés.</string>
     <string name="backup_up_to_date">Les grilles sont sauvegardées.</string>
-    <string name="backup_explanation">Une sauvegarde est un fichier que vous rangez où vous voulez : Drive, carte mémoire, envoi par mail. Elle permet de retrouver les grilles après une perte, ou de les passer sur une autre tablette. Papotons n\'envoie rien de lui-même.</string>
+    <string name="backup_explanation">Une sauvegarde contient les grilles de tous les utilisateurs. C\'est un fichier que vous rangez où vous voulez : Drive, carte mémoire, envoi par mail. Elle permet de retrouver les grilles après une perte, ou de les passer sur une autre tablette. Papotons n\'envoie rien de lui-même.</string>
     <string name="backup_save">Enregistrer une sauvegarde</string>
     <string name="backup_restore">Restaurer une sauvegarde</string>
     <string name="backup_close">Fermer</string>
@@ -38,7 +38,8 @@
         <item quantity="other">%1$d cases</item>
     </plurals>
     <string name="restore_confirm_content">Elle contient %1$s et %2$s.</string>
-    <string name="restore_confirm_warning">Toutes les grilles actuelles seront remplacées, photos comprises.</string>
+    <!-- %1$s : les utilisateurs actuels ; %2$s : ceux de la sauvegarde (noms séparés par des virgules). -->
+    <string name="restore_confirm_warning">Les grilles actuelles (%1$s) seront remplacées par celles de la sauvegarde (%2$s), photos comprises.</string>
     <string name="restore_confirm">Restaurer</string>
     <string name="restore_cancel">Annuler</string>
 

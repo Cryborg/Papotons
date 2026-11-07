@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.util.Log
+import com.wobblebot.papotons.R
 import com.wobblebot.papotons.data.CorruptedDatabaseCopies
 import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.board.CellEntity
@@ -55,6 +56,7 @@ private const val UNREFERENCED_IMAGES_PREFIX = "papotons/unreferenced-images"
 
 /** Une sauvegarde lue, validée, prête à remplacer les grilles. */
 data class PendingRestore(val fileName: String?, val content: BackupContent) {
+    val profileNames: List<String> get() = content.profiles.map { it.name }
     val boardCount: Int get() = content.boards.size
     val cellCount: Int get() = content.cells.size
 }
@@ -302,16 +304,17 @@ class BoardBackup @Inject constructor(
             if (jsonBytes > MAX_JSON_BYTES) refuse(RefusalReason.TooLarge, "More than $MAX_JSON_BYTES bytes of JSON")
             return bytes.toString(Charsets.UTF_8)
         }
-        val boardPaths = readManifest(text(MANIFEST_PATH))
-        val boards = ArrayList<BoardEntity>(boardPaths.size)
+        val manifest = readManifest(text(MANIFEST_PATH))
+        val boards = ArrayList<BoardEntity>(manifest.boardPaths.size)
         val cells = ArrayList<CellEntity>()
-        for (path in boardPaths) {
+        for (path in manifest.boardPaths) {
             val (board, boardCells) = readBoard(text(path))
             boards += board
             cells += boardCells
             if (cells.size > MAX_CELLS) refuse(RefusalReason.TooLarge, "More than $MAX_CELLS cells")
         }
-        val content = BackupContent(boards, cells)
+        if (manifest.profiles == null) Log.i(TAG, "Backup from before profiles, read as a single profile")
+        val content = backupContent(manifest, boards, cells, context.getString(R.string.profile_default_name))
         validate(content)
         // Les images aussi, avant la confirmation : un refus après elle viendrait trop tard.
         // Chaque image distincte une fois, avec la règle même de l'export.
@@ -322,7 +325,7 @@ class BoardBackup @Inject constructor(
             imageBytes += checkImage(zip, path, isPictogram)
             if (imageBytes > MAX_IMAGE_BYTES) refuse(RefusalReason.TooLarge, "More than $MAX_IMAGE_BYTES bytes of images")
         }
-        Log.i(TAG, "Backup read: ${content.boards.size} boards, ${content.cells.size} cells")
+        Log.i(TAG, "Backup read: ${content.profiles.size} profiles, ${content.boards.size} boards, ${content.cells.size} cells")
         content
     }
 

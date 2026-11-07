@@ -15,8 +15,8 @@ data class DisplayedBoard(
     val name: String,
     val grid: ImmutableList<ImmutableList<Cell?>>,
     val canGoBack: Boolean,
-    /** Le bas de la pile : l'écran de départ réellement ouvert, dont on lit la taille. */
-    val rootBoardId: Long = id,
+    /** L'id d'origine (`CoreVocabulary`) du bas de la pile, dont on lit la taille ; `null` pour une grille de l'adulte. */
+    val rootCoreBoardId: Long? = null,
 )
 
 /** Un choix de taille qui n'a rien changé. */
@@ -24,7 +24,7 @@ enum class SettingFailure {
     /** Écriture ou lecture ratée : réessayer peut suffire. */
     NotSaved,
 
-    /** Ces grilles n'ont pas l'accueil de cette taille (sauvegarde d'avant les tailles). */
+    /** L'utilisateur ouvert n'a pas l'accueil de cette taille (grilles d'avant les tailles). */
     Unavailable,
 }
 
@@ -56,5 +56,5 @@ data class BoardUiState(
     val isBusy: Boolean get() = message.isNotEmpty() || isEditing || isSettingsOpen
 
     /** La taille de la grille ouverte, lue sur l'écran réellement ouvert (pas sur le réglage) ; `null` pour un autre écran. */
-    val boardSize: BoardSize? get() = BoardSize.withHome(board?.rootBoardId)
+    val boardSize: BoardSize? get() = BoardSize.withHome(board?.rootCoreBoardId)
 }

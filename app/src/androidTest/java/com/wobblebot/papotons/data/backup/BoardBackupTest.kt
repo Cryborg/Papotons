@@ -10,6 +10,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.wobblebot.papotons.data.CORRUPTED_DATABASES_DIRECTORY
 import com.wobblebot.papotons.data.PapotonsDatabase
 import com.wobblebot.papotons.data.board.BoardEntity
+import com.wobblebot.papotons.data.profile.ProfileEntity
 import com.wobblebot.papotons.data.board.BoardRepository
 import com.wobblebot.papotons.data.board.CellEntity
 import com.wobblebot.papotons.data.createPreferences
@@ -62,8 +63,8 @@ class BoardBackupTest {
     private val pictograms = PictogramImages(context)
 
     private val boards = listOf(
-        BoardEntity(id = 1, name = "Accueil", rowCount = 2, columnCount = 2),
-        BoardEntity(id = 7, name = "Manger", rowCount = 1, columnCount = 2),
+        BoardEntity(id = 1, name = "Accueil", rowCount = 2, columnCount = 2, profileId = 1),
+        BoardEntity(id = 7, name = "Manger", rowCount = 1, columnCount = 2, profileId = 1),
     )
 
     private fun cell(boardId: Long, row: Int, column: Int, label: String) =
@@ -89,6 +90,7 @@ class BoardBackupTest {
         repository = BoardRepository(database.boardDao(), createPreferences { preferencesFile }, context)
         pictograms.loadBundled()
         backup = BoardBackup(context, repository, pictograms, CellPhotos(context))
+        database.boardDao().insertProfile(ProfileEntity(id = 1, name = "Léo", startBoardId = null))
         database.boardDao().insertAll(boards, cells)
         photosDirectory.mkdirs()
         // Plus grande que 480 px, en PNG : la restauration la réencode comme une photo choisie.
@@ -114,7 +116,7 @@ class BoardBackupTest {
         val before = content()
         backup.export(Uri.fromFile(archive))
         // Tout part : autres grilles, images supprimées.
-        database.boardDao().replaceAll(listOf(BoardEntity(1, "autre", 1, 1)), listOf(cell(1, 0, 0, "autre")))
+        database.boardDao().replaceAll(listOf(ProfileEntity(id = 1, name = "Autre", startBoardId = null)), listOf(BoardEntity(1, "autre", 1, 1, profileId = 1)), listOf(cell(1, 0, 0, "autre")))
         File(photosDirectory, PHOTO).delete()
         downloaded.delete()
 
@@ -179,7 +181,7 @@ class BoardBackupTest {
     @Test
     fun aRestoreGoesToTheEndEvenWhenItsCallerIsCancelled() = runBlocking {
         backup.export(Uri.fromFile(archive))
-        database.boardDao().replaceAll(listOf(BoardEntity(1, "autre", 1, 1)), listOf(cell(1, 0, 0, "autre")))
+        database.boardDao().replaceAll(listOf(ProfileEntity(id = 1, name = "Autre", startBoardId = null)), listOf(BoardEntity(1, "autre", 1, 1, profileId = 1)), listOf(cell(1, 0, 0, "autre")))
         val pending = backup.analyze(Uri.fromFile(archive))
 
         val job = launch(start = CoroutineStart.UNDISPATCHED) { backup.restore(pending) }
@@ -309,7 +311,7 @@ class BoardBackupTest {
             setPixels(IntArray(300 * 300) { random.nextInt() or 0xFF000000.toInt() }, 0, 300, 0, 0, 300, 300)
         }
         downloaded.writeBytes(ByteArrayOutputStream().also { noise.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray())
-        val big = BoardEntity(id = 30, name = "Beaucoup", rowCount = 40, columnCount = 40)
+        val big = BoardEntity(id = 30, name = "Beaucoup", rowCount = 40, columnCount = 40, profileId = 1)
         val many = (0 until 1_000).map { index -> cell(30, index / 40, index % 40, "m$index").copy(pictogramId = DOWNLOADED_PICTOGRAM) }
         database.boardDao().insertAll(listOf(big), many)
 

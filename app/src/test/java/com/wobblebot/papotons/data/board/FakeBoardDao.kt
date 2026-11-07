@@ -1,6 +1,10 @@
 package com.wobblebot.papotons.data.board
 
 import android.database.sqlite.SQLiteConstraintException
+import com.wobblebot.papotons.data.profile.FIRST_PROFILE_ID
+import com.wobblebot.papotons.data.profile.NO_PROFILE
+import com.wobblebot.papotons.data.profile.ProfileEntity
+import com.wobblebot.papotons.data.profile.legacyCoreBoardId
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -8,19 +12,44 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 
 /**
- * Hérite des corps des transactions (`seedIfEmpty`, `insertFolder`, `deleteCellAndOrphanBoards`),
- * sans leur annulation en cas d'échec.
- * Imite l'index unique des positions, la CASCADE et le RESTRICT des cases uniquement sur les
- * nouvelles écritures ; la vraie Room se teste dans BoardDaoTest.
+ * Hérite des corps des transactions (`seedIfEmpty`, `insertFolder`, `deleteCellAndOrphanBoards`,
+ * `insertProfileWithCoreVocabulary`, `deleteProfile`), sans leur annulation en cas d'échec.
+ * Imite l'index unique des positions, la CASCADE et le RESTRICT des cases, et la clé étrangère des
+ * grilles vers leur utilisateur, uniquement sur les nouvelles écritures ; la vraie Room se teste
+ * dans BoardDaoTest.
+ *
+ * Commodité de départ : une grille de [boards] sans utilisateur est rangée chez l'utilisateur 1 (créé
+ * s'il n'y a aucun [profiles]), avec l'id d'origine de la migration 3 → 4. Les écritures, elles, ne
+ * reçoivent aucune commodité.
  */
 class FakeBoardDao(
     boards: List<BoardEntity> = emptyList(),
     cells: List<CellEntity> = emptyList(),
+    profiles: List<ProfileEntity> = if (boards.isEmpty()) emptyList() else listOf(ProfileEntity(FIRST_PROFILE_ID, "Utilisateur", startBoardId = null)),
 ) : BoardDao() {
-    val boards = MutableStateFlow(boards)
+    val profiles = MutableStateFlow(profiles)
+    val boards = MutableStateFlow(
+        boards.map { board ->
+            if (board.profileId != NO_PROFILE) {
+                board
+            } else {
+                val isLinked = cells.any { it.linkedBoardId == board.id }
+                board.copy(profileId = FIRST_PROFILE_ID, coreBoardId = legacyCoreBoardId(board.id, isLinked))
+            }
+        }
+    )
     val cells = MutableStateFlow(cells)
+
+    /** Comme la clé étrangère `boards.profile_id` : une grille vise un utilisateur qui existe. */
+    private fun checkProfiles(newBoards: List<BoardEntity>) {
+        val profileIds = profiles.value.map { it.id }.toSet()
+        newBoards.firstOrNull { it.profileId !in profileIds }?.let {
+            throw SQLiteConstraintException("FOREIGN KEY constraint failed (board ${it.id}, profile ${it.profileId})")
+        }
+    }
     var insertCount = 0
         private set
 
@@ -38,15 +67,16 @@ class FakeBoardDao(
         return boards.value.size
     }
 
-    /** Levée par `boardExists` (base illisible en cours d'usage). */
+    /** Levée par `boardExists` et `startBoardCopyOf` (base illisible en cours d'usage). */
     var existsFailure: RuntimeException? = null
+
+    /** Levée par `setStartBoard` (disque plein). */
+    var startBoardWriteFailure: RuntimeException? = null
 
     override suspend fun boardExists(boardId: Long): Boolean {
         existsFailure?.let { throw it }
         return boards.value.any { it.id == boardId }
     }
-
-    override suspend fun smallestBoardId(): Long? = boards.value.minOfOrNull { it.id }
 
     override suspend fun largestBoardId(): Long? = boards.value.maxOfOrNull { it.id }
 
@@ -56,6 +86,7 @@ class FakeBoardDao(
     override suspend fun insertAll(boards: List<BoardEntity>, cells: List<CellEntity>) {
         insertGate?.await()
         insertFailure?.let { throw it }
+        checkProfiles(boards)
         insertCount++
         val firstCellId = this.cells.value.size + 1L
         this.boards.value += boards
@@ -90,6 +121,7 @@ class FakeBoardDao(
         // réutiliserait jamais l'id d'une grille supprimée (plus aucun chemin n'insère avec 0).
         val id = if (board.id != 0L) board.id else (boards.value.maxOfOrNull { it.id } ?: 0) + 1
         if (boards.value.any { it.id == id }) throw SQLiteConstraintException("UNIQUE constraint failed: boards.id")
+        checkProfiles(listOf(board))
         boards.value += board.copy(id = id)
         return id
     }
@@ -129,12 +161,16 @@ class FakeBoardDao(
         boards.value = emptyList()
     }
 
+    override suspend fun deleteAllProfiles() {
+        profiles.value = emptyList()
+    }
+
     /** Comme Room, qui n'émet qu'après la transaction : jamais une base vide entre les deux. */
-    override suspend fun replaceAll(boards: List<BoardEntity>, cells: List<CellEntity>) {
+    override suspend fun replaceAll(profiles: List<ProfileEntity>, boards: List<BoardEntity>, cells: List<CellEntity>) {
         val wereReadsHeld = areReadsHeld.value
         areReadsHeld.value = true
         try {
-            super.replaceAll(boards, cells)
+            super.replaceAll(profiles, boards, cells)
         } finally {
             areReadsHeld.value = wereReadsHeld
         }
@@ -154,5 +190,108 @@ class FakeBoardDao(
         boards.value = boards.value.filterNot { it.id == boardId }
         cells.value = cells.value.filterNot { it.boardId == boardId }
         return before - boards.value.size
+    }
+
+    override suspend fun insertProfile(profile: ProfileEntity): Long {
+        val id = if (profile.id != 0L) profile.id else (profiles.value.maxOfOrNull { it.id } ?: 0) + 1
+        if (profiles.value.any { it.id == id }) throw SQLiteConstraintException("UNIQUE constraint failed: profiles.id")
+        profiles.value += profile.copy(id = id)
+        return id
+    }
+
+    override suspend fun insertProfiles(profiles: List<ProfileEntity>) {
+        profiles.forEach { insertProfile(it) }
+    }
+
+    override suspend fun allProfiles(): List<ProfileEntity> = profiles.value.sortedBy { it.id }
+
+    override fun observeProfiles(): Flow<List<ProfileEntity>> = profiles.map { all -> all.sortedBy { it.id } }
+
+    /** Retient la prochaine lecture d'un utilisateur (ouverture lente, une fois l'utilisateur choisi), une seule fois. */
+    var nextProfileReadGate: CompletableDeferred<Unit>? = null
+
+    override suspend fun profile(profileId: Long): ProfileEntity? {
+        nextProfileReadGate?.let { gate ->
+            nextProfileReadGate = null
+            gate.await()
+        }
+        return profiles.value.firstOrNull { it.id == profileId }
+    }
+
+    override suspend fun countProfiles(): Int = profiles.value.size
+
+    override suspend fun smallestProfileId(): Long? = profiles.value.minOfOrNull { it.id }
+
+    override suspend fun renameProfile(profileId: Long, name: String): Int = updateProfile(profileId) { it.copy(name = name) }
+
+    override suspend fun setStartBoard(profileId: Long, boardId: Long): Int {
+        startBoardWriteFailure?.let { throw it }
+        return updateProfile(profileId) { it.copy(startBoardId = boardId) }
+    }
+
+    private fun updateProfile(profileId: Long, change: (ProfileEntity) -> ProfileEntity): Int {
+        val before = profiles.value
+        profiles.value = before.map { if (it.id == profileId) change(it) else it }
+        return before.count { it.id == profileId }
+    }
+
+    override suspend fun deleteProfileRow(profileId: Long): Int {
+        if (boards.value.any { it.profileId == profileId }) throw SQLiteConstraintException("FOREIGN KEY constraint failed (RESTRICT)")
+        val before = profiles.value.size
+        profiles.value = profiles.value.filterNot { it.id == profileId }
+        return before - profiles.value.size
+    }
+
+    override suspend fun hasBoards(profileId: Long): Boolean = boards.value.any { it.profileId == profileId }
+
+    override suspend fun smallestProfileWithBoards(): Long? = boards.value.minOfOrNull { it.profileId }
+
+    override suspend fun smallestOtherProfileWithBoards(profileId: Long): Long? =
+        boards.value.filter { it.profileId != profileId }.minOfOrNull { it.profileId }
+
+    override suspend fun profileOf(boardId: Long): Long? = boards.value.firstOrNull { it.id == boardId }?.profileId
+
+    override suspend fun smallestBoardIdOf(profileId: Long): Long? = boards.value.filter { it.profileId == profileId }.minOfOrNull { it.id }
+
+    override suspend fun isStartBoardOf(boardId: Long, profileId: Long): Boolean =
+        boards.value.any { it.id == boardId && it.profileId == profileId } && countLinksTo(boardId) == 0
+
+    override suspend fun startBoardCopyOf(profileId: Long, coreBoardId: Long): Long? {
+        existsFailure?.let { throw it }
+        return boards.value.filter { it.profileId == profileId && it.coreBoardId == coreBoardId && countLinksTo(it.id) == 0 }.minOfOrNull { it.id }
+    }
+
+    override suspend fun copiesOf(coreBoardIds: Set<Long>): List<Long> = boards.value.filter { it.coreBoardId in coreBoardIds }.map { it.id }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeCoreBoardId(boardId: Long): Flow<Long?> = areReadsHeld.flatMapLatest { isHeld ->
+        if (isHeld) emptyFlow() else boards.map { all -> all.firstOrNull { it.id == boardId }?.coreBoardId }
+    }
+
+    override suspend fun photoFilesOfProfile(profileId: Long): List<String> {
+        val boardIds = boards.value.filter { it.profileId == profileId }.map { it.id }.toSet()
+        return cells.value.filter { it.boardId in boardIds }.mapNotNull { it.photoFile }
+    }
+
+    override suspend fun deleteCellsOfProfile(profileId: Long): Int {
+        val boardIds = boards.value.filter { it.profileId == profileId }.map { it.id }.toSet()
+        val before = cells.value.size
+        cells.value = cells.value.filterNot { it.boardId in boardIds }
+        return before - cells.value.size
+    }
+
+    override suspend fun deleteBoardsOfProfile(profileId: Long): Int {
+        val doomed = boards.value.filter { it.profileId == profileId }.map { it.id }.toSet()
+        if (cells.value.any { it.linkedBoardId in doomed }) throw SQLiteConstraintException("FOREIGN KEY constraint failed (RESTRICT)")
+        boards.value = boards.value.filterNot { it.id in doomed }
+        cells.value = cells.value.filterNot { it.boardId in doomed }
+        return doomed.size
+    }
+
+    override suspend fun deleteProfilesWithoutBoards(): Int {
+        val withBoards = boards.value.map { it.profileId }.toSet()
+        val before = profiles.value.size
+        profiles.value = profiles.value.filter { it.id in withBoards }
+        return before - profiles.value.size
     }
 }

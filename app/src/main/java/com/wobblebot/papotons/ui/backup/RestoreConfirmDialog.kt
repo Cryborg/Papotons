@@ -17,13 +17,20 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import com.wobblebot.papotons.R
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 
 private val PARAGRAPH_SPACING = 12.dp
 
-/** Dernier mot avant de remplacer toutes les grilles : ce que contient la sauvegarde, ce qui sera perdu. */
+/**
+ * Dernier mot avant de remplacer toutes les grilles : ce que contient la sauvegarde, ce qui sera
+ * perdu, utilisateurs nommés (une sauvegarde d'un seul enfant effacerait les autres).
+ */
 @Composable
 fun RestoreConfirmDialog(
     fileName: String?,
+    currentProfileNames: ImmutableList<String>,
+    restoredProfileNames: ImmutableList<String>,
     boardCount: Int,
     cellCount: Int,
     onConfirm: () -> Unit,
@@ -48,7 +55,14 @@ fun RestoreConfirmDialog(
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                Text(text = stringResource(R.string.restore_confirm_warning), style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = stringResource(
+                        R.string.restore_confirm_warning,
+                        currentProfileNames.joinToString(separator = stringResource(R.string.names_separator)),
+                        restoredProfileNames.joinToString(separator = stringResource(R.string.names_separator)),
+                    ),
+                    style = MaterialTheme.typography.titleSmall,
+                )
             }
         },
         // « Annuler » en bouton principal : remplacer toutes les grilles ne se fait pas d'un appui distrait.
@@ -68,5 +82,13 @@ fun RestoreConfirmDialog(
 @Preview
 @Composable
 private fun RestoreConfirmDialogPreview() {
-    RestoreConfirmDialog(fileName = "papotons-2026-11-07.obz", boardCount = 12, cellCount = 340, onConfirm = {}, onCancel = {})
+    RestoreConfirmDialog(
+        fileName = "papotons-2026-11-07.obz",
+        currentProfileNames = persistentListOf("Léo", "Marie"),
+        restoredProfileNames = persistentListOf("Léo"),
+        boardCount = 12,
+        cellCount = 340,
+        onConfirm = {},
+        onCancel = {},
+    )
 }

@@ -337,7 +337,7 @@ private fun WordCategory.displayName(): Int = when (this) {
 }
 
 /** Coupe à [maxLength] sans jamais laisser une moitié d'émoji (paire de substitution). */
-private fun String.takeWhole(maxLength: Int): String {
+internal fun String.takeWhole(maxLength: Int): String {
     val cut = take(maxLength)
     return if (cut.length == maxLength && cut.last().isHighSurrogate()) cut.dropLast(1) else cut
 }

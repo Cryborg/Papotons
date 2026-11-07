@@ -638,7 +638,8 @@ class BoardViewModelTest {
 
     @Test
     fun `choosing a size saves it and opens its home, keeping the sentence`() = runTest(dispatcher) {
-        val viewModel = startViewModel(FakeBoardDao(sizedBoards, sizedCells))
+        val dao = FakeBoardDao(sizedBoards, sizedCells)
+        val viewModel = startViewModel(dao)
         viewModel.tap("je")
         assertEquals(BoardSize.STANDARD, viewModel.state().boardSize)
 
@@ -649,13 +650,14 @@ class BoardViewModelTest {
         assertEquals(listOf("je"), viewModel.messageTexts())
         assertNull(viewModel.state().settingFailure)
         // Retenue : un nouveau lancement ouvre la même taille.
-        assertEquals(BoardSize.LARGE_CELLS.homeBoardId, startViewModel(FakeBoardDao(sizedBoards, sizedCells), voice = FakeSpeaker()).state().board?.id)
+        assertEquals(BoardSize.LARGE_CELLS.homeBoardId, startViewModel(dao, voice = FakeSpeaker()).state().board?.id)
     }
 
     @Test
     fun `a size that cannot be saved changes nothing and is reported`() = runTest(dispatcher) {
-        val viewModel = startViewModel(FakeBoardDao(sizedBoards, sizedCells))
-        preferences.writeFailure = IOException("disk full")
+        val dao = FakeBoardDao(sizedBoards, sizedCells)
+        val viewModel = startViewModel(dao)
+        dao.startBoardWriteFailure = SQLiteException("disk full")
 
         viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
 
@@ -664,7 +666,7 @@ class BoardViewModelTest {
         assertEquals(BoardSize.STANDARD, viewModel.state().boardSize)
 
         // Le message ne reste pas : un nouvel essai réussi l'efface.
-        preferences.writeFailure = null
+        dao.startBoardWriteFailure = null
         viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
         assertNull(viewModel.state().settingFailure)
         assertEquals(BoardSize.LARGE_CELLS.homeBoardId, viewModel.state().board?.id)
@@ -685,13 +687,14 @@ class BoardViewModelTest {
     /** Grilles restaurées d'avant les tailles : l'accueil des moyennes n'y est pas. */
     @Test
     fun `a size missing from the boards is reported and nothing is saved`() = runTest(dispatcher) {
-        val viewModel = startViewModel(FakeBoardDao(boards, cells))
+        val dao = FakeBoardDao(boards, cells)
+        val viewModel = startViewModel(dao)
 
         viewModel.onBoardSizeChosen(BoardSize.MEDIUM)
 
         assertEquals(SettingFailure.Unavailable, viewModel.state().settingFailure)
         assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
-        assertTrue(preferences.current.asMap().values.none { it == BoardSize.MEDIUM.homeBoardId })
+        assertNull(dao.profiles.value.single().startBoardId)
     }
 
     /** Choisie pendant le premier lancement : la taille attend l'insertion du vocabulaire, qui contient son accueil. */
@@ -710,7 +713,8 @@ class BoardViewModelTest {
     /** Deux appuis rapides : le second gagne, même si le premier écrit plus lentement. */
     @Test
     fun `the last size chosen wins over a slower earlier choice`() = runTest(dispatcher) {
-        val viewModel = startViewModel(FakeBoardDao(sizedBoards, sizedCells))
+        val dao = FakeBoardDao(sizedBoards, sizedCells)
+        val viewModel = startViewModel(dao)
         val slowWrite = CompletableDeferred<Unit>()
         preferences.nextWriteGate = slowWrite
 
@@ -719,15 +723,16 @@ class BoardViewModelTest {
         slowWrite.complete(Unit)
 
         assertEquals(BoardSize.MEDIUM.homeBoardId, viewModel.state().board?.id)
-        assertEquals(BoardSize.MEDIUM.homeBoardId, startViewModel(FakeBoardDao(sizedBoards, sizedCells), voice = FakeSpeaker()).state().board?.id)
+        assertEquals(BoardSize.MEDIUM.homeBoardId, startViewModel(dao, voice = FakeSpeaker()).state().board?.id)
     }
 
     @Test
     fun `a board opened inside a size survives the process death`() = runTest(dispatcher) {
-        startViewModel(FakeBoardDao(sizedBoards, sizedCells)).onBoardSizeChosen(BoardSize.LARGE_CELLS)
+        val dao = FakeBoardDao(sizedBoards, sizedCells)
+        startViewModel(dao).onBoardSizeChosen(BoardSize.LARGE_CELLS)
         val savedState = SavedStateHandle(mapOf(NAVIGATION_KEY to longArrayOf(BoardSize.LARGE_CELLS.homeBoardId, 14)))
 
-        val restored = startViewModel(FakeBoardDao(sizedBoards, sizedCells), savedState = savedState, voice = FakeSpeaker())
+        val restored = startViewModel(dao, savedState = savedState, voice = FakeSpeaker())
 
         assertEquals(14L, restored.state().board?.id)
         assertEquals(BoardSize.LARGE_CELLS, restored.state().boardSize)
@@ -1563,7 +1568,8 @@ class BoardViewModelTest {
 
     @Test
     fun `a restore brings the stack back home and closes the editor`() = runTest(dispatcher) {
-        val repository = BoardRepository(FakeBoardDao(boards, cells), preferences, context).also { it.fileDispatcher = dispatcher }
+        val dao = FakeBoardDao(boards, cells)
+        val repository = BoardRepository(dao, preferences, context).also { it.fileDispatcher = dispatcher }
         val viewModel = BoardViewModel(repository, speaker, volume, arasaac, pictogramStore, photos, SavedStateHandle()).also { it.elapsedRealtimeMs = { nowMs } }
         backgroundScope.launch { viewModel.uiState.collect {} }
         viewModel.tap("A")
@@ -1572,7 +1578,7 @@ class BoardViewModelTest {
         viewModel.tap("rouge")
         assertNotNull(viewModel.state().editor)
 
-        repository.replaceAll(BackupContent(listOf(boards[0].copy(name = "restored")), listOf(cells[0])))
+        repository.replaceAll(BackupContent(dao.profiles.value, listOf(dao.boards.value[0].copy(name = "restored")), listOf(cells[0])))
 
         assertEquals("restored", viewModel.state().board?.name)
         assertFalse(viewModel.state().board?.canGoBack == true)
