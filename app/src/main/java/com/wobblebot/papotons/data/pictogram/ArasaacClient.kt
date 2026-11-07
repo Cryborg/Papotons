@@ -52,7 +52,7 @@ interface ArasaacClient {
 }
 
 /**
- * Seuls partent le mot cherché et l'adresse IP. Un seul essai (l'adulte a « Réessayer »), 10 s par
+ * Seuls partent le mot cherché, l'adresse IP et le nom du logiciel (User-Agent). Un seul essai (l'adulte a « Réessayer »), 10 s par
  * opération (connexion, puis chaque lecture), aucune redirection suivie (on ne parle qu'aux hôtes
  * d'ARASAAC), corps plafonné. Une recherche annulée ferme sa connexion : la lecture bloquante
  * s'interrompt au lieu d'attendre son délai.

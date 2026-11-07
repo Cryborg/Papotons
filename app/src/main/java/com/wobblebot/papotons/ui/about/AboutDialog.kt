@@ -38,6 +38,7 @@ fun AboutDialog(onClose: () -> Unit, onEditBoards: () -> Unit, version: AppVersi
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Paragraph(R.string.about_arasaac_credit)
                 Paragraph(R.string.about_icons_credit)
+                Paragraph(R.string.about_privacy)
                 Paragraph(R.string.about_app_license)
                 AppVersionLine(version = version)
             }

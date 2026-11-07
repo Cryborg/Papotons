@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Papotons : politique de confidentialité</title>
+    <style>
+        :root {
+            --text: #1f2328;
+            --muted: #59636e;
+            --background: #ffffff;
+            --accent: #1f5fae;
+            --rule: #d1d9e0;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --text: #e6edf3;
+                --muted: #9198a1;
+                --background: #0d1117;
+                --accent: #79b8ff;
+                --rule: #3d444d;
+            }
+        }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif;
+            font-size: 1.05rem;
+            line-height: 1.7;
+            color: var(--text);
+            background: var(--background);
+        }
+
+        main {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 40px 20px 80px;
+        }
+
+        h1 {
+            font-size: 1.9rem;
+            margin-bottom: 4px;
+        }
+
+        h2 {
+            font-size: 1.25rem;
+            margin-top: 36px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--rule);
+        }
+
+        .updated {
+            color: var(--muted);
+            margin-top: 0;
+        }
+
+        .summary {
+            border-left: 4px solid var(--accent);
+            padding: 4px 16px;
+        }
+
+        a {
+            color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Papotons : politique de confidentialité</h1>
+    <p class="updated">Dernière mise à jour : 7 novembre 2026</p>
+
+    <div class="summary">
+        <p><strong>En bref : Papotons n'envoie rien à son éditeur.</strong> Pas de compte, pas de publicité, pas de statistiques, pas de rapport de plantage, aucun serveur. Les grilles, les photos et les phrases restent sur l'appareil, sauf dans la sauvegarde automatique d'Android et dans les fichiers de sauvegarde qu'un adulte choisit d'enregistrer. Seule une recherche de pictogramme, lancée par un adulte en mode modification, interroge le service public ARASAAC.</p>
+    </div>
+
+    <h2>Qui édite Papotons</h2>
+    <p>Papotons est une application gratuite de communication alternative et améliorée (CAA), publiée par WobbleBot Studio. Son code est libre (licence GPL-3.0) et consultable par tous : <a href="https://github.com/Cryborg/Papotons">github.com/Cryborg/Papotons</a>.</p>
+
+    <h2>Ce qui reste sur l'appareil</h2>
+    <p>Tout ce que l'application garde est stocké sur l'appareil, dans l'espace privé de l'application :</p>
+    <ul>
+        <li>les grilles, leurs cases, leurs libellés et ce qu'elles disent ;</li>
+        <li>les photos prises ou choisies pour une case (copiées dans l'application, réduites, jamais envoyées) ;</li>
+        <li>les pictogrammes téléchargés depuis ARASAAC ;</li>
+        <li>quelques réglages (par exemple, le fait que des changements n'ont pas encore été sauvegardés) ;</li>
+        <li>si la base des grilles s'abîme, une copie de secours de la base abîmée, pour tenter de récupérer les grilles.</li>
+    </ul>
+    <p>La phrase en cours de composition n'est pas écrite dans le stockage de l'application : Android la garde en mémoire tant que l'application est ouverte, même en arrière-plan, et l'efface quand on la ferme depuis l'écran des applications récentes ou quand l'appareil redémarre.</p>
+    <p>La voix est produite par le moteur de synthèse vocale de l'appareil. Si aucune voix française n'y est installée, ce moteur peut utiliser une voix en ligne : son éditeur (par exemple Google) reçoit alors le texte prononcé. Papotons le signale et invite à installer une voix française, qui fonctionne hors ligne.</p>
+    <p>Papotons ne demande aucune autorisation hormis l'accès à Internet (pour la recherche de pictogrammes). Les photos passent par l'appareil photo ou le sélecteur d'images du système : l'application ne demande ni l'accès à l'appareil photo, ni l'accès aux fichiers.</p>
+
+    <h2>Ce qui part de l'appareil, et vers qui</h2>
+    <h3>Recherche de pictogrammes (ARASAAC)</h3>
+    <p>En mode modification, protégé par une question réservée aux adultes, on peut chercher un pictogramme par un mot. L'application envoie alors à ARASAAC (api.arasaac.org et static.arasaac.org, service du gouvernement d'Aragon, Espagne) :</p>
+    <ul>
+        <li>le mot cherché ;</li>
+        <li>l'adresse IP de l'appareil, comme pour toute connexion à Internet ;</li>
+        <li>le nom « Papotons » comme identifiant du logiciel.</li>
+    </ul>
+    <p>Rien d'autre : aucun identifiant de l'appareil, aucune grille, aucune photo. Le traitement de ces requêtes relève d'ARASAAC (voir la politique de confidentialité sur arasaac.org). Sans recherche, aucune connexion n'est faite à ARASAAC : les pictogrammes du vocabulaire de base sont fournis avec l'application et tout fonctionne hors ligne.</p>
+
+    <h3>Mises à jour (Google Play)</h3>
+    <p>L'application demande à Google Play si une mise à jour existe, par le service de mise à jour intégré de Google Play. Google Play reçoit alors le nom et la version de l'application installée, rien de ce qu'elle contient ; il applique sa propre politique de confidentialité.</p>
+
+    <h3>Sauvegarde automatique d'Android</h3>
+    <p>Si la sauvegarde Android est activée sur l'appareil, Android peut copier les données de l'application (grilles, photos, pictogrammes téléchargés) dans l'espace de sauvegarde du compte Google de l'utilisateur, pour les restaurer sur un nouvel appareil. Cette copie est faite par Android, chiffrée, et l'éditeur de Papotons n'y a pas accès. Elle se désactive dans les réglages de l'appareil.</p>
+
+    <h3>Fichiers de sauvegarde (.obz)</h3>
+    <p>Un adulte peut enregistrer une sauvegarde des grilles dans un fichier, à l'emplacement qu'il choisit (stockage de l'appareil, Drive, carte mémoire, envoi par mail). Ce fichier contient les grilles et leurs images, photos comprises : c'est l'adulte qui décide où il va. Papotons ne l'envoie nulle part de lui-même.</p>
+
+    <h2>Enfants</h2>
+    <p>Papotons s'adresse aussi aux enfants qui ne s'expriment pas, ou pas assez, à l'oral. L'application n'envoie aucune donnée sur eux à son éditeur, n'affiche aucune publicité et ne propose aucun achat. La modification des grilles, les photos, la recherche de pictogrammes et les sauvegardes sont réservées aux adultes, derrière une question de contrôle.</p>
+
+    <h2>Vos droits</h2>
+    <p>Comme l'éditeur ne reçoit et ne conserve aucune donnée personnelle, il n'a rien à consulter, corriger ou effacer. Pour tout effacer de l'appareil : désinstaller l'application, ou vider ses données dans les réglages d'Android.</p>
+
+    <h2>Contact</h2>
+    <p>Pour toute question : <a href="https://github.com/Cryborg/Papotons/issues">github.com/Cryborg/Papotons/issues</a>.</p>
+
+    <h2>Changements</h2>
+    <p>Si cette politique change, la nouvelle version est publiée sur cette page, avec sa date.</p>
+</main>
+</body>
+</html>

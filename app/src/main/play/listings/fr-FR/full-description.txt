@@ -1,0 +1,16 @@
+Papotons aide les personnes qui ne s'expriment pas, ou pas assez, à l'oral à se faire comprendre : on touche des pictogrammes, Papotons compose la phrase et la dit à voix haute. C'est une application de communication alternative et améliorée (CAA), pensée pour le français.
+
+Entièrement gratuite : pas de publicité, pas d'achat, pas d'abonnement, pas de compte. Rien n'est envoyé à l'éditeur.
+
+• Un vocabulaire de base prêt à l'emploi : les mots les plus utiles (je, veux, encore, pas, aller…) toujours à la même place, pour que la main apprenne le chemin
+• Des dossiers par thème (Nourriture, Jeux, Personnes, Émotions), et le retour à l'accueil en un appui
+• Une phrase qui se construit en haut de l'écran (« j'ai », pas « je ai »), puis se dit d'un appui
+• Hors ligne : avec une voix française installée sur l'appareil, parler ne dépend jamais du réseau
+• Pour l'adulte, derrière une question de contrôle : ajouter, modifier ou supprimer des cases, créer des dossiers, chercher un pictogramme ARASAAC, mettre une photo de la famille ou d'un objet du quotidien, choisir ce que dit une case (« Mamie » affiché, « Mamie Jeanne » dit)
+• Une case ne change jamais de place toute seule : ajouter du vocabulaire ne déplace rien
+• Sauvegarde des grilles dans un fichier que vous rangez où vous voulez, et restauration sur une autre tablette (format Open Board, lisible par d'autres applications de CAA)
+• Sur tablette, utilisable couchée comme debout
+
+Papotons est un logiciel libre (licence GPL-3.0).
+
+Pictogrammes : Sergio Palao. Origine : ARASAAC (arasaac.org). Licence : CC BY-NC-SA 4.0. Propriété : Gouvernement d'Aragon (Espagne).

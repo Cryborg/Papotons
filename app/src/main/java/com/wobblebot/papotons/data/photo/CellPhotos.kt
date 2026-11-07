@@ -79,8 +79,9 @@ interface PhotoStore {
 
 /**
  * Les photos des cases : copiées dans l'appli (jamais visées par leur adresse d'origine, qui
- * disparaîtrait avec la galerie), recadrées en carré, réduites, orientées. Elles ne quittent
- * jamais l'appareil (invariant 1) ; les journaux ne disent ni leur nom ni leur adresse d'origine.
+ * disparaîtrait avec la galerie), recadrées en carré, réduites, orientées. L'appli ne les envoie
+ * nulle part (invariant 1) : seules la sauvegarde Android et un fichier `.obz` rangé par l'adulte
+ * les emportent. Les journaux ne disent ni leur nom ni leur adresse d'origine.
  */
 @Singleton
 class CellPhotos @Inject constructor(@ApplicationContext private val context: Context) : PhotoStore {
