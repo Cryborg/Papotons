@@ -36,6 +36,6 @@ Ce dossier :
 
 ## Avant d'envoyer
 
-- Activer GitHub Pages et coller l'adresse de la politique de confidentialité dans la Play Console (`docs/regles/PUBLICATION.md`).
+- Coller l'adresse de la politique de confidentialité dans la Play Console (`docs/regles/PUBLICATION.md`).
 - Remplir le formulaire « Sécurité des données » et la section « Public cible ».
 - Vérifier sur une vraie tablette qu'une sauvegarde `.obz` s'enregistre et se restaure : un testeur qui change de tablette ne doit rien perdre.

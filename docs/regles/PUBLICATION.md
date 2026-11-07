@@ -4,10 +4,10 @@ Ce que le code et le dépôt ne peuvent pas faire. À revoir avant chaque versio
 
 ## Politique de confidentialité
 
-- Source : `docs/confidentialite.html`, servie par GitHub Pages.
-- Activer une fois : dépôt GitHub > Settings > Pages > Source « Deploy from a branch », branche `main`, dossier `/docs`. Adresse obtenue : `https://cryborg.github.io/Papotons/confidentialite.html` (celle que cite la modale « À propos », `about_privacy`).
+- Source : `docs/confidentialite.html`, ici. Le site du studio l'héberge sans la posséder : on la corrige ici, jamais sur le site.
+- Adresse : `https://wobblebotstudio.com/legal/papotons/privacy.html`, comme les pages légales des autres projets (celle que cite la modale « À propos », `about_privacy`).
+- Mise en ligne : `python3 tools/publish_legal_pages.py` (`--dry-run` pour voir sans envoyer), à relancer à chaque changement de la page. Vérifier la page servie avec un `?v=` quelconque : le cache ressert l'ancienne.
 - Play Console > Contenu de l'application > Règles de confidentialité : coller cette adresse.
-- Le dossier `docs/` entier devient public sur Pages (le dépôt l'est déjà).
 - Contact : la page renvoie aux tickets GitHub (publics, avec un compte). Google demande un point de contact pour la confidentialité : mettre de préférence une adresse e-mail dédiée, la même que celle de la fiche Play, dans la section « Contact » de la page.
 
 ## Fiche Play

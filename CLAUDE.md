@@ -18,6 +18,7 @@ Tout build passe par la file de la machine (le hook `garde-gradle` refuse `./gra
 - Tests : `bash .claude/scripts/gradle-queue.sh testDebugUnitTest`
 - Lint : `bash .claude/scripts/gradle-queue.sh lintDebug`
 - Scan mécanique : `bash tools/audit/mechanical-scan.sh --pretty`
+- Page de confidentialité (`docs/confidentialite.html`) en ligne : `python3 tools/publish_legal_pages.py`
 
 ## Architecture
 
