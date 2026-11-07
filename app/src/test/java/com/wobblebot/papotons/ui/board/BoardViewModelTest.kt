@@ -2,6 +2,7 @@ package com.wobblebot.papotons.ui.board
 
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import com.wobblebot.papotons.data.FakePreferences
 import com.wobblebot.papotons.data.board.BoardEntity
@@ -73,8 +74,12 @@ class BoardViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun TestScope.startViewModel(dao: FakeBoardDao = FakeBoardDao(boards, cells)): BoardViewModel {
-        val viewModel = BoardViewModel(BoardRepository(dao, preferences, context), speaker)
+    private fun TestScope.startViewModel(
+        dao: FakeBoardDao = FakeBoardDao(boards, cells),
+        savedState: SavedStateHandle = SavedStateHandle(),
+        voice: FakeSpeaker = speaker,
+    ): BoardViewModel {
+        val viewModel = BoardViewModel(BoardRepository(dao, preferences, context), voice, savedState)
         backgroundScope.launch { viewModel.uiState.collect {} }
         return viewModel
     }
@@ -172,7 +177,7 @@ class BoardViewModelTest {
 
     @Test
     fun `waking the screen up never shows the loading state again`() = runTest(dispatcher) {
-        val viewModel = BoardViewModel(BoardRepository(FakeBoardDao(boards, cells), preferences, context), speaker)
+        val viewModel = BoardViewModel(BoardRepository(FakeBoardDao(boards, cells), preferences, context), speaker, SavedStateHandle())
         val firstCollector = backgroundScope.launch { viewModel.uiState.collect {} }
         viewModel.tap("A")
         firstCollector.cancel()
@@ -418,5 +423,91 @@ class BoardViewModelTest {
         store.clear()
 
         assertTrue(speaker.isShutDown)
+    }
+
+    /** Ce que le système garde quand il tue le processus : une copie, le premier ViewModel libéré. */
+    private fun BoardViewModel.dieAndKeep(savedState: SavedStateHandle): SavedStateHandle {
+        ViewModelStore().apply { put("board", this@dieAndKeep) }.clear()
+        return SavedStateHandle(savedState.keys().associateWith { savedState.get<Any>(it) })
+    }
+
+    @Test
+    fun `the sentence and the open board survive the process death`() = runTest(dispatcher) {
+        val savedState = SavedStateHandle()
+        val first = startViewModel(savedState = savedState)
+        first.tap("je")
+        first.tap("A")
+        first.tap("B")
+        first.tap("ai")
+
+        val second = startViewModel(savedState = first.dieAndKeep(savedState), voice = FakeSpeaker())
+
+        // Pile de trois grilles : la troisième revient, pas l'accueil ni la deuxième.
+        assertEquals(3L, second.state().board?.id)
+        assertTrue(second.state().board?.canGoBack == true)
+        // « j'ai » se refait : la catégorie du verbe est revenue avec le mot.
+        assertEquals(listOf("j'ai"), second.messageTexts())
+        assertEquals(listOf(listOf(10L, 80L)), second.state().message.map { it.pictogramIds })
+    }
+
+    @Test
+    fun `a saved stack that does not start at home is dropped for home`() = runTest(dispatcher) {
+        val savedState = SavedStateHandle(mapOf(NAVIGATION_KEY to longArrayOf(2, 3)))
+
+        assertEquals(HOME_BOARD_ID, startViewModel(savedState = savedState).state().board?.id)
+        // L'état sauvé suit : la pile rejetée ne revient pas à la mort suivante.
+        assertEquals(listOf(HOME_BOARD_ID), savedState.get<LongArray>(NAVIGATION_KEY)?.toList())
+    }
+
+    @Test
+    fun `a saved word whose category no longer exists comes back without color`() {
+        val word = SavedWord("x", "GONE", 7).toSentenceWord()
+
+        assertNull(word.category)
+        assertEquals("x" to 7L, word.label to word.pictogramId)
+    }
+
+    @Test
+    fun `a board gone from the saved stack is left, the sentence stays`() = runTest(dispatcher) {
+        val savedState = SavedStateHandle()
+        val first = startViewModel(savedState = savedState)
+        first.tap("veux")
+        val kept = first.dieAndKeep(savedState).apply { set(NAVIGATION_KEY, longArrayOf(HOME_BOARD_ID, 2, 99)) }
+
+        val second = startViewModel(savedState = kept, voice = FakeSpeaker())
+
+        assertEquals(2L, second.state().board?.id)
+        assertEquals(listOf("veux"), second.messageTexts())
+    }
+
+    @Test
+    fun `going back, deleting a word and clearing all reach the saved state`() = runTest(dispatcher) {
+        val savedState = SavedStateHandle()
+        val viewModel = startViewModel(savedState = savedState)
+        viewModel.tap("je")
+        viewModel.tap("veux")
+        viewModel.tap("A")
+
+        viewModel.onBack()
+        viewModel.onDeleteLastWord()
+
+        assertEquals(listOf(HOME_BOARD_ID), savedState.get<LongArray>(NAVIGATION_KEY)?.toList())
+        assertEquals(listOf("je"), savedState.get<ArrayList<SavedWord>>(MESSAGE_KEY)?.map { it.label })
+
+        viewModel.onClearMessage()
+
+        assertEquals(emptyList<SavedWord>(), savedState.get<ArrayList<SavedWord>>(MESSAGE_KEY))
+    }
+
+    @Test
+    fun `the saved stack stays saved while home is being prepared`() = runTest(dispatcher) {
+        // Le processus peut mourir à nouveau pendant l'attente : la pile sauvée doit y être encore.
+        val savedState = SavedStateHandle(mapOf(NAVIGATION_KEY to longArrayOf(HOME_BOARD_ID, 2)))
+        val dao = FakeBoardDao().apply { insertGate = CompletableDeferred() }
+
+        startViewModel(dao, savedState)
+
+        assertEquals(listOf(HOME_BOARD_ID, 2L), savedState.get<LongArray>(NAVIGATION_KEY)?.toList())
+        checkNotNull(dao.insertGate).complete(Unit)
     }
 }

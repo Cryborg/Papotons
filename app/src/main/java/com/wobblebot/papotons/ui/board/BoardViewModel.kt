@@ -1,6 +1,7 @@
 package com.wobblebot.papotons.ui.board
 
 import android.util.Log
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wobblebot.papotons.data.board.BoardRepository
@@ -14,6 +15,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +33,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 private const val TAG = "BoardViewModel"
+internal const val NAVIGATION_KEY = "navigation"
+internal const val MESSAGE_KEY = "message"
 internal const val STOP_TIMEOUT_MS = 5_000L
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -38,10 +42,15 @@ internal const val STOP_TIMEOUT_MS = 5_000L
 class BoardViewModel @Inject constructor(
     private val repository: BoardRepository,
     private val speaker: Speaker,
+    /**
+     * Miroir de la pile et de la phrase, pour survivre à la mort du processus : lu une seule fois
+     * ici, à la création, puis seulement recopié (un collecteur par flux).
+     */
+    private val savedState: SavedStateHandle,
 ) : ViewModel() {
     /** Pile des grilles ouvertes, l'accueil en bas. Vide tant que l'accueil n'est pas prêt. */
     private val navigation = MutableStateFlow<PersistentList<Long>>(persistentListOf())
-    private val message = MutableStateFlow<PersistentList<SentenceWord>>(persistentListOf())
+    private val message = MutableStateFlow(restoredMessage())
 
     /**
      * La grille affichée reste la précédente tant que la suivante n'est pas lue : une grille
@@ -79,7 +88,14 @@ class BoardViewModel @Inject constructor(
     init {
         // On n'observe rien avant la fin de l'insertion : sinon l'accueil serait lu absent
         // au premier lancement. Une erreur ici remonte en plantage (Android vitals).
-        reopenHome()
+        reopenHome(savedStack = savedState.get<LongArray>(NAVIGATION_KEY)?.toList())
+        viewModelScope.launch {
+            // La pile vide de l'attente de l'accueil n'écrase pas la pile sauvée.
+            navigation.collect { stack -> if (stack.isNotEmpty()) savedState[NAVIGATION_KEY] = stack.toLongArray() }
+        }
+        viewModelScope.launch {
+            message.collect { words -> savedState[MESSAGE_KEY] = ArrayList(words.map(SavedWord::from)) }
+        }
     }
 
     fun onCellClick(cell: Cell) {
@@ -136,13 +152,24 @@ class BoardViewModel @Inject constructor(
 
     private fun isShowingTopOf(stack: PersistentList<Long>): Boolean = uiState.value.board?.id == stack.lastOrNull()
 
-    private fun reopenHome() {
+    /** [savedStack] : la pile d'avant la mort du processus, à la création seulement. */
+    private fun reopenHome(savedStack: List<Long>? = null) {
         if (homeOpening?.isActive == true) return
         homeOpening = viewModelScope.launch {
             val homeBoardId = repository.ensureHomeBoard()
-            navigation.value = persistentListOf(homeBoardId)
+            navigation.value = when {
+                savedStack.isNullOrEmpty() -> persistentListOf(homeBoardId)
+                savedStack.first() == homeBoardId -> savedStack.toPersistentList()
+                else -> {
+                    Log.w(TAG, "Saved stack $savedStack does not start at home board $homeBoardId, dropped")
+                    persistentListOf(homeBoardId)
+                }
+            }
         }
     }
+
+    private fun restoredMessage(): PersistentList<SentenceWord> =
+        savedState.get<ArrayList<SavedWord>>(MESSAGE_KEY).orEmpty().map { it.toSentenceWord() }.toPersistentList()
 
     private fun display(board: Board?, stack: PersistentList<Long>): DisplayedBoard? {
         if (board == null) {

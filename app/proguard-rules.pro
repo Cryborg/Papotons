@@ -6,3 +6,7 @@
 
 # Traces lisibles dans Android vitals (Play Console) une fois le mapping envoyé.
 -keepattributes SourceFile,LineNumberTable
+
+# Phrase en cours sauvée dans l'état de l'activité : la sérialisation Java lit nom et champs par
+# réflexion, ils restent tels quels.
+-keep class com.wobblebot.papotons.ui.board.SavedWord { *; }
