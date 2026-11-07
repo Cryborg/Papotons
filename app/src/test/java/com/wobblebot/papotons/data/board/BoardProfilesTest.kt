@@ -2,6 +2,9 @@ package com.wobblebot.papotons.data.board
 
 import android.content.Context
 import com.wobblebot.papotons.data.FakePreferences
+import com.wobblebot.papotons.data.backup.MAX_BOARDS
+import com.wobblebot.papotons.data.backup.MAX_BOARD_ID
+import com.wobblebot.papotons.data.backup.MAX_CELLS
 import com.wobblebot.papotons.data.profile.FIRST_PROFILE_ID
 import com.wobblebot.papotons.data.profile.MAX_PROFILES
 import com.wobblebot.papotons.data.profile.MAX_PROFILE_NAME_LENGTH
@@ -163,6 +166,63 @@ class BoardProfilesTest {
 
         assertEquals(switchesBefore, repository.profileSwitches.value)
         assertEquals(FIRST_PROFILE_ID, repository.openProfileId.value)
+    }
+
+    /** Le nombre de grilles et de cases qu'ajoute un utilisateur : mesuré, la graine pouvant grandir. */
+    private suspend fun BoardRepository.seedSizeOfAProfile(dao: FakeBoardDao): Pair<Int, Int> {
+        val boards = dao.boards.value.size
+        val cells = dao.cells.value.size
+        createProfile("mesure")
+        return dao.boards.value.size - boards to dao.cells.value.size - cells
+    }
+
+    @Test
+    fun `a profile that would exceed the boards of a backup is refused, one that fits is created`() = runTest {
+        val dao = FakeBoardDao()
+        val repository = freshRepository(dao)
+        val (seedBoards, _) = repository.seedSizeOfAProfile(dao)
+        val firstFillerId = 100_000L
+        val missing = MAX_BOARDS - seedBoards + 1 - dao.boards.value.size
+        dao.boards.value += (0 until missing).map { BoardEntity(firstFillerId + it, "rempli", 1, 1, profileId = FIRST_PROFILE_ID) }
+        val profileCount = dao.profiles.value.size
+
+        assertThrows(TooManyProfilesException::class.java) { runBlocking { repository.createProfile("de trop") } }
+        assertEquals(profileCount, dao.profiles.value.size)
+
+        dao.boards.value = dao.boards.value.filter { it.id != firstFillerId }
+        repository.createProfile("juste")
+        assertEquals(MAX_BOARDS, dao.boards.value.size)
+    }
+
+    @Test
+    fun `a profile that would exceed the cells of a backup is refused, one that fits is created`() = runTest {
+        val dao = FakeBoardDao()
+        val repository = freshRepository(dao)
+        val (_, seedCells) = repository.seedSizeOfAProfile(dao)
+        dao.extraCellCount = MAX_CELLS - dao.cells.value.size - seedCells + 1
+        val profileCount = dao.profiles.value.size
+
+        assertThrows(TooManyProfilesException::class.java) { runBlocking { repository.createProfile("de trop") } }
+        assertEquals(profileCount, dao.profiles.value.size)
+
+        dao.extraCellCount -= 1
+        repository.createProfile("juste")
+        assertEquals(MAX_CELLS, dao.countCells())
+    }
+
+    @Test
+    fun `a profile whose board ids would pass the backup limit is refused, one that fits is created`() = runTest {
+        val dao = FakeBoardDao()
+        val repository = freshRepository(dao)
+        val (seedBoards, _) = repository.seedSizeOfAProfile(dao)
+        val tooHigh = MAX_BOARD_ID - seedBoards + 1
+        dao.boards.value += BoardEntity(tooHigh, "rempli", 1, 1, profileId = FIRST_PROFILE_ID)
+
+        assertThrows(TooManyProfilesException::class.java) { runBlocking { repository.createProfile("de trop") } }
+
+        dao.boards.value = dao.boards.value.map { if (it.id == tooHigh) it.copy(id = tooHigh - 1) else it }
+        repository.createProfile("juste")
+        assertEquals(MAX_BOARD_ID, dao.boards.value.maxOf { it.id })
     }
 
     @Test

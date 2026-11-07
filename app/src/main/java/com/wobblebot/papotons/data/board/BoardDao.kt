@@ -8,6 +8,8 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import com.wobblebot.papotons.data.backup.MAX_BOARDS
+import com.wobblebot.papotons.data.backup.MAX_BOARD_ID
+import com.wobblebot.papotons.data.backup.MAX_CELLS
 import com.wobblebot.papotons.data.profile.FIRST_PROFILE_ID
 import com.wobblebot.papotons.data.profile.MAX_PROFILES
 import com.wobblebot.papotons.data.profile.ProfileEntity
@@ -54,6 +56,12 @@ class TooManyProfilesException : SQLiteException("Too many profiles")
 /** La grille parente d'un nouveau dossier a disparu : on ne sait pas à quel utilisateur le rattacher. */
 class BoardNotFoundException(boardId: Long) : SQLiteException("Board $boardId not found")
 
+/** Au-delà, la sauvegarde refuserait la base : l'export doit rester possible (invariant 4). */
+class TooManyBoardsException : SQLiteException("Too many boards")
+
+/** Au-delà, la sauvegarde refuserait la base : l'export doit rester possible (invariant 4). */
+class TooManyCellsException : SQLiteException("Too many cells")
+
 /** Toute la base, lue d'un coup : une sauvegarde cohérente. */
 data class DatabaseSnapshot(val profiles: List<ProfileEntity>, val boards: List<BoardEntity>, val cells: List<CellEntity>)
 
@@ -64,6 +72,9 @@ data class ReferencedImages(val boardCount: Int, val pictogramIds: Set<Long>, va
 abstract class BoardDao {
     @Query("SELECT COUNT(*) FROM boards")
     abstract suspend fun countBoards(): Int
+
+    @Query("SELECT COUNT(*) FROM cells")
+    abstract suspend fun countCells(): Int
 
     @Query("SELECT EXISTS(SELECT 1 FROM boards WHERE id = :boardId)")
     abstract suspend fun boardExists(boardId: Long): Boolean
@@ -183,9 +194,9 @@ abstract class BoardDao {
     @Transaction
     open suspend fun insertProfileWithCoreVocabulary(name: String, seed: VocabularySeed): Long {
         // Au-delà, la sauvegarde refuserait la base : l'export doit rester possible (invariant 4).
-        if (countProfiles() >= MAX_PROFILES || countBoards() + seed.boards.size > MAX_BOARDS) throw TooManyProfilesException()
-        val profileId = insertProfile(ProfileEntity(name = name, startBoardId = null))
         val firstBoardId = maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID)
+        if (countProfiles() >= MAX_PROFILES || isOverExportLimits(seed, firstBoardId)) throw TooManyProfilesException()
+        val profileId = insertProfile(ProfileEntity(name = name, startBoardId = null))
         val copy = seed.forProfile(profileId, firstBoardId)
         insertAll(copy.boards.asScreen(rootCoreBoardId = HOME_BOARD_ID, position = FIRST_SCREEN_POSITION, name = null), copy.cells)
         return profileId
@@ -203,8 +214,9 @@ abstract class BoardDao {
         val position = (screens.mapNotNull { it.screenPosition }.maxOrNull() ?: (FIRST_SCREEN_POSITION - 1)) + 1
         // Au-delà des grilles ou du rang, la sauvegarde refuserait la base : l'export doit rester possible
         // (invariant 4). Un rang maximal ne vient que d'une sauvegarde modifiée à la main.
-        if (screens.size >= MAX_SCREENS || countBoards() + seed.boards.size > MAX_BOARDS || position > MAX_SCREEN_POSITION) throw TooManyScreensException()
-        val copy = seed.forProfile(profileId, maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID))
+        val firstBoardId = maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID)
+        if (screens.size >= MAX_SCREENS || isOverExportLimits(seed, firstBoardId) || position > MAX_SCREEN_POSITION) throw TooManyScreensException()
+        val copy = seed.forProfile(profileId, firstBoardId)
         val boards = copy.boards.asScreen(rootCoreBoardId, position, name)
         insertAll(boards, copy.cells)
         return boards.first { it.screenPosition != null }.id
@@ -308,9 +320,18 @@ abstract class BoardDao {
     @Query("SELECT * FROM boards WHERE id = :boardId")
     abstract fun observeBoard(boardId: Long): Flow<BoardWithCells?>
 
+    /** Sans plafond : une case de l'adulte passe par [insertWord] ou [insertFolder]. */
     @Insert(onConflict = OnConflictStrategy.ABORT)
     abstract suspend fun insertCell(cell: CellEntity): Long
 
+    /** Un mot de l'adulte, jamais au-delà de [MAX_CELLS] cases. */
+    @Transaction
+    open suspend fun insertWord(cell: CellEntity): Long {
+        if (countCells() >= MAX_CELLS) throw TooManyCellsException()
+        return insertCell(cell)
+    }
+
+    /** Sans plafond : une grille de l'adulte passe par [insertFolder], [insertScreen] ou [insertProfileWithCoreVocabulary]. */
     @Insert(onConflict = OnConflictStrategy.ABORT)
     abstract suspend fun insertBoard(board: BoardEntity): Long
 
@@ -415,8 +436,15 @@ abstract class BoardDao {
         return previousPhoto
     }
 
+    /** [seed] copiée à partir de [firstBoardId] ferait refuser la base par la sauvegarde (invariant 4). */
+    private suspend fun isOverExportLimits(seed: VocabularySeed, firstBoardId: Long): Boolean =
+        countBoards() + seed.boards.size > MAX_BOARDS ||
+            countCells() + seed.cells.size > MAX_CELLS ||
+            firstBoardId + seed.boards.size - 1 > MAX_BOARD_ID
+
     /**
-     * Une nouvelle grille et la case-dossier qui l'ouvre, ensemble ou pas du tout. Rend l'id de la
+     * Une nouvelle grille et la case-dossier qui l'ouvre, ensemble ou pas du tout. Jamais au-delà de
+     * [MAX_BOARDS] grilles, de [MAX_BOARD_ID] ni de [MAX_CELLS] cases. Rend l'id de la
      * grille, jamais sous [FIRST_USER_BOARD_ID]. La grille appartient à l'utilisateur de la grille qui
      * porte la case, lu ici, jamais à l'utilisateur ouvert : un dossier ne relie jamais deux
      * utilisateurs (la sauvegarde le refuserait), même écrit pendant un changement d'utilisateur.
@@ -425,6 +453,9 @@ abstract class BoardDao {
     open suspend fun insertFolder(board: BoardEntity, folderCell: CellEntity): Long {
         val profileId = profileOf(folderCell.boardId) ?: throw BoardNotFoundException(folderCell.boardId)
         val newId = maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID)
+        // Comme les écrans et les utilisateurs : l'export doit rester possible (invariant 4).
+        if (countBoards() >= MAX_BOARDS || newId > MAX_BOARD_ID) throw TooManyBoardsException()
+        if (countCells() >= MAX_CELLS) throw TooManyCellsException()
         val boardId = insertBoard(board.copy(id = newId, profileId = profileId, coreBoardId = null))
         insertCell(folderCell.copy(linkedBoardId = boardId))
         return boardId

@@ -12,6 +12,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import android.database.sqlite.SQLiteConstraintException
 import com.wobblebot.papotons.data.CORRUPTED_DATABASES_DIRECTORY
+import com.wobblebot.papotons.data.backup.MAX_BOARDS
+import com.wobblebot.papotons.data.backup.MAX_BOARD_ID
+import com.wobblebot.papotons.data.backup.MAX_CELLS
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -138,6 +141,69 @@ class BoardEditingTest {
         repository.updateCell(checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.single(), CellContent("moi", null, null, null, null))
 
         assertEquals("keep", dao.boards.value.single { it.id == 2L }.name)
+    }
+
+    @Test
+    fun `a folder that would put the boards over the backup limit is refused`() = runTest {
+        val others = (1 until MAX_BOARDS - 1).map { BoardEntity(id = FIRST_USER_BOARD_ID + it, name = "g$it", rowCount = 1, columnCount = 1) }
+        val dao = FakeBoardDao(listOf(home) + others)
+        val repository = repository(dao)
+
+        repository.addFolder(HOME_BOARD_ID, 1, 0, CellContent("Jeux", null, null, null, null), BoardSize.STANDARD)
+        assertThrows(TooManyBoardsException::class.java) {
+            runBlocking { repository.addFolder(HOME_BOARD_ID, 1, 1, CellContent("Animaux", null, null, null, null), BoardSize.STANDARD) }
+        }
+
+        assertEquals(MAX_BOARDS, dao.boards.value.size)
+        assertEquals(1, dao.cells.value.size)
+    }
+
+    @Test
+    fun `a folder whose board id would be over the backup limit is refused`() = runTest {
+        val dao = FakeBoardDao(listOf(home, BoardEntity(id = MAX_BOARD_ID, name = "dernière", rowCount = 1, columnCount = 1)))
+
+        assertThrows(TooManyBoardsException::class.java) {
+            runBlocking { repository(dao).addFolder(HOME_BOARD_ID, 1, 0, CellContent("Jeux", null, null, null, null), BoardSize.STANDARD) }
+        }
+
+        assertEquals(2, dao.boards.value.size)
+        assertTrue(dao.cells.value.isEmpty())
+    }
+
+    @Test
+    fun `a word that would put the cells over the backup limit is refused`() = runTest {
+        val dao = FakeBoardDao(listOf(home))
+        dao.extraCellCount = MAX_CELLS - 1
+        val repository = repository(dao)
+
+        repository.addWord(HOME_BOARD_ID, 0, 0, CellContent("je", null, null, null, null))
+        assertThrows(TooManyCellsException::class.java) { runBlocking { repository.addWord(HOME_BOARD_ID, 0, 1, CellContent("eau", null, null, null, null)) } }
+
+        assertEquals(1, dao.cells.value.size)
+    }
+
+    @Test
+    fun `a folder that would put the cells over the backup limit is refused`() = runTest {
+        val dao = FakeBoardDao(listOf(home))
+        dao.extraCellCount = MAX_CELLS - 1
+        val repository = repository(dao)
+
+        repository.addFolder(HOME_BOARD_ID, 0, 0, CellContent("Jeux", null, null, null, null), BoardSize.STANDARD)
+        assertThrows(TooManyCellsException::class.java) {
+            runBlocking { repository.addFolder(HOME_BOARD_ID, 0, 1, CellContent("Animaux", null, null, null, null), BoardSize.STANDARD) }
+        }
+
+        assertEquals(1, dao.cells.value.size)
+        assertEquals(2, dao.boards.value.size)
+    }
+
+    @Test
+    fun `a folder may take the last board id the backup accepts`() = runTest {
+        val dao = FakeBoardDao(listOf(home, BoardEntity(id = MAX_BOARD_ID - 1, name = "avant-dernière", rowCount = 1, columnCount = 1)))
+
+        repository(dao).addFolder(HOME_BOARD_ID, 1, 0, CellContent("Jeux", null, null, null, null), BoardSize.STANDARD)
+
+        assertTrue(dao.boards.value.any { it.id == MAX_BOARD_ID })
     }
 
     @Test

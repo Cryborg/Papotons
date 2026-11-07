@@ -84,6 +84,11 @@ class FakeBoardDao(
 
     override suspend fun largestBoardId(): Long? = boards.value.maxOfOrNull { it.id }
 
+    /** Ajouté au compte des cases : une base pleine sans les créer. */
+    var extraCellCount = 0
+
+    override suspend fun countCells(): Int = cells.value.size + extraCellCount
+
     /** Levée par l'insertion (disque plein, contrainte violée). */
     var insertFailure: RuntimeException? = null
 

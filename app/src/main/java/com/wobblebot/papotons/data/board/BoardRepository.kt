@@ -321,9 +321,9 @@ class BoardRepository @Inject constructor(
         }
         .distinctUntilChanged()
 
-    /** Un mot à un emplacement libre ; échoue (index unique) si l'emplacement est pris. */
+    /** Un mot à un emplacement libre ; échoue si l'emplacement est pris (index unique) ou si la base est pleine. */
     suspend fun addWord(boardId: Long, row: Int, column: Int, content: CellContent) {
-        write { boardDao.insertCell(content.toEntity(boardId, row, column, linkedBoardId = null)) }
+        write { boardDao.insertWord(content.toEntity(boardId, row, column, linkedBoardId = null)) }
     }
 
     /**

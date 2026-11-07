@@ -3,6 +3,8 @@ package com.wobblebot.papotons.data.board
 import android.content.Context
 import com.wobblebot.papotons.data.FakePreferences
 import com.wobblebot.papotons.data.backup.MAX_BOARDS
+import com.wobblebot.papotons.data.backup.MAX_BOARD_ID
+import com.wobblebot.papotons.data.backup.MAX_CELLS
 import com.wobblebot.papotons.data.profile.FIRST_PROFILE_ID
 import com.wobblebot.papotons.data.profile.ProfileEntity
 import com.wobblebot.papotons.domain.BoardSize
@@ -309,6 +311,38 @@ class BoardScreensTest {
         dao.boards.value = dao.boards.value.filter { it.id != firstFillerId }
         repository.createScreen("Juste", BoardSize.LARGE_CELLS)
         assertEquals(MAX_BOARDS, dao.boards.value.size)
+    }
+
+    @Test
+    fun `a screen that would exceed the cells of a backup is refused, one that fits is created`() = runTest {
+        val dao = FakeBoardDao()
+        val repository = freshRepository(dao)
+        val largeCellCount = seed.subtree(BoardSize.LARGE_CELLS.homeBoardId).cells.size
+        dao.extraCellCount = MAX_CELLS - dao.cells.value.size - largeCellCount + 1
+        val boardCount = dao.boards.value.size
+
+        assertThrows(TooManyScreensException::class.java) { runBlocking { repository.createScreen("De trop", BoardSize.LARGE_CELLS) } }
+        assertEquals(boardCount, dao.boards.value.size)
+
+        dao.extraCellCount -= 1
+        repository.createScreen("Juste", BoardSize.LARGE_CELLS)
+        assertEquals(MAX_CELLS, dao.countCells())
+    }
+
+    /** Une sauvegarde retouchée peut porter une grille d'id très haut : l'écran suivant ne doit pas dépasser la borne. */
+    @Test
+    fun `a screen whose board ids would pass the backup limit is refused, one that fits is created`() = runTest {
+        val dao = FakeBoardDao()
+        val repository = freshRepository(dao)
+        val largeBoardCount = seed.subtree(BoardSize.LARGE_CELLS.homeBoardId).boards.size
+        val tooHigh = MAX_BOARD_ID - largeBoardCount + 1
+        dao.boards.value += BoardEntity(tooHigh, "rempli", 1, 1, profileId = FIRST_PROFILE_ID)
+
+        assertThrows(TooManyScreensException::class.java) { runBlocking { repository.createScreen("De trop", BoardSize.LARGE_CELLS) } }
+
+        dao.boards.value = dao.boards.value.map { if (it.id == tooHigh) it.copy(id = tooHigh - 1) else it }
+        repository.createScreen("Juste", BoardSize.LARGE_CELLS)
+        assertEquals(MAX_BOARD_ID, dao.boards.value.maxOf { it.id })
     }
 
     /** Un rang maximal ne vient que d'une sauvegarde retouchée : l'écran suivant ne déborde pas, il est refusé. */
