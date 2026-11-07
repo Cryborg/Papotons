@@ -88,7 +88,7 @@ class BoardScreenLayoutTest {
         message = persistentListOf(),
         speechStatus = SpeechStatus.Ready,
     )
-    private val noActions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, {})
+    private val noActions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, {}, {})
 
     private fun cellBounds(label: String) = composeRule.onNodeWithText(label).getBoundsInRoot()
 

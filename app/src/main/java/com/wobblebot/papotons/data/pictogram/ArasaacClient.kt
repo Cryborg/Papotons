@@ -24,7 +24,6 @@ private const val IMAGE_SIZE_SUFFIX = "_300.png"
 private const val USER_AGENT = "Papotons"
 private const val TIMEOUT_MS = 10_000
 private const val MAX_SEARCH_BYTES = 2 * 1024 * 1024
-private const val MAX_IMAGE_BYTES = 1024 * 1024
 private const val MAX_RESULTS = 30
 private const val READ_BUFFER_BYTES = 8 * 1024
 private const val HEX_DIGITS = "0123456789ABCDEF"
@@ -70,7 +69,7 @@ class HttpArasaacClient @Inject constructor() : ArasaacClient {
     }
 
     override suspend fun download(pictogramId: Long): ByteArray =
-        checkNotNull(get(imageUrl(pictogramId), MAX_IMAGE_BYTES, emptyOn404 = false))
+        checkNotNull(get(imageUrl(pictogramId), MAX_PICTOGRAM_BYTES, emptyOn404 = false))
 
     private suspend fun get(url: String, maxBytes: Int, emptyOn404: Boolean): ByteArray? = withContext(Dispatchers.IO) {
         val connection = URL(url).openConnection() as HttpURLConnection

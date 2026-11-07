@@ -83,6 +83,9 @@ class CorruptedDatabaseCopies(filesDirectory: File) {
         }
     }
 
+    /** Les copies gardées (une par dossier), sans celles en cours. */
+    fun copyDirectories(): List<File> = directory.listFiles().orEmpty().filter { it.isDirectory && !it.name.startsWith(PENDING_COPY_PREFIX) }
+
     private fun copyNames(): List<String> = directory.list().orEmpty().filterNot { it.startsWith(PENDING_COPY_PREFIX) }
 
     private fun highestSequence(): Int = copyNames().maxOfOrNull(::sequenceOf) ?: 0

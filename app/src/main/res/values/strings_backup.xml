@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sauvegarde et restauration des grilles (mode édition) -->
+    <string name="backup_open">Sauvegarde</string>
+    <string name="backup_unsaved_badge">changements non sauvegardés</string>
+    <string name="backup_title">Sauvegarde des grilles</string>
+    <string name="backup_unsaved">Des changements ne sont pas encore sauvegardés.</string>
+    <string name="backup_up_to_date">Les grilles sont sauvegardées.</string>
+    <string name="backup_explanation">Une sauvegarde est un fichier que vous rangez où vous voulez : Drive, carte mémoire, envoi par mail. Elle permet de retrouver les grilles après une perte, ou de les passer sur une autre tablette. Papotons n\'envoie rien de lui-même.</string>
+    <string name="backup_save">Enregistrer une sauvegarde</string>
+    <string name="backup_restore">Restaurer une sauvegarde</string>
+    <string name="backup_close">Fermer</string>
+    <string name="backup_working">Un instant…</string>
+    <string name="backup_file_name">papotons-%1$s.obz</string>
+
+    <string name="backup_saved">Sauvegarde enregistrée.</string>
+    <string name="backup_saved_without_some_images">Sauvegarde enregistrée, mais des images abîmées sur cet appareil n\'ont pas pu y entrer : leurs cases reviendront sans image. Remplacez ces images, puis sauvegardez à nouveau.</string>
+    <string name="backup_save_too_large">Les grilles sont trop grosses pour une seule sauvegarde. Retirez des photos ou des cases, puis réessayez.</string>
+    <string name="backup_save_failed">La sauvegarde a échoué. Réessayez ; si cela continue, l\'appareil manque peut-être de place, ou l\'emplacement choisi refuse le fichier.</string>
+    <string name="backup_no_document_app">Aucune application de cet appareil ne permet de choisir un fichier.</string>
+    <string name="backup_restored">Les grilles ont été restaurées.</string>
+    <string name="backup_restore_failed">La restauration a échoué. Les grilles n\'ont pas changé.</string>
+    <string name="backup_refused_not_papotons">Ce fichier n\'est pas une sauvegarde de Papotons.</string>
+    <string name="backup_refused_unreadable">Ce fichier est abîmé ou illisible.</string>
+    <string name="backup_refused_too_large">Cette sauvegarde est trop grosse pour être restaurée.</string>
+    <string name="backup_refused_invalid">Cette sauvegarde est incohérente et ne peut pas être restaurée.</string>
+
+    <string name="restore_confirm_title">Restaurer cette sauvegarde ?</string>
+    <string name="restore_confirm_file">Fichier : %1$s</string>
+    <plurals name="restore_confirm_boards">
+        <item quantity="one">%1$d grille</item>
+        <item quantity="many">%1$d grilles</item>
+        <item quantity="other">%1$d grilles</item>
+    </plurals>
+    <plurals name="restore_confirm_cells">
+        <item quantity="one">%1$d case</item>
+        <item quantity="many">%1$d cases</item>
+        <item quantity="other">%1$d cases</item>
+    </plurals>
+    <string name="restore_confirm_content">Elle contient %1$s et %2$s.</string>
+    <string name="restore_confirm_warning">Toutes les grilles actuelles seront remplacées, photos comprises.</string>
+    <string name="restore_confirm">Restaurer</string>
+    <string name="restore_cancel">Annuler</string>
+
+    <string name="lost_boards_dialog_restore">Restaurer une sauvegarde</string>
+</resources>

@@ -106,6 +106,29 @@ class FakeBoardDao(
     override suspend fun linkedBoardIds(boardId: Long): List<Long> =
         cells.value.filter { it.boardId == boardId }.mapNotNull { it.linkedBoardId }
 
+    override suspend fun allBoards(): List<BoardEntity> = boards.value.sortedBy { it.id }
+
+    override suspend fun allCells(): List<CellEntity> = cells.value.sortedWith(compareBy({ it.boardId }, { it.row }, { it.column }))
+
+    override suspend fun deleteAllCells() {
+        cells.value = emptyList()
+    }
+
+    override suspend fun deleteAllBoards() {
+        boards.value = emptyList()
+    }
+
+    /** Comme Room, qui n'émet qu'après la transaction : jamais une base vide entre les deux. */
+    override suspend fun replaceAll(boards: List<BoardEntity>, cells: List<CellEntity>) {
+        val wereReadsHeld = areReadsHeld.value
+        areReadsHeld.value = true
+        try {
+            super.replaceAll(boards, cells)
+        } finally {
+            areReadsHeld.value = wereReadsHeld
+        }
+    }
+
     override suspend fun referencedPictogramIds(): List<Long> = cells.value.mapNotNull { it.pictogramId }.distinct()
 
     override suspend fun referencedPhotoFiles(): List<String> = cells.value.mapNotNull { it.photoFile }.distinct()

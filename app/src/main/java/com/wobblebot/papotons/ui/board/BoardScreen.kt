@@ -40,7 +40,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.Cell
@@ -48,6 +50,10 @@ import com.wobblebot.papotons.domain.SentenceToken
 import com.wobblebot.papotons.domain.layoutGrid
 import com.wobblebot.papotons.speech.SpeechStatus
 import com.wobblebot.papotons.ui.about.AboutDialog
+import com.wobblebot.papotons.ui.backup.BackupDialog
+import com.wobblebot.papotons.ui.backup.BackupUiState
+import com.wobblebot.papotons.ui.backup.BackupViewModel
+import com.wobblebot.papotons.ui.backup.RestoreConfirmDialog
 import com.wobblebot.papotons.ui.edit.CellEditorDialog
 import com.wobblebot.papotons.ui.edit.ParentalGateDialog
 import com.wobblebot.papotons.ui.edit.PictogramSearchDialog
@@ -58,6 +64,10 @@ private const val TAG = "BoardScreen"
 
 /** Réglages de synthèse vocale d'Android : action non publique, d'où les replis. */
 private const val TTS_SETTINGS_ACTION = "com.android.settings.TTS_SETTINGS"
+
+/** Avec `application/zip`, le stockage local ajouterait `.zip` au nom proposé. */
+private const val BACKUP_MIME_TYPE = "application/octet-stream"
+private const val ANY_MIME_TYPE = "*/*"
 
 @Immutable
 data class BoardActions(
@@ -73,15 +83,18 @@ data class BoardActions(
     val onAboutClick: () -> Unit,
     val onEmptySlotClick: (row: Int, column: Int) -> Unit,
     val onStopEditing: () -> Unit,
+    val onBackupClick: () -> Unit,
 )
 
 /** Ce qu'ouvre le contrôle parental quand il est passé. */
-private enum class GatedAction { StartEditing, AcknowledgeLostBoards }
+private enum class GatedAction { StartEditing, AcknowledgeLostBoards, RestoreBackup }
 
 /** Branche [BoardScreen] sur son ViewModel : retour arrière, premier plan, modale de la voix. */
 @Composable
-fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
+fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState, backupViewModel: BackupViewModel = hiltViewModel()) {
     val context = LocalContext.current
+    val backupState by backupViewModel.uiState.collectAsStateWithLifecycle()
+    val backupFileNamePattern = stringResource(R.string.backup_file_name)
     var isSpeechDialogOpen by rememberSaveable { mutableStateOf(false) }
     var areSettingsUnreachable by rememberSaveable { mutableStateOf(false) }
     var isAboutOpen by rememberSaveable { mutableStateOf(false) }
@@ -92,6 +105,13 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
     val canTakePhoto = remember(context) { context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) }
     val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture(), viewModel::onCameraResult)
     val choosePhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia(), viewModel::onPhotoResult)
+    // Revenu trop tard (l'adulte est parti), un document termine l'édition comme une photo.
+    val saveBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BACKUP_MIME_TYPE)) { document ->
+        if (!backupViewModel.onSaveDocument(document)) viewModel.onStopEditing()
+    }
+    val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { document ->
+        if (!backupViewModel.onRestoreDocument(document)) viewModel.onStopEditing()
+    }
     val actions = remember(viewModel) {
         BoardActions(
             onCellClick = viewModel::onCellClick,
@@ -109,6 +129,7 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
             onAboutClick = { isAboutOpen = true },
             onEmptySlotClick = viewModel::onEmptySlotClick,
             onStopEditing = viewModel::onStopEditing,
+            onBackupClick = backupViewModel::onOpen,
         )
     }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.recoverSpeech() }
@@ -116,12 +137,17 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
     // n'y est jamais. Une rotation, qui passe aussi par ON_STOP, la garde.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         // L'appli photo et le sélecteur font passer par ON_STOP sans que l'adulte soit parti.
-        if (activity?.isChangingConfigurations != true && !viewModel.isAwaitingPhoto) viewModel.onStopEditing()
+        val isAwaitingOtherApp = viewModel.isAwaitingPhoto || backupViewModel.isAwaitingDocument
+        if (activity?.isChangingConfigurations != true && !isAwaitingOtherApp) viewModel.onStopEditing()
     }
     // À l'accueil, le retour arrière garde son sens habituel (quitter l'appli) ; en édition, il la termine.
     BackHandler(enabled = state.board?.canGoBack == true, onBack = viewModel::onBack)
     BackHandler(enabled = state.isEditing && state.board?.canGoBack != true, onBack = viewModel::onStopEditing)
-    BoardScreen(state = state, actions = actions)
+    // Les modales de sauvegarde n'existent qu'en édition, derrière le contrôle parental.
+    LaunchedEffect(state.isEditing) {
+        if (!state.isEditing) backupViewModel.onEditingEnded()
+    }
+    BoardScreen(state = state, actions = actions, hasUnsavedChanges = backupState.hasUnsavedChanges)
     if (isAboutOpen) {
         AboutDialog(
             onClose = { isAboutOpen = false },
@@ -138,6 +164,10 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
                 when (action) {
                     GatedAction.StartEditing -> viewModel.onStartEditing()
                     GatedAction.AcknowledgeLostBoards -> viewModel.onAcknowledgeLostBoards()
+                    GatedAction.RestoreBackup -> {
+                        viewModel.onStartEditing()
+                        backupViewModel.onOpen()
+                    }
                 }
             },
             onClose = { gatedAction = null },
@@ -199,9 +229,39 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
                 isLostBoardsDialogOpen = false
                 gatedAction = GatedAction.AcknowledgeLostBoards
             },
+            onRestore = {
+                isLostBoardsDialogOpen = false
+                gatedAction = GatedAction.RestoreBackup
+            },
             onClose = { isLostBoardsDialogOpen = false },
         )
     }
+    BackupDialogs(
+        isEditing = state.isEditing,
+        state = backupState,
+        onSave = {
+            val fileName = backupViewModel.onSaveRequested(backupFileNamePattern)
+            try {
+                saveBackup.launch(fileName)
+            } catch (exception: ActivityNotFoundException) {
+                Log.w(TAG, "No document creator", exception)
+                backupViewModel.onDocumentRequestFailed()
+            }
+        },
+        onRestore = {
+            backupViewModel.onRestoreRequested()
+            try {
+                // Tout type : celui d'un `.obz` varie d'un fournisseur à l'autre.
+                openBackup.launch(arrayOf(ANY_MIME_TYPE))
+            } catch (exception: ActivityNotFoundException) {
+                Log.w(TAG, "No document picker", exception)
+                backupViewModel.onDocumentRequestFailed()
+            }
+        },
+        onConfirmRestore = backupViewModel::onConfirmRestore,
+        onCancelRestore = backupViewModel::onCancelRestore,
+        onClose = backupViewModel::onClose,
+    )
     // La voix revenue referme la modale pour de bon : une panne suivante ne doit pas la rouvrir
     // seule. Une relance en cours (Initializing, par exemple à la rotation) la masque sans la fermer.
     val isSpeechReady = state.speechStatus == SpeechStatus.Ready
@@ -227,7 +287,32 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
 }
 
 @Composable
-fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier = Modifier) {
+private fun BackupDialogs(
+    isEditing: Boolean,
+    state: BackupUiState,
+    onSave: () -> Unit,
+    onRestore: () -> Unit,
+    onConfirmRestore: () -> Unit,
+    onCancelRestore: () -> Unit,
+    onClose: () -> Unit,
+) {
+    if (!isEditing) return
+    val pending = state.pendingRestore
+    if (pending != null) {
+        RestoreConfirmDialog(
+            fileName = pending.fileName,
+            boardCount = pending.boardCount,
+            cellCount = pending.cellCount,
+            onConfirm = onConfirmRestore,
+            onCancel = onCancelRestore,
+        )
+    } else if (state.isDialogOpen) {
+        BackupDialog(state = state, onSave = onSave, onRestore = onRestore, onClose = onClose)
+    }
+}
+
+@Composable
+fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier = Modifier, hasUnsavedChanges: Boolean = true) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         // Barres système et encoche seulement : le clavier (édition, MVP-3) ne doit pas rétrécir
         // la grille et déplacer les cases.
@@ -246,7 +331,12 @@ fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier =
                 onAboutClick = actions.onAboutClick,
             ) {
                 if (state.isEditing) {
-                    EditBanner(onDone = actions.onStopEditing, modifier = Modifier.weight(1f))
+                    EditBanner(
+                        onDone = actions.onStopEditing,
+                        onBackup = actions.onBackupClick,
+                        hasUnsavedChanges = hasUnsavedChanges,
+                        modifier = Modifier.weight(1f),
+                    )
                 } else {
                     MessageBar(
                         words = state.message,
@@ -327,7 +417,7 @@ private fun BoardScreenPreview() {
                 message = persistentListOf(SentenceToken("je", persistentListOf()), SentenceToken("veux", persistentListOf())),
                 speechStatus = SpeechStatus.LanguageMissing,
             ),
-            actions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, {}),
+            actions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, {}, {}),
         )
     }
 }

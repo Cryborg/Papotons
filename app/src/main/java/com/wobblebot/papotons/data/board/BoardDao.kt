@@ -48,6 +48,33 @@ abstract class BoardDao {
         return true
     }
 
+    @Query("SELECT * FROM boards ORDER BY id")
+    abstract suspend fun allBoards(): List<BoardEntity>
+
+    @Query("SELECT * FROM cells ORDER BY board_id, grid_row, grid_column")
+    abstract suspend fun allCells(): List<CellEntity>
+
+    /** Toutes les grilles et toutes les cases, lues ensemble : une sauvegarde cohérente. */
+    @Transaction
+    open suspend fun snapshot(): Pair<List<BoardEntity>, List<CellEntity>> = allBoards() to allCells()
+
+    @Query("DELETE FROM cells")
+    abstract suspend fun deleteAllCells()
+
+    @Query("DELETE FROM boards")
+    abstract suspend fun deleteAllBoards()
+
+    /**
+     * Remplace toute la base, ensemble ou pas du tout : une restauration qui échoue laisse les grilles
+     * d'avant. Les cases d'abord : un dossier vise sa grille en RESTRICT.
+     */
+    @Transaction
+    open suspend fun replaceAll(boards: List<BoardEntity>, cells: List<CellEntity>) {
+        deleteAllCells()
+        deleteAllBoards()
+        insertAll(boards, cells)
+    }
+
     @Transaction
     @Query("SELECT * FROM boards WHERE id = :boardId")
     abstract fun observeBoard(boardId: Long): Flow<BoardWithCells?>

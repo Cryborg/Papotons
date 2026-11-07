@@ -199,4 +199,26 @@ class BoardDaoTest {
 
         assertEquals(ReferencedImages(boardCount = 2, pictogramIds = setOf(11L, 12L, 13L), photoFiles = setOf("mamie.jpg")), referenced)
     }
+
+    @Test
+    fun aReplacementThatFailsLeavesTheBoardsAsTheyWere() = runBlocking {
+        boardDao.insertAll(listOf(home, folderBoard), listOf(word(0, 0, "je"), folder))
+
+        assertThrows(SQLiteConstraintException::class.java) {
+            runBlocking { boardDao.replaceAll(listOf(home.copy(name = "new")), listOf(word(0, 0, "a"), word(0, 0, "b"))) }
+        }
+
+        assertEquals(listOf("home", "folder"), boardDao.allBoards().map { it.name })
+        assertEquals(setOf("je", "folder"), boardDao.allCells().map { it.label }.toSet())
+    }
+
+    @Test
+    fun aReplacementRemovesEveryOldBoardAndCell() = runBlocking {
+        boardDao.insertAll(listOf(home, folderBoard), listOf(word(0, 0, "je"), folder))
+
+        boardDao.replaceAll(listOf(home.copy(name = "new")), listOf(word(1, 1, "a")))
+
+        assertEquals(listOf(home.copy(name = "new")), boardDao.allBoards())
+        assertEquals(listOf("a"), boardDao.allCells().map { it.label })
+    }
 }

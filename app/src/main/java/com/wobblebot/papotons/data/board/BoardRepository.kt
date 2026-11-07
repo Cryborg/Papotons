@@ -9,7 +9,9 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import com.wobblebot.papotons.data.CorruptedDatabaseCopies
+import com.wobblebot.papotons.data.backup.BackupContent
 import com.wobblebot.papotons.data.photo.CELL_PHOTOS_DIRECTORY
+import com.wobblebot.papotons.data.photo.CELL_PHOTO_NAME
 import com.wobblebot.papotons.data.pictogram.DOWNLOADED_PICTOGRAMS_DIRECTORY
 import com.wobblebot.papotons.domain.Board
 import com.wobblebot.papotons.domain.Cell
@@ -22,15 +24,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -45,7 +51,6 @@ private const val SWEEP_MODIFICATION_MARGIN_MS = 2_000L
 
 /** Les seuls noms que le ménage efface : ceux qu'écrivent les pictos téléchargés et les photos. */
 private val PICTOGRAM_FILE_NAME = Regex("""(\d+)\.png""")
-private val PHOTO_FILE_NAME = Regex("""[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg""")
 
 /** Taille d'un nouveau dossier : celle des dossiers du vocabulaire de base. */
 private const val FOLDER_ROW_COUNT = 4
@@ -69,6 +74,13 @@ private fun CellContent.toEntity(boardId: Long, row: Int, column: Int, linkedBoa
  */
 private val CORE_VOCABULARY_SEEDED = booleanPreferencesKey("core_vocabulary_seeded")
 
+/**
+ * Des modifications n'ont pas été sauvegardées dans un fichier. Absente : vrai (une installation qui
+ * avait des grilles avant que la clé existe n'a peut-être jamais été sauvegardée) ; seule une
+ * installation neuve l'écrit à faux.
+ */
+private val HAS_UNSAVED_CHANGES = booleanPreferencesKey("has_unsaved_changes")
+
 /** Quand (ms) la base a été trouvée vide alors qu'elle avait déjà été remplie. Retirée par l'adulte. */
 private val BOARDS_LOST_AT = longPreferencesKey("boards_lost_at")
 
@@ -80,6 +92,14 @@ class BoardRepository @Inject constructor(
 ) {
     /** Une perte constatée dont l'écriture a échoué : connue de ce processus seulement. */
     private val unsavedLostBoards = MutableStateFlow(false)
+
+    /** Nombre d'écritures dans ce processus : un export ne se dit à jour que si aucune n'a eu lieu depuis son instantané. */
+    private val writeCount = AtomicLong(0)
+
+    private val replacementCount = MutableStateFlow(0)
+
+    /** Monte à chaque restauration : l'écran repart de l'accueil, la grille ouverte n'existe peut-être plus. */
+    val replacements: StateFlow<Int> = replacementCount.asStateFlow()
 
     /** Avant toute édition possible : seules les images plus anciennes sont candidates au ménage. */
     private val createdAtMs = System.currentTimeMillis()
@@ -112,13 +132,14 @@ class BoardRepository @Inject constructor(
         if (isDatabaseEmpty) wasFoundEmpty = true
         raiseLostBoardsIfNeeded(isDatabaseEmpty)
         val seed = CoreVocabulary.build(context::getString)
-        if (boardDao.seedIfEmpty(seed.boards, seed.cells)) {
+        val isSeeded = boardDao.seedIfEmpty(seed.boards, seed.cells)
+        if (isSeeded) {
             wasFoundEmpty = true
             Log.i(TAG, "Core vocabulary inserted: ${seed.boards.size} boards, ${seed.cells.size} cells")
         }
         // Le marqueur APRÈS : un arrêt entre les deux laisse une base remplie sans marqueur, que le
         // lancement suivant marque sans alerte.
-        markSeeded()
+        markSeeded(isFreshSeed = isSeeded && !copies().hasCopies())
         hasOpenedHome = true
         if (boardDao.boardExists(HOME_BOARD_ID)) return HOME_BOARD_ID
         // Jamais nul : la base n'est pas vide après seedIfEmpty.
@@ -147,21 +168,18 @@ class BoardRepository @Inject constructor(
 
     /** Un mot à un emplacement libre ; échoue (index unique) si l'emplacement est pris. */
     suspend fun addWord(boardId: Long, row: Int, column: Int, content: CellContent) {
-        copies().markEdited()
-        boardDao.insertCell(content.toEntity(boardId, row, column, linkedBoardId = null))
+        write { boardDao.insertCell(content.toEntity(boardId, row, column, linkedBoardId = null)) }
     }
 
     /** Un dossier : une grille vide, nommée comme lui, et la case qui l'ouvre. */
     suspend fun addFolder(boardId: Long, row: Int, column: Int, content: CellContent) {
         val board = BoardEntity(name = content.label, rowCount = FOLDER_ROW_COUNT, columnCount = FOLDER_COLUMN_COUNT)
-        copies().markEdited()
-        boardDao.insertFolder(board, content.toEntity(boardId, row, column, linkedBoardId = null))
+        write { boardDao.insertFolder(board, content.toEntity(boardId, row, column, linkedBoardId = null)) }
     }
 
     /** Le contenu seulement ; un dossier renommé renomme sa grille (titre lu par TalkBack). Rend la photo d'avant. */
-    suspend fun updateCell(cell: Cell, content: CellContent): String? {
-        copies().markEdited()
-        return boardDao.updateCellContentAndFolderName(
+    suspend fun updateCell(cell: Cell, content: CellContent): String? = write {
+        boardDao.updateCellContentAndFolderName(
             cell.id,
             cell.photoFile,
             cell.linkedBoardId,
@@ -180,10 +198,84 @@ class BoardRepository @Inject constructor(
      * à effacer, une photo n'appartenant qu'à une case.
      */
     suspend fun deleteCell(cell: Cell, boardId: Long, openRootBoardId: Long): List<String> {
-        copies().markEdited()
-        val deleted = boardDao.deleteCellAndOrphanBoards(cell.id, setOf(HOME_BOARD_ID, boardId, openRootBoardId))
+        val deleted = write { boardDao.deleteCellAndOrphanBoards(cell.id, setOf(HOME_BOARD_ID, boardId, openRootBoardId)) }
         Log.i(TAG, "Cell ${cell.id} deleted with ${deleted.boardCount} boards")
         return deleted.photoFiles
+    }
+
+    /**
+     * Autour de chaque écriture en base, AVANT elle : le marqueur des copies (son échec empêche l'écriture : une
+     * modification ne se fait jamais sans protection), puis le drapeau des changements non
+     * sauvegardés (son échec est seulement journalisé : un faux « sauvegardé » ne coûte qu'une
+     * pastille, une édition refusée coûterait le travail).
+     */
+    private suspend fun <T> write(block: suspend () -> T): T {
+        copies().markEdited()
+        writeCount.incrementAndGet()
+        try {
+            preferences.edit { it[HAS_UNSAVED_CHANGES] = true }
+        } catch (exception: IOException) {
+            // Gardé en mémoire : la pastille dit vrai au moins jusqu'à la fin du processus.
+            unsavedInProcess.value = true
+            Log.e(TAG, "Unsaved changes flag could not be written", exception)
+        }
+        try {
+            return block()
+        } finally {
+            // Aussi après : un export dont l'instantané a été lu pendant cette écriture ne se dit pas à jour.
+            writeCount.incrementAndGet()
+        }
+    }
+
+    /** Le drapeau n'a pas pu s'écrire : connu de ce processus seulement. */
+    private val unsavedInProcess = MutableStateFlow(false)
+
+    /** Vrai tant que des modifications n'ont pas été sauvegardées ; vrai aussi si on ne sait pas. */
+    fun observeUnsavedChanges(): Flow<Boolean> = preferences.data
+        .map { it[HAS_UNSAVED_CHANGES] ?: true }
+        // Comme pour l'alerte de perte : une lecture ratée dit « non sauvegardé » et réessaie, sans
+        // terminer le flux (la pastille resterait allumée même après une sauvegarde réussie).
+        .retryWhen { cause, attempt ->
+            if (cause !is IOException) return@retryWhen false
+            if (attempt == 0L) Log.e(TAG, "Unsaved changes flag could not be read, retrying", cause)
+            emit(true)
+            delay(PREFERENCES_RETRY_DELAY_MS)
+            true
+        }
+        .combine(unsavedInProcess) { isUnsaved, isUnsavedInProcess -> isUnsaved || isUnsavedInProcess }
+        .distinctUntilChanged()
+
+    /** Toutes les grilles et cases, et le compte d'écritures au moment de les lire (pour [markSaved]). */
+    suspend fun snapshot(): Pair<BackupContent, Long> {
+        val count = writeCount.get()
+        val (boards, cells) = boardDao.snapshot()
+        return BackupContent(boards, cells) to count
+    }
+
+    /** Après un export réussi : sauvegardé, sauf si une écriture a eu lieu depuis l'instantané. */
+    suspend fun markSaved(writeCountAtSnapshot: Long) {
+        try {
+            preferences.edit { settings ->
+                if (writeCount.get() == writeCountAtSnapshot) {
+                    settings[HAS_UNSAVED_CHANGES] = false
+                    unsavedInProcess.value = false
+                }
+            }
+        } catch (exception: IOException) {
+            Log.e(TAG, "Saved state could not be written", exception)
+        }
+    }
+
+    /**
+     * Remplace toutes les grilles par [content] (déjà validé), en une transaction : un échec laisse
+     * la base d'avant. Puis l'alerte de perte est acquittée et l'écran repart de l'accueil.
+     */
+    suspend fun replaceAll(content: BackupContent) {
+        write { boardDao.replaceAll(content.boards, content.cells.map { it.copy(id = 0) }) }
+        Log.i(TAG, "Boards replaced: ${content.boards.size} boards, ${content.cells.size} cells")
+        acknowledgeLostBoards()
+        markSaved(writeCount.get())
+        replacementCount.update { it + 1 }
     }
 
     /**
@@ -233,9 +325,14 @@ class BoardRepository @Inject constructor(
         }
     }
 
-    private suspend fun markSeeded() {
+    /** [isFreshSeed] : le vocabulaire vient d'être inséré, sans copie corrompue ; neuve si jamais remplie. */
+    private suspend fun markSeeded(isFreshSeed: Boolean) {
         try {
-            preferences.edit { it[CORE_VOCABULARY_SEEDED] = true }
+            preferences.edit { settings ->
+                // Rien à sauvegarder sur une installation neuve : le vocabulaire de base revient tout seul.
+                if (isFreshSeed && settings[CORE_VOCABULARY_SEEDED] != true) settings[HAS_UNSAVED_CHANGES] = false
+                settings[CORE_VOCABULARY_SEEDED] = true
+            }
         } catch (exception: IOException) {
             Log.e(TAG, "Core vocabulary marker could not be written", exception)
         }
@@ -295,7 +392,7 @@ class BoardRepository @Inject constructor(
             id != null && id !in referenced.pictogramIds
         }
         val photos = deleteOrphans(File(context.filesDir, CELL_PHOTOS_DIRECTORY), cutoffMs) { name ->
-            PHOTO_FILE_NAME.matches(name) && name !in referenced.photoFiles
+            CELL_PHOTO_NAME.matches(name) && name !in referenced.photoFiles
         }
         return pictograms to photos
     }

@@ -1,5 +1,6 @@
 package com.wobblebot.papotons.ui.board
 
+import com.wobblebot.papotons.data.backup.BackupContent
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.lifecycle.SavedStateHandle
@@ -1388,5 +1389,24 @@ class BoardViewModelTest {
         assertFalse(orphan.exists())
         assertTrue(ofTheFirstCell.exists())
         filesDirectory.deleteRecursively()
+    }
+
+    @Test
+    fun `a restore brings the stack back home and closes the editor`() = runTest(dispatcher) {
+        val repository = BoardRepository(FakeBoardDao(boards, cells), preferences, context).also { it.fileDispatcher = dispatcher }
+        val viewModel = BoardViewModel(repository, speaker, volume, arasaac, pictogramStore, photos, SavedStateHandle()).also { it.elapsedRealtimeMs = { nowMs } }
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        viewModel.tap("A")
+        viewModel.tap("B")
+        viewModel.onStartEditing()
+        viewModel.tap("rouge")
+        assertNotNull(viewModel.state().editor)
+
+        repository.replaceAll(BackupContent(listOf(boards[0].copy(name = "restored")), listOf(cells[0])))
+
+        assertEquals("restored", viewModel.state().board?.name)
+        assertFalse(viewModel.state().board?.canGoBack == true)
+        assertNull(viewModel.state().editor)
+        assertTrue(viewModel.state().isEditing)
     }
 }

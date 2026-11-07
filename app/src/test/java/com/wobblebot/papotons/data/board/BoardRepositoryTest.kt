@@ -1,5 +1,8 @@
 package com.wobblebot.papotons.data.board
 
+import com.wobblebot.papotons.domain.Cell
+import com.wobblebot.papotons.domain.CellContent
+import com.wobblebot.papotons.data.backup.BackupContent
 import android.content.Context
 import android.database.sqlite.SQLiteException
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -514,5 +517,212 @@ class BoardRepositoryTest {
         repository.sweepOrphanImages()
 
         assertNothingSwept()
+    }
+
+    private val hasUnsavedChanges = booleanPreferencesKey("has_unsaved_changes")
+
+    private fun homeOnly() = FakeBoardDao(boards = listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 1, columnCount = 2)))
+
+    @Test
+    fun `boards made before the flag existed count as unsaved`() = runTest {
+        val preferences = FakePreferences()
+        preferences.edit { it[CORE_VOCABULARY_SEEDED] = true }
+        val repository = BoardRepository(homeOnly(), preferences, context)
+        repository.ensureHomeBoard()
+
+        assertTrue(repository.observeUnsavedChanges().first())
+    }
+
+    @Test
+    fun `a fresh install has nothing to save`() = runTest {
+        val repository = BoardRepository(FakeBoardDao(), FakePreferences(), context)
+        repository.ensureHomeBoard()
+
+        assertFalse(repository.observeUnsavedChanges().first())
+    }
+
+    @Test
+    fun `an edit marks the boards unsaved before writing`() = runTest {
+        val preferences = FakePreferences()
+        preferences.edit { it[hasUnsavedChanges] = false }
+        val dao = homeOnly()
+        val repository = BoardRepository(dao, preferences, context)
+        dao.insertFailure = IllegalStateException("disk full")
+
+        try {
+            repository.replaceAll(BackupContent(dao.boards.value, emptyList()))
+            fail("The insert should fail")
+        } catch (exception: IllegalStateException) {
+            // Échec après le drapeau : un faux « non sauvegardé » ne coûte rien.
+        }
+
+        assertTrue(repository.observeUnsavedChanges().first())
+    }
+
+    @Test
+    fun `a flag that cannot be written never fails the edit`() = runTest {
+        val preferences = FakePreferences().apply { writeFailure = IOException("disk full") }
+        val dao = homeOnly()
+
+        BoardRepository(dao, preferences, context).addWord(HOME_BOARD_ID, 0, 0, CellContent("eau", null, null, null, null))
+
+        assertEquals(listOf("eau"), dao.cells.value.map { it.label })
+    }
+
+    @Test
+    fun `a backup marks the boards saved, unless an edit came after its snapshot`() = runTest {
+        val repository = BoardRepository(homeOnly(), FakePreferences(), context)
+        val (_, before) = repository.snapshot()
+        repository.addWord(HOME_BOARD_ID, 0, 0, CellContent("eau", null, null, null, null))
+
+        repository.markSaved(before)
+        assertTrue(repository.observeUnsavedChanges().first())
+
+        val (_, after) = repository.snapshot()
+        repository.markSaved(after)
+        assertFalse(repository.observeUnsavedChanges().first())
+    }
+
+    @Test
+    fun `a restore replaces every board, clears the alert and counts`() = runTest {
+        val preferences = FakePreferences()
+        preferences.edit { it[BOARDS_LOST_AT] = 1L }
+        val dao = homeOnly()
+        val repository = BoardRepository(dao, preferences, context)
+        val restored = BackupContent(
+            listOf(BoardEntity(id = HOME_BOARD_ID, name = "restored", rowCount = 2, columnCount = 2), BoardEntity(id = 9, name = "nine", rowCount = 1, columnCount = 1)),
+            listOf(CellEntity(id = 77, boardId = 9, row = 0, column = 0, label = "x", linkedBoardId = null, pictogramId = null, category = null)),
+        )
+
+        repository.replaceAll(restored)
+
+        assertEquals(listOf("restored", "nine"), dao.boards.value.map { it.name })
+        assertEquals(listOf("x"), dao.cells.value.map { it.label })
+        assertFalse(repository.observeLostBoards().first())
+        assertFalse(repository.observeUnsavedChanges().first())
+        assertEquals(1, repository.replacements.value)
+    }
+
+    @Test
+    fun `a restore that cannot protect the copies writes nothing`() = runTest {
+        // Une copie, et un marqueur impossible à écrire (un dossier occupe son nom).
+        File(folder.root, "$CORRUPTED_DATABASES_DIRECTORY/000001-x").mkdirs()
+        File(folder.root, "$CORRUPTED_DATABASES_DIRECTORY.edited/occupied").mkdirs()
+        val dao = homeOnly()
+        val repository = BoardRepository(dao, FakePreferences(), context)
+
+        try {
+            repository.replaceAll(BackupContent(listOf(BoardEntity(id = HOME_BOARD_ID, name = "restored", rowCount = 1, columnCount = 1)), emptyList()))
+            fail("The restore should fail")
+        } catch (exception: IOException) {
+            // Le marqueur d'abord : rien n'est écrit sans lui.
+        }
+
+        assertEquals(listOf("home"), dao.boards.value.map { it.name })
+        assertEquals(0, repository.replacements.value)
+    }
+
+    @Test
+    fun `boards found lost count as unsaved`() = runTest {
+        val preferences = FakePreferences()
+        preferences.edit { it[CORE_VOCABULARY_SEEDED] = true }
+        val repository = BoardRepository(FakeBoardDao(), preferences, context)
+        repository.ensureHomeBoard()
+
+        assertTrue(repository.observeUnsavedChanges().first())
+    }
+
+    @Test
+    fun `a first launch next to a corrupted copy counts as unsaved`() = runTest {
+        File(folder.root, "$CORRUPTED_DATABASES_DIRECTORY/000001-x").mkdirs()
+        val repository = BoardRepository(FakeBoardDao(), FakePreferences(), context)
+        repository.ensureHomeBoard()
+
+        assertTrue(repository.observeUnsavedChanges().first())
+    }
+
+    @Test
+    fun `every kind of edit marks the boards unsaved`() = runTest {
+        val word = CellContent("eau", null, null, null, null)
+        val edits: List<suspend (BoardRepository, FakeBoardDao) -> Unit> = listOf(
+            { repository, _ -> repository.addWord(HOME_BOARD_ID, 0, 0, word) },
+            { repository, _ -> repository.addFolder(HOME_BOARD_ID, 0, 0, word) },
+            { repository, dao ->
+                val cell = dao.cells.value.single().let { Cell(it.id, it.row, it.column, it.label, it.linkedBoardId) }
+                repository.updateCell(cell, word.copy(label = "lait"))
+            },
+            { repository, dao ->
+                val cell = dao.cells.value.single().let { Cell(it.id, it.row, it.column, it.label, it.linkedBoardId) }
+                repository.deleteCell(cell, HOME_BOARD_ID, HOME_BOARD_ID)
+            },
+        )
+        for ((index, edit) in edits.withIndex()) {
+            val preferences = FakePreferences()
+            preferences.edit { it[hasUnsavedChanges] = false }
+            val dao = FakeBoardDao(
+                boards = listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 2, columnCount = 2)),
+                cells = if (index < 2) emptyList() else listOf(CellEntity(id = 1, boardId = HOME_BOARD_ID, row = 1, column = 1, label = "x", linkedBoardId = null, pictogramId = null, category = null)),
+            )
+            val repository = BoardRepository(dao, preferences, context)
+
+            edit(repository, dao)
+
+            assertTrue("edit $index", repository.observeUnsavedChanges().first())
+        }
+    }
+
+    @Test
+    fun `an edit whose flag cannot be written still shows as unsaved`() = runTest {
+        val preferences = FakePreferences()
+        preferences.edit { it[hasUnsavedChanges] = false }
+        val repository = BoardRepository(homeOnly(), preferences, context)
+        preferences.writeFailure = IOException("disk full")
+
+        repository.addWord(HOME_BOARD_ID, 0, 0, CellContent("eau", null, null, null, null))
+
+        assertTrue(repository.observeUnsavedChanges().first())
+    }
+
+    @Test
+    fun `a backup whose snapshot was read during an edit stays unsaved`() = runTest {
+        val dao = homeOnly()
+        val repository = BoardRepository(dao, FakePreferences(), context)
+        dao.insertGate = kotlinx.coroutines.CompletableDeferred()
+        val edit = launch { repository.addWord(HOME_BOARD_ID, 0, 0, CellContent("eau", null, null, null, null)) }
+        // L'écriture a commencé (drapeau, compte) mais la base ne l'a pas encore.
+        runCurrent()
+        val (content, count) = repository.snapshot()
+        assertTrue(content.cells.isEmpty())
+        checkNotNull(dao.insertGate).complete(Unit)
+        edit.join()
+
+        repository.markSaved(count)
+
+        assertTrue(repository.observeUnsavedChanges().first())
+    }
+
+    @Test
+    fun `a backup finishing while an edit is being written stays unsaved`() = runTest {
+        val dao = homeOnly()
+        val repository = BoardRepository(dao, FakePreferences(), context)
+        val (_, count) = repository.snapshot()
+        dao.insertGate = kotlinx.coroutines.CompletableDeferred()
+        val edit = launch { repository.addWord(HOME_BOARD_ID, 0, 0, CellContent("eau", null, null, null, null)) }
+        runCurrent()
+
+        repository.markSaved(count)
+
+        assertTrue(repository.observeUnsavedChanges().first())
+        checkNotNull(dao.insertGate).complete(Unit)
+        edit.join()
+    }
+
+    @Test
+    fun `boards inserted before an interrupted first launch count as unsaved`() = runTest {
+        // Base remplie, marqueur jamais écrit (arrêt entre les deux) : pas une installation neuve.
+        val repository = BoardRepository(homeOnly(), FakePreferences(), context)
+        repository.ensureHomeBoard()
+
+        assertTrue(repository.observeUnsavedChanges().first())
     }
 }

@@ -68,6 +68,9 @@ private val PICTOGRAM_PREVIEW_SIZE = 96.dp
 private val CATEGORY_SWATCH_SIZE = 16.dp
 private const val MAX_SPOKEN_TEXT_LENGTH = 200
 
+/** Bien en dessous de ce qu'une sauvegarde accepte : un texte collé ne doit jamais rendre l'export impossible. */
+private const val MAX_LABEL_LENGTH = 200
+
 /**
  * L'éditeur d'une case, en plein écran. Le brouillon survit à la rotation (`rememberSaveable`) ;
  * son ouverture, elle, vient du ViewModel (jamais restaurée sans contrôle parental).
@@ -136,7 +139,7 @@ fun CellEditorDialog(
                     value = label,
                     // Une ligne : la case ne coupe ses mots qu'aux espaces.
                     onValueChange = { typed ->
-                        label = typed.replace('\n', ' ')
+                        label = typed.replace('\n', ' ').takeWhole(MAX_LABEL_LENGTH)
                         isLabelMissing = false
                     },
                     label = { Text(stringResource(R.string.editor_label)) },

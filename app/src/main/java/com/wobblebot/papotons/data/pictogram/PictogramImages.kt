@@ -21,6 +21,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -38,7 +39,11 @@ private const val SAMPLE_SIZE = 2
 /** Le dossier des pictos téléchargés depuis ARASAAC, `<id>.png` dans `files/` (sauvegardé avec la base). */
 const val DOWNLOADED_PICTOGRAMS_DIRECTORY = "pictograms"
 private const val PENDING_PREFIX = ".pending-"
-private const val MAX_DOWNLOADED_SIDE_PX = 1024
+/** Côté maximal d'un picto téléchargé (ou restauré) : au-delà, refusé. */
+const val MAX_DOWNLOADED_SIDE_PX = 1024
+
+/** Poids maximal d'un picto téléchargé ou restauré ; un picto ARASAAC en pèse quelques dizaines de Ko. */
+const val MAX_PICTOGRAM_BYTES = 1024 * 1024
 
 /** Ce que l'édition demande aux pictos : décoder une vignette, garder un picto choisi. Couture de test. */
 interface PictogramStore {
@@ -88,6 +93,25 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
         publish(mapOf(pictogramId to image))
     }
 
+    /**
+     * Vrai si le picto est déjà sur l'appareil, embarqué ou téléchargé : une restauration ne le
+     * réécrit pas (une archive ne remplace pas l'image de cases existantes). Un téléchargé est daté
+     * de maintenant, comme s'il venait d'être écrit (le ménage du lancement ne vise que les anciens).
+     */
+    suspend fun isOnDevice(pictogramId: Long): Boolean {
+        if (pictogramId in bundledIds.await()) return true
+        return withContext(Dispatchers.IO) {
+            val file = File(downloadedDirectory, "$pictogramId$EXTENSION")
+            file.isFile.also { isPresent -> if (isPresent) file.setLastModified(System.currentTimeMillis()) }
+        }
+    }
+
+    /** L'image d'un picto pour une sauvegarde ; `null` s'il n'est pas sur l'appareil. À fermer par l'appelant. */
+    suspend fun open(pictogramId: Long): InputStream? {
+        if (pictogramId in bundledIds.await()) return withContext(Dispatchers.IO) { context.assets.open("$DIRECTORY/$pictogramId$EXTENSION") }
+        return withContext(Dispatchers.IO) { File(downloadedDirectory, "$pictogramId$EXTENSION").takeIf { it.isFile }?.inputStream() }
+    }
+
     /** Hors du thread principal : jusqu'à trente vignettes par recherche, sur une tablette modeste. */
     override suspend fun decode(bytes: ByteArray): ImageBitmap? = withContext(Dispatchers.Default) {
         decodeBounded { options -> BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) }
@@ -97,7 +121,15 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
      * Décodé d'abord (jamais une page d'erreur enregistrée en `.png`), puis écrit dans un temporaire
      * au nom unique, synchronisé, renommé : jamais d'image à moitié écrite sous son vrai nom.
      */
-    override suspend fun store(pictogramId: Long, bytes: ByteArray): Boolean {
+    override suspend fun store(pictogramId: Long, bytes: ByteArray): Boolean = write(pictogramId, bytes, publish = true)
+
+    /**
+     * Un picto d'une sauvegarde : écrit comme [store], mais pas gardé décodé (une restauration en
+     * écrit des centaines ; chacun se décode quand une case l'affiche).
+     */
+    suspend fun restore(pictogramId: Long, bytes: ByteArray): Boolean = write(pictogramId, bytes, publish = false)
+
+    private suspend fun write(pictogramId: Long, bytes: ByteArray, publish: Boolean): Boolean {
         if (pictogramId in bundledIds.await()) return true
         val image = decode(bytes) ?: return false
         val isWritten = withContext(Dispatchers.IO) {
@@ -118,7 +150,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
                 if (pending.exists()) pending.delete()
             }
         }
-        if (isWritten) publish(mapOf(pictogramId to image))
+        if (isWritten && publish) publish(mapOf(pictogramId to image))
         return isWritten
     }
 

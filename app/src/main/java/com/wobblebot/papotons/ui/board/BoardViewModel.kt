@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.mapNotNull
@@ -184,6 +185,10 @@ class BoardViewModel @Inject constructor(
             message.collect { words -> savedState[MESSAGE_KEY] = ArrayList(words.map(SavedWord::from)) }
         }
         viewModelScope.launch {
+            // Un compteur, pas un événement : une restauration faite quand l'écran n'écoutait pas compte aussi.
+            repository.replacements.drop(1).collect { onBoardsReplaced() }
+        }
+        viewModelScope.launch {
             mediaVolume.isMuted.collect { isMuted -> if (!isMuted) isVolumeLockedDialogOpen.value = false }
         }
     }
@@ -246,6 +251,16 @@ class BoardViewModel @Inject constructor(
         onSearchClose()
         chosenBytes = null
         discardUnsavedPhoto()
+    }
+
+    /** Toutes les grilles ont été remplacées : la pile et l'éditeur visent peut-être des grilles qui n'existent plus. */
+    private fun onBoardsReplaced() {
+        editor.value = null
+        onSearchClose()
+        chosenBytes = null
+        discardUnsavedPhoto()
+        navigation.value = persistentListOf()
+        reopenHome()
     }
 
     fun onEmptySlotClick(row: Int, column: Int) {

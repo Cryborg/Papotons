@@ -26,6 +26,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -34,6 +35,9 @@ import javax.inject.Singleton
 private const val TAG = "CellPhotos"
 /** Dossier de `files/` des photos validées, `<uuid>.jpg`. */
 const val CELL_PHOTOS_DIRECTORY = "photos"
+
+/** Le seul nom qu'une photo validée peut porter (`<uuid>.jpg`, comme [CellPhotos.prepare] l'écrit). */
+val CELL_PHOTO_NAME = Regex("""[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg""")
 private const val PENDING_DIRECTORY = "photos-pending"
 private const val CAMERA_DIRECTORY = "camera"
 private const val CAMERA_FILE = "capture.jpg"
@@ -130,7 +134,7 @@ class CellPhotos @Inject constructor(@ApplicationContext private val context: Co
         val name = "${UUID.randomUUID()}$EXTENSION"
         val target = File(pendingDirectory, name)
         try {
-            val square = readSquare(source) ?: return@withContext null
+            val square = readSquare { context.contentResolver.openInputStream(source) } ?: return@withContext null
             pendingDirectory.mkdirs()
             val isCompressed = FileOutputStream(target).use { output ->
                 square.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output).also { output.fd.sync() }
@@ -143,6 +147,40 @@ class CellPhotos @Inject constructor(@ApplicationContext private val context: Co
             reportImportFailure(exception, target)
         } catch (error: OutOfMemoryError) {
             reportImportFailure(error, target)
+        }
+    }
+
+    /**
+     * Une photo d'une sauvegarde, réencodée comme une photo choisie (480 px, JPEG : ni métadonnées
+     * géantes ni image hostile) et validée sous son nom [name] (déjà contrôlé). [open] rend un flux
+     * neuf à chaque appel. Faux si l'image est illisible ; une écriture impossible (disque plein)
+     * lève une [IOException] : ce n'est pas la photo qui est en cause.
+     */
+    suspend fun restore(name: String, open: () -> InputStream?): Boolean = withContext(Dispatchers.IO) {
+        val pending = File(pendingDirectory, name)
+        try {
+            val square = readSquare(open) ?: return@withContext false
+            pendingDirectory.mkdirs()
+            photosDirectory.mkdirs()
+            val isCompressed = FileOutputStream(pending).use { output ->
+                square.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output).also { output.fd.sync() }
+            }
+            if (!isCompressed || !pending.renameTo(File(photosDirectory, name))) throw IOException("Restored photo not written")
+            syncDirectory()
+            // Une version d'avant, décodée ou jugée illisible, ne doit pas masquer celle-ci.
+            unreadable.remove(name)
+            missingReported.remove(name)
+            mutex.withLock { images = images - name }
+            true
+        } catch (exception: IOException) {
+            reportImportFailure(exception, pending)
+            throw exception
+        } catch (exception: RuntimeException) {
+            reportImportFailure(exception, pending)
+            false
+        } catch (error: OutOfMemoryError) {
+            reportImportFailure(error, pending)
+            false
         }
     }
 
@@ -180,19 +218,18 @@ class CellPhotos @Inject constructor(@ApplicationContext private val context: Co
      * orientation EXIF (que `BitmapFactory` n'applique jamais), recadrage carré au centre, fond
      * blanc sous une image transparente, réduction à [STORED_SIDE_PX].
      */
-    private fun readSquare(source: Uri): Bitmap? {
-        val resolver = context.contentResolver
+    private fun readSquare(open: () -> InputStream?): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         // inJustDecodeBounds : decodeStream rend toujours null, seules les dimensions comptent.
-        val boundsStream = resolver.openInputStream(source) ?: return unreadable("no stream")
+        val boundsStream = open() ?: return unreadable("no stream")
         boundsStream.use { BitmapFactory.decodeStream(it, null, bounds) }
         val smallestSide = minOf(bounds.outWidth, bounds.outHeight)
         if (smallestSide <= 0) return unreadable("not an image")
         var sampleSize = 1
         while (smallestSide / (sampleSize * 2) >= STORED_SIDE_PX) sampleSize *= 2
         val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        val decoded = resolver.openInputStream(source)?.use { BitmapFactory.decodeStream(it, null, options) } ?: return unreadable("not decodable")
-        val orientation = resolver.openInputStream(source)?.use {
+        val decoded = open()?.use { BitmapFactory.decodeStream(it, null, options) } ?: return unreadable("not decodable")
+        val orientation = open()?.use {
             ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
         } ?: ExifInterface.ORIENTATION_NORMAL
         val oriented = oriented(decoded, orientation)
