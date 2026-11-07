@@ -32,7 +32,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val TAG = "CellPhotos"
-private const val PHOTOS_DIRECTORY = "photos"
+/** Dossier de `files/` des photos validées, `<uuid>.jpg`. */
+const val CELL_PHOTOS_DIRECTORY = "photos"
 private const val PENDING_DIRECTORY = "photos-pending"
 private const val CAMERA_DIRECTORY = "camera"
 private const val CAMERA_FILE = "capture.jpg"
@@ -79,7 +80,7 @@ interface PhotoStore {
  */
 @Singleton
 class CellPhotos @Inject constructor(@ApplicationContext private val context: Context) : PhotoStore {
-    private val photosDirectory = File(context.filesDir, PHOTOS_DIRECTORY)
+    private val photosDirectory = File(context.filesDir, CELL_PHOTOS_DIRECTORY)
     // Hors sauvegarde, sur la partition des photos : le déplacement à la validation est un simple renommage.
     private val pendingDirectory = File(context.noBackupFilesDir, PENDING_DIRECTORY)
     private val cameraFile = File(File(context.cacheDir, CAMERA_DIRECTORY), CAMERA_FILE)

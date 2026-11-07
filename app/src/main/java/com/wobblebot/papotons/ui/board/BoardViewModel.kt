@@ -581,6 +581,9 @@ class BoardViewModel @Inject constructor(
                     persistentListOf(homeBoardId)
                 }
             }
+            // Juste après l'ouverture de l'accueil, donc après la détection d'une perte. À part :
+            // pendant le ménage, une relance de l'ouverture (accueil introuvable) doit rester possible.
+            viewModelScope.launch { repository.sweepOrphanImages() }
         }
     }
 

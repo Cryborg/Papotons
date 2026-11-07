@@ -91,7 +91,7 @@ class BoardViewModelTest {
         savedState: SavedStateHandle = SavedStateHandle(),
         voice: FakeSpeaker = speaker,
     ): BoardViewModel {
-        val viewModel = BoardViewModel(BoardRepository(dao, preferences, context), voice, volume, arasaac, pictogramStore, photos, savedState).also { it.elapsedRealtimeMs = { nowMs } }
+        val viewModel = BoardViewModel(BoardRepository(dao, preferences, context).also { it.fileDispatcher = dispatcher }, voice, volume, arasaac, pictogramStore, photos, savedState).also { it.elapsedRealtimeMs = { nowMs } }
         backgroundScope.launch { viewModel.uiState.collect {} }
         return viewModel
     }
@@ -1369,5 +1369,24 @@ class BoardViewModelTest {
         assertEquals(EditFailure.SlotTakenOrCellGone, viewModel.state().editor?.failure)
         assertEquals("Mamie" to "new.jpg", dao.cells.value.single().let { it.label to it.photoFile })
         assertTrue(photos.deleted.isEmpty())
+    }
+
+    @Test
+    fun `opening the home board sweeps the images no cell points to`() = runTest(dispatcher) {
+        filesDirectory = kotlin.io.path.createTempDirectory("papotons").toFile()
+        val (orphan, ofTheFirstCell) = listOf("999.png", "10.png").map { name ->
+            File(filesDirectory, "pictograms/$name").apply {
+                parentFile?.mkdirs()
+                writeText("image")
+                setLastModified(System.currentTimeMillis() - 3_600_000L)
+            }
+        }
+
+        // Le ménage passe sur le dispatcher de test, sans file d'attente : fini au retour.
+        startViewModel()
+
+        assertFalse(orphan.exists())
+        assertTrue(ofTheFirstCell.exists())
+        filesDirectory.deleteRecursively()
     }
 }

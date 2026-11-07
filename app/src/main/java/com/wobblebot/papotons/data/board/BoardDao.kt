@@ -20,6 +20,9 @@ class CellNotFoundException(cellId: Long) : SQLiteException("Cell $cellId not fo
  */
 class CellChangedException(cellId: Long) : SQLiteException("Cell $cellId changed since it was read")
 
+/** Les pictos (embarqués ou téléchargés) et les photos visés par les cases, lus d'un coup avec le nombre de grilles. */
+data class ReferencedImages(val boardCount: Int, val pictogramIds: Set<Long>, val photoFiles: Set<String>)
+
 @Dao
 abstract class BoardDao {
     @Query("SELECT COUNT(*) FROM boards")
@@ -76,6 +79,17 @@ abstract class BoardDao {
 
     @Query("SELECT photo_file FROM cells WHERE board_id = :boardId AND photo_file IS NOT NULL")
     abstract suspend fun photoFilesOf(boardId: Long): List<String>
+
+    @Query("SELECT DISTINCT pictogram_id FROM cells WHERE pictogram_id IS NOT NULL")
+    abstract suspend fun referencedPictogramIds(): List<Long>
+
+    @Query("SELECT DISTINCT photo_file FROM cells WHERE photo_file IS NOT NULL")
+    abstract suspend fun referencedPhotoFiles(): List<String>
+
+    /** Une seule lecture cohérente : une base vidée entre deux requêtes ne passe pas pour une base sans image. */
+    @Transaction
+    open suspend fun referencedImages(): ReferencedImages =
+        ReferencedImages(countBoards(), referencedPictogramIds().toSet(), referencedPhotoFiles().toSet())
 
     @Query("SELECT COUNT(*) FROM cells WHERE linked_board_id = :boardId")
     abstract suspend fun countLinksTo(boardId: Long): Int

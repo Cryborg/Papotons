@@ -106,6 +106,10 @@ class FakeBoardDao(
     override suspend fun linkedBoardIds(boardId: Long): List<Long> =
         cells.value.filter { it.boardId == boardId }.mapNotNull { it.linkedBoardId }
 
+    override suspend fun referencedPictogramIds(): List<Long> = cells.value.mapNotNull { it.pictogramId }.distinct()
+
+    override suspend fun referencedPhotoFiles(): List<String> = cells.value.mapNotNull { it.photoFile }.distinct()
+
     override suspend fun countLinksTo(boardId: Long): Int = cells.value.count { it.linkedBoardId == boardId }
 
     override suspend fun photoFilesOf(boardId: Long): List<String> = cells.value.filter { it.boardId == boardId }.mapNotNull { it.photoFile }

@@ -1,6 +1,7 @@
 package com.wobblebot.papotons.data.board
 
 import android.content.Context
+import android.database.sqlite.SQLiteException
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -13,6 +14,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -340,5 +342,177 @@ class BoardRepositoryTest {
 
         unreadable.readFailure = null
         assertTrue(repository.observeLostBoards().first())
+    }
+
+    private val photoOfMamie = "0a1b2c3d-0000-4000-8000-00000000000a.jpg"
+    private val orphanPhoto = "0a1b2c3d-0000-4000-8000-00000000000b.jpg"
+
+    /** Une image écrite il y a une heure (ou il y a [ageMs]). */
+    private fun image(directory: String, name: String, ageMs: Long = 3_600_000L): File =
+        File(folder.root, "$directory/$name").apply {
+            parentFile?.mkdirs()
+            writeText("image")
+            setLastModified(System.currentTimeMillis() - ageMs)
+        }
+
+    /** Pictos 11 (deux cases) et 12 visés, une photo visée ; à côté, des images que plus rien ne vise. */
+    private fun boardsWithImages(): FakeBoardDao {
+        image("pictograms", "11.png")
+        image("pictograms", "12.png")
+        image("pictograms", "13.png")
+        image("photos", photoOfMamie)
+        image("photos", orphanPhoto)
+        fun cell(id: Long, column: Int, pictogramId: Long?, photo: String?) = CellEntity(
+            id = id, boardId = HOME_BOARD_ID, row = 0, column = column, label = "c$id", linkedBoardId = null,
+            pictogramId = pictogramId, category = null, photoFile = photo, spokenText = null,
+        )
+        return FakeBoardDao(
+            boards = listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 1, columnCount = 4)),
+            cells = listOf(cell(1, 0, 11, null), cell(2, 1, 11, null), cell(3, 2, 12, photoOfMamie)),
+        )
+    }
+
+    private fun remaining(directory: String): Set<String> = File(folder.root, directory).list().orEmpty().toSet()
+
+    @Test
+    fun `the sweep deletes only the images no cell points to`() = runTest {
+        val dao = boardsWithImages()
+        image("pictograms", "notes.txt")
+        // Des noms que l'appli n'écrit pas dans ce dossier : jamais les siens.
+        image("photos", "autre.jpg")
+        image("photos", "13.png")
+        val repository = BoardRepository(dao, FakePreferences(), context)
+        repository.ensureHomeBoard()
+
+        repository.sweepOrphanImages()
+
+        assertEquals(setOf("11.png", "12.png", "notes.txt"), remaining("pictograms"))
+        assertEquals(setOf(photoOfMamie, "autre.jpg", "13.png"), remaining("photos"))
+    }
+
+    @Test
+    fun `an image written since the start is never swept`() = runTest {
+        val dao = boardsWithImages()
+        val repository = BoardRepository(dao, FakePreferences(), context)
+        repository.ensureHomeBoard()
+        image("pictograms", "14.png", ageMs = 0)
+        // Dans la marge de 2 s : gardé ; au-delà : orphelin comme un autre.
+        image("pictograms", "15.png", ageMs = 1_000)
+        image("pictograms", "16.png", ageMs = 10_000)
+        // Date 0 : illisible, donc inconnue.
+        image("pictograms", "17.png").setLastModified(0)
+
+        repository.sweepOrphanImages()
+
+        assertEquals(setOf("11.png", "12.png", "14.png", "15.png", "17.png"), remaining("pictograms"))
+    }
+
+    @Test
+    fun `the sweep runs once per process`() = runTest {
+        val repository = BoardRepository(boardsWithImages(), FakePreferences(), context)
+        repository.ensureHomeBoard()
+        repository.sweepOrphanImages()
+        assertFalse("13.png" in remaining("pictograms"))
+        image("pictograms", "13.png")
+
+        repository.sweepOrphanImages()
+
+        assertTrue("13.png" in remaining("pictograms"))
+    }
+
+    private fun assertNothingSwept() {
+        assertEquals(setOf("11.png", "12.png", "13.png"), remaining("pictograms"))
+        assertEquals(setOf(photoOfMamie, orphanPhoto), remaining("photos"))
+    }
+
+    @Test
+    fun `nothing is swept while the lost boards alert is up, even raised during the read`() = runTest {
+        val preferences = FakePreferences()
+        val dao = boardsWithImages()
+        val repository = BoardRepository(dao, preferences, context)
+        repository.ensureHomeBoard()
+        // L'alerte levée pendant la lecture des références : c'est après elle qu'on la vérifie.
+        dao.onCountBoards = { runBlocking { preferences.edit { it[BOARDS_LOST_AT] = 1L } } }
+
+        repository.sweepOrphanImages()
+
+        assertNothingSwept()
+    }
+
+    @Test
+    fun `nothing is swept while a corrupted database copy exists, even made during the read`() = runTest {
+        val dao = boardsWithImages()
+        val repository = BoardRepository(dao, FakePreferences(), context)
+        repository.ensureHomeBoard()
+        // Corruption détectée par la lecture des références : la copie arrive pendant celle-ci.
+        dao.onCountBoards = { File(folder.root, CORRUPTED_DATABASES_DIRECTORY).mkdirs() }
+
+        repository.sweepOrphanImages()
+
+        assertNothingSwept()
+    }
+
+    @Test
+    fun `nothing is swept when the preferences cannot be read`() = runTest {
+        val preferences = FakePreferences()
+        val repository = BoardRepository(boardsWithImages(), preferences, context)
+        repository.ensureHomeBoard()
+        preferences.readFailure = IOException("unreadable")
+
+        repository.sweepOrphanImages()
+
+        assertNothingSwept()
+    }
+
+    @Test
+    fun `nothing is swept in a process that found the database empty`() = runTest {
+        val images = boardsWithImages()
+        val dao = FakeBoardDao()
+        val repository = BoardRepository(dao, FakePreferences(), context)
+        // Vide au lancement (perte que rien n'a retenue), puis grilles revenues.
+        repository.ensureHomeBoard()
+        dao.boards.value = images.boards.value
+        dao.cells.value = images.cells.value
+
+        repository.sweepOrphanImages()
+
+        assertNothingSwept()
+    }
+
+    @Test
+    fun `nothing is swept before the home board was opened`() = runTest {
+        val repository = BoardRepository(boardsWithImages(), FakePreferences(), context)
+
+        repository.sweepOrphanImages()
+
+        assertNothingSwept()
+    }
+
+    @Test
+    fun `nothing is swept when the references cannot be read`() = runTest {
+        val dao = boardsWithImages()
+        val repository = BoardRepository(dao, FakePreferences(), context)
+        repository.ensureHomeBoard()
+        dao.onCountBoards = { throw SQLiteException("disk I/O error") }
+
+        repository.sweepOrphanImages()
+
+        assertNothingSwept()
+    }
+
+    @Test
+    fun `nothing is swept when the database is emptied while being read`() = runTest {
+        val dao = boardsWithImages()
+        val repository = BoardRepository(dao, FakePreferences(), context)
+        repository.ensureHomeBoard()
+        // Corruption détectée à la lecture : la base est copiée puis rouverte vide.
+        dao.onCountBoards = {
+            dao.cells.value = emptyList()
+            dao.boards.value = emptyList()
+        }
+
+        repository.sweepOrphanImages()
+
+        assertNothingSwept()
     }
 }

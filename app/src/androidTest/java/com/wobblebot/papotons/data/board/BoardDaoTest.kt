@@ -181,4 +181,22 @@ class BoardDaoTest {
 
         assertEquals(setOf("dossier.jpg", "mamie.jpg"), deleted.photoFiles.toSet())
     }
+
+    @Test
+    fun referencedImagesListEveryPictogramAndPhoto() = runBlocking {
+        boardDao.insertAll(
+            listOf(home, folderBoard),
+            listOf(
+                word(0, 0, "a").copy(pictogramId = 11),
+                // Picto et photo sur la même case : les deux sont visés.
+                word(0, 1, "b").copy(pictogramId = 12, photoFile = "mamie.jpg"),
+                word(1, 0, "c").copy(pictogramId = 11),
+                folder.copy(pictogramId = 13),
+            ),
+        )
+
+        val referenced = boardDao.referencedImages()
+
+        assertEquals(ReferencedImages(boardCount = 2, pictogramIds = setOf(11L, 12L, 13L), photoFiles = setOf("mamie.jpg")), referenced)
+    }
 }

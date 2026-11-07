@@ -35,8 +35,8 @@ private const val EXTENSION = ".png"
  */
 private const val SAMPLE_SIZE = 2
 
-/** Le dossier des pictos téléchargés depuis ARASAAC, dans `files/` (sauvegardé avec la base). */
-private const val DOWNLOADED_DIRECTORY = "pictograms"
+/** Le dossier des pictos téléchargés depuis ARASAAC, `<id>.png` dans `files/` (sauvegardé avec la base). */
+const val DOWNLOADED_PICTOGRAMS_DIRECTORY = "pictograms"
 private const val PENDING_PREFIX = ".pending-"
 private const val MAX_DOWNLOADED_SIDE_PX = 1024
 
@@ -60,7 +60,7 @@ interface PictogramStore {
 class PictogramImages @Inject constructor(@ApplicationContext private val context: Context) : PictogramStore {
     private var images by mutableStateOf<Map<Long, ImageBitmap>>(emptyMap())
     private val mutex = Mutex()
-    private val downloadedDirectory = File(context.filesDir, DOWNLOADED_DIRECTORY)
+    private val downloadedDirectory = File(context.filesDir, DOWNLOADED_PICTOGRAMS_DIRECTORY)
 
     /**
      * Les ids embarqués : « embarqué » se décide par la liste des assets, pas par « déjà décodé ».

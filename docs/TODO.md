@@ -19,10 +19,6 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 - **2026-11-06, grilles stockées en Room** (ex-D-3). Open Board Format seulement à l'import et à l'export. Pourquoi : requêtes, migrations vérifiables (schéma exporté dans `app/schemas/`), contraintes qui gardent les positions (index unique) et les dossiers (RESTRICT).
 - **2026-11-07, français seulement** (ex-D-2) : l'appli, son vocabulaire et sa voix sont en français, quelle que soit la langue de l'appareil ; les ressources anglaises sont retirées. L'anglais viendra plus tard, avec une langue portée par chaque grille (la voix suivra la grille, pas l'appareil). Pourquoi : public d'abord francophone, et une grille anglaise ne se réduit pas à traduire les libellés (ordre des mots, élisions).
 
-## Dette ouverte
-
-- **TODO-7** Images orphelines : une case supprimée ou un picto remplacé laisse son image dans `files/pictograms/` (une dizaine de Ko chacune), et un arrêt brutal pendant l'enregistrement d'une case peut laisser une photo dans `files/photos/` ; tout part dans la sauvegarde Android (25 Mo). Les supprimer quand plus aucune case ne les vise, jamais tant que l'alerte « Grilles perdues » est levée (une base réinsérée ferait tout effacer) (S).
-
 ## Feuille de route (MVP)
 
 - **MVP-4** Sauvegarde et restauration, import et export Open Board Format (`.obf`/`.obz`), rappel de sauvegarde. L'export embarque les images des pictos téléchargés (`files/pictograms/`) et les photos (`files/photos/`), la restauration les remet. La modale « Grilles perdues » propose la restauration, et les copies des bases corrompues (`files/corrupted-databases/`) s'exportent pour tenter de les récupérer. Un `.obz` vide ne s'importe pas (fausse alerte de perte). Restaurer remplace la base (l'accueil réinséré a le même id), acquitte l'alerte, prévient que les changements faits depuis la perte seront écrasés, et vérifie l'intégrité d'une copie (`PRAGMA integrity_check`) avant de la restaurer. La sauvegarde Google écrase la dernière bonne base dès le lendemain d'une perte : piste d'un `BackupAgent` qui saute la base tant que l'alerte n'est pas acquittée.
