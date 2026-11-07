@@ -12,8 +12,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * La tablette rendue à l'enfant n'est jamais en édition : un vrai départ de l'appli la termine,
- * une rotation (recréation de l'activité) la garde. Sur l'émulateur seulement : l'appli réelle se lance.
+ * La tablette rendue à l'enfant n'est jamais en édition ni dans les Réglages : un vrai départ de
+ * l'appli les ferme, une rotation (recréation de l'activité) les garde. Sur l'émulateur seulement : l'appli réelle se lance.
  */
 @RunWith(AndroidJUnit4::class)
 class EditModeLifecycleTest {
@@ -41,6 +41,26 @@ class EditModeLifecycleTest {
             scenario.moveToState(Lifecycle.State.CREATED)
             scenario.moveToState(Lifecycle.State.RESUMED)
             assertFalse("leaving the app must end the edit mode", scenario.isEditing())
+        }
+    }
+
+    private fun ActivityScenario<MainActivity>.isSettingsOpen(): Boolean {
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+        return boardViewModel().uiState.value.isSettingsOpen
+    }
+
+    @Test
+    fun leavingTheAppClosesTheSettingsButARotationKeepsThem() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { ViewModelProvider(it)[BoardViewModel::class.java].onOpenSettings() }
+            assertTrue(scenario.isSettingsOpen())
+
+            scenario.recreate()
+            assertTrue("a rotation must keep the settings open", scenario.isSettingsOpen())
+
+            scenario.moveToState(Lifecycle.State.CREATED)
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            assertFalse("leaving the app must close the settings", scenario.isSettingsOpen())
         }
     }
 }

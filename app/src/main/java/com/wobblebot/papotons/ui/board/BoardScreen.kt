@@ -49,7 +49,6 @@ import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.SentenceToken
 import com.wobblebot.papotons.domain.layoutGrid
 import com.wobblebot.papotons.speech.SpeechStatus
-import com.wobblebot.papotons.ui.about.AboutDialog
 import com.wobblebot.papotons.ui.backup.BackupDialog
 import com.wobblebot.papotons.ui.backup.BackupUiState
 import com.wobblebot.papotons.ui.backup.BackupViewModel
@@ -57,6 +56,7 @@ import com.wobblebot.papotons.ui.backup.RestoreConfirmDialog
 import com.wobblebot.papotons.ui.edit.CellEditorDialog
 import com.wobblebot.papotons.ui.edit.ParentalGateDialog
 import com.wobblebot.papotons.ui.edit.PictogramSearchDialog
+import com.wobblebot.papotons.ui.settings.SettingsDialog
 import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import kotlinx.collections.immutable.persistentListOf
 
@@ -80,14 +80,14 @@ data class BoardActions(
     val onSpeechAlertClick: () -> Unit,
     val onMutedAlertClick: () -> Unit,
     val onLostBoardsAlertClick: () -> Unit,
-    val onAboutClick: () -> Unit,
+    val onSettingsClick: () -> Unit,
     val onEmptySlotClick: (row: Int, column: Int) -> Unit,
     val onStopEditing: () -> Unit,
     val onBackupClick: () -> Unit,
 )
 
 /** Ce qu'ouvre le contrôle parental quand il est passé. */
-private enum class GatedAction { StartEditing, AcknowledgeLostBoards, RestoreBackup }
+private enum class GatedAction { OpenSettings, AcknowledgeLostBoards, RestoreBackup }
 
 /** Branche [BoardScreen] sur son ViewModel : retour arrière, premier plan, modale de la voix. */
 @Composable
@@ -97,7 +97,6 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState, backupViewModel: 
     val backupFileNamePattern = stringResource(R.string.backup_file_name)
     var isSpeechDialogOpen by rememberSaveable { mutableStateOf(false) }
     var areSettingsUnreachable by rememberSaveable { mutableStateOf(false) }
-    var isAboutOpen by rememberSaveable { mutableStateOf(false) }
     var isLostBoardsDialogOpen by rememberSaveable { mutableStateOf(false) }
     // Devant le contrôle, pas derrière : le restaurer ne fait que redemander la réponse.
     var gatedAction by rememberSaveable { mutableStateOf<GatedAction?>(null) }
@@ -126,7 +125,7 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState, backupViewModel: 
             },
             onMutedAlertClick = viewModel::onMutedAlertClick,
             onLostBoardsAlertClick = { isLostBoardsDialogOpen = true },
-            onAboutClick = { isAboutOpen = true },
+            onSettingsClick = { if (!viewModel.onSettingsRequested()) gatedAction = GatedAction.OpenSettings },
             onEmptySlotClick = viewModel::onEmptySlotClick,
             onStopEditing = viewModel::onStopEditing,
             onBackupClick = backupViewModel::onOpen,
@@ -138,7 +137,10 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState, backupViewModel: 
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         // L'appli photo et le sélecteur font passer par ON_STOP sans que l'adulte soit parti.
         val isAwaitingOtherApp = viewModel.isAwaitingPhoto || backupViewModel.isAwaitingDocument
-        if (activity?.isChangingConfigurations != true && !isAwaitingOtherApp) viewModel.onStopEditing()
+        val isLeaving = activity?.isChangingConfigurations != true
+        if (isLeaving && !isAwaitingOtherApp) viewModel.onStopEditing()
+        // Même en attente d'une autre appli : les Réglages n'en ouvrent aucune.
+        if (isLeaving) viewModel.onCloseSettings()
     }
     // À l'accueil, le retour arrière garde son sens habituel (quitter l'appli) ; en édition, il la termine.
     BackHandler(enabled = state.board?.canGoBack == true, onBack = viewModel::onBack)
@@ -148,13 +150,18 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState, backupViewModel: 
         if (!state.isEditing) backupViewModel.onEditingEnded()
     }
     BoardScreen(state = state, actions = actions, hasUnsavedChanges = backupState.hasUnsavedChanges)
-    if (isAboutOpen) {
-        AboutDialog(
-            onClose = { isAboutOpen = false },
-            onEditBoards = {
-                isAboutOpen = false
-                gatedAction = GatedAction.StartEditing
+    if (state.isSettingsOpen) {
+        SettingsDialog(
+            boardSize = state.boardSize,
+            settingFailure = state.settingFailure,
+            onBoardSizeChosen = viewModel::onBoardSizeChosen,
+            onEditBoards = viewModel::onStartEditing,
+            // La sauvegarde n'existe qu'en édition : on y entre, comme « Restaurer » des grilles perdues.
+            onBackup = {
+                viewModel.onStartEditing()
+                backupViewModel.onOpen()
             },
+            onClose = viewModel::onCloseSettings,
         )
     }
     gatedAction?.let { action ->
@@ -162,7 +169,7 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState, backupViewModel: 
             onPassed = {
                 gatedAction = null
                 when (action) {
-                    GatedAction.StartEditing -> viewModel.onStartEditing()
+                    GatedAction.OpenSettings -> viewModel.onOpenSettings()
                     GatedAction.AcknowledgeLostBoards -> viewModel.onAcknowledgeLostBoards()
                     GatedAction.RestoreBackup -> {
                         viewModel.onStartEditing()
@@ -328,7 +335,7 @@ fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier =
                 onSpeechAlertClick = actions.onSpeechAlertClick,
                 onMutedAlertClick = actions.onMutedAlertClick,
                 onLostBoardsAlertClick = actions.onLostBoardsAlertClick,
-                onAboutClick = actions.onAboutClick,
+                onSettingsClick = actions.onSettingsClick,
             ) {
                 if (state.isEditing) {
                     EditBanner(

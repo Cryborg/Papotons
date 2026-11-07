@@ -3,6 +3,7 @@ package com.wobblebot.papotons.data
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
@@ -21,6 +22,9 @@ class FakePreferences(initial: Preferences = emptyPreferences()) : DataStore<Pre
 
     val current: Preferences get() = state.value
 
+    /** Retient la prochaine écriture tant qu'il n'est pas complété (stockage lent), une seule fois. */
+    var nextWriteGate: CompletableDeferred<Unit>? = null
+
     override val data: Flow<Preferences> = flow {
         readFailure?.let { throw it }
         emitAll(state)
@@ -28,6 +32,10 @@ class FakePreferences(initial: Preferences = emptyPreferences()) : DataStore<Pre
 
     override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
         readFailure?.let { throw it }
+        nextWriteGate?.let { gate ->
+            nextWriteGate = null
+            gate.await()
+        }
         val updated = transform(state.value)
         writeFailure?.let { throw it }
         state.value = updated

@@ -27,7 +27,7 @@ private val PARAGRAPH_SPACING = 12.dp
  * adresses restent du texte : rien ici ne fait sortir de l'appli.
  */
 @Composable
-fun AboutDialog(onClose: () -> Unit, onEditBoards: () -> Unit, version: AppVersion = AppVersion.current) {
+fun AboutDialog(onClose: () -> Unit, version: AppVersion = AppVersion.current) {
     AlertDialog(
         onDismissRequest = onClose,
         // Un tap à côté ne ferme jamais une modale : seuls ses boutons et le retour arrière.
@@ -48,12 +48,6 @@ fun AboutDialog(onClose: () -> Unit, onEditBoards: () -> Unit, version: AppVersi
                 Text(stringResource(R.string.about_close))
             }
         },
-        // L'entrée des adultes : le contrôle parental suit, rien ne s'ouvre en un appui.
-        dismissButton = {
-            TextButton(onClick = onEditBoards) {
-                Text(stringResource(R.string.edit_open))
-            }
-        },
     )
 }
 
@@ -66,5 +60,5 @@ private fun Paragraph(@StringRes text: Int) {
 @Preview
 @Composable
 private fun AboutDialogPreview() {
-    AboutDialog(onClose = {}, onEditBoards = {}, version = AppVersion(versionName = "0.1.0", versionCode = 1))
+    AboutDialog(onClose = {}, version = AppVersion(versionName = "0.1.0", versionCode = 1))
 }

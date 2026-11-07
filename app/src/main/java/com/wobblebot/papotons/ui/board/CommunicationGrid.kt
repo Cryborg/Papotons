@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -39,9 +40,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.offset
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.Picture
@@ -177,7 +180,7 @@ private fun CellButton(cell: Cell, isEditing: Boolean, onClick: () -> Unit) {
                         Modifier
                             .weight(PICTOGRAM_WEIGHT)
                             .fillMaxWidth()
-                            .padding(top = if (isFolder) FOLDER_MARK_SIZE else 0.dp),
+                            .then(if (isFolder) Modifier.clearOfFolderMark() else Modifier),
                     )
                     CellLabel(cell.label, PICTOGRAM_LABEL_MAX_FONT_SIZE, Modifier.weight(LABEL_WEIGHT).fillMaxWidth())
                 } else {
@@ -271,6 +274,18 @@ internal fun Pictogram(pictogramId: Long, modifier: Modifier) {
             )
         }
     }
+}
+
+/**
+ * Descend le picto d'un dossier sous la marque du coin, seulement s'il la toucherait : dans une case
+ * plate (téléphone couché), le picto carré centré passe à côté, et le descendre l'effaçait presque.
+ */
+private fun Modifier.clearOfFolderMark() = layout { measurable, constraints ->
+    val mark = FOLDER_MARK_SIZE.roundToPx()
+    val isClearOfMark = constraints.hasBoundedWidth && constraints.hasBoundedHeight && constraints.maxWidth >= constraints.maxHeight + 2 * mark
+    val top = if (isClearOfMark) 0 else mark
+    val placeable = measurable.measure(constraints.offset(vertical = -top))
+    layout(placeable.width, constraints.constrainHeight(placeable.height + top)) { placeable.place(0, top) }
 }
 
 @Composable

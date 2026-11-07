@@ -33,7 +33,7 @@ Proposition, à valider (la décision t'appartient : Google compte comme « coll
 
 ## Appareils
 
-- Tant que le MVP-8 (taille des cases) n'est pas livré : limiter le catalogue d'appareils aux tablettes dans la Play Console (sur téléphone, les cases sont trop étroites).
+- Tablettes et téléphones : sur téléphone, les Réglages proposent les moyennes (debout) et les grandes cases (même couché). La standard reste pensée pour la tablette.
 
 ## Public cible et Familles
 

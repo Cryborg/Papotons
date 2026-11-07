@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Bouton de la barre du haut : il ouvre le contrôle parental, puis les Réglages. -->
+    <string name="settings_open">Réglages</string>
+    <string name="settings_title">Réglages</string>
+    <string name="settings_close">Fermer</string>
+    <string name="settings_edit_description">Ajouter, changer ou supprimer des cases et des dossiers.</string>
+    <string name="settings_backup_description">Enregistrer les grilles dans un fichier, ou les restaurer.</string>
+    <string name="settings_about_description">Crédits des pictogrammes, confidentialité, licence et version.</string>
+    <!-- Taille des cases : un jeu de grilles par taille, chacun avec ses positions fixes. -->
+    <string name="settings_board_size">Taille des cases</string>
+    <string name="settings_board_size_explanation">Chaque taille a ses propres grilles : ce qui est modifié dans une taille ne change pas les autres.</string>
+    <string name="board_size_large_cells">Grandes cases (3 × 4)</string>
+    <string name="board_size_large_cells_description">12 cases : premiers pas, difficultés pour viser, téléphone même couché.</string>
+    <string name="board_size_medium">Moyennes (5 × 6)</string>
+    <string name="board_size_medium_description">30 cases : téléphone tenu debout, petite tablette.</string>
+    <string name="board_size_standard">Standard (7 × 8)</string>
+    <string name="board_size_standard_description">56 cases : tablette.</string>
+    <string name="settings_board_size_failed">La taille n\'a pas pu être enregistrée. Réessayez.</string>
+    <string name="settings_board_size_unavailable">Ces grilles n\'ont pas cette taille : elles viennent sans doute d\'une sauvegarde plus ancienne.</string>
+</resources>

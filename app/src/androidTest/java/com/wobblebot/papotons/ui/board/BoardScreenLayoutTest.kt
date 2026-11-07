@@ -250,6 +250,37 @@ class BoardScreenLayoutTest {
         assertTrue("mark ends at ${mark.bottom}, pictogram starts at ${pictogram.top}", mark.bottom <= pictogram.top)
     }
 
+    /**
+     * Case plate (téléphone couché) : le picto centré passe à côté de la marque du coin, il ne descend
+     * pas sous elle. Descendu, il ne restait presque rien de lui.
+     */
+    @Test
+    fun aFolderPictogramInAFlatCellKeepsTheSizeOfAWordPictogram() {
+        val image = context.assets.open("pictograms/$BUNDLED_PICTOGRAM_ID.png").use(BitmapFactory::decodeStream).asImageBitmap()
+        val folder = Cell(id = 1, row = 0, column = 0, label = "Manger", linkedBoardId = 2, pictogramId = BUNDLED_PICTOGRAM_ID, category = WordCategory.NOUN)
+        val word = Cell(id = 2, row = 0, column = 1, label = "pomme", linkedBoardId = null, pictogramId = BUNDLED_PICTOGRAM_ID, category = WordCategory.NOUN)
+        val state = homeState.copy(board = checkNotNull(homeState.board).copy(grid = layoutGrid(FLAT_CELL_ROWS, WIDE_CELL_COLUMNS, listOf(folder, word))))
+        composeRule.setContent {
+            CompositionLocalProvider(LocalPictogramImages provides { image }) {
+                PapotonsTheme { BoardScreen(state = state, actions = noActions) }
+            }
+        }
+
+        val pictograms = composeRule.onAllNodesWithTag(PICTOGRAM_TEST_TAG, useUnmergedTree = true)
+        val folderPictogram = pictograms[0].getBoundsInRoot()
+        val wordPictogram = pictograms[1].getBoundsInRoot()
+        val mark = composeRule.onNodeWithTag(FOLDER_MARK_TEST_TAG, useUnmergedTree = true).getBoundsInRoot()
+
+        assertTrue("cell must be flat for this test: ${folderPictogram.width} x ${folderPictogram.height}", folderPictogram.width > folderPictogram.height)
+        assertEquals(wordPictogram.height.value, folderPictogram.height.value, CENTER_TOLERANCE_DP)
+        // L'image remplit sa zone et dessine un carré centré (ContentScale.Fit) : c'est lui que la marque ne doit pas toucher.
+        val side = minOf(folderPictogram.width, folderPictogram.height)
+        val drawnLeft = (folderPictogram.left + folderPictogram.right) / 2 - side / 2
+        val drawnTop = (folderPictogram.top + folderPictogram.bottom) / 2 - side / 2
+        val overlaps = mark.left < drawnLeft + side && drawnLeft < mark.right && mark.top < drawnTop + side && drawnTop < mark.bottom
+        assertFalse("mark $mark covers the drawn pictogram at ($drawnLeft, $drawnTop), side $side", overlaps)
+    }
+
     @Test
     fun aTextOnlyLabelIsCenteredInItsCell() {
         composeRule.setContent { PapotonsTheme { BoardScreen(state = homeState, actions = noActions) } }
@@ -324,13 +355,13 @@ class BoardScreenLayoutTest {
         val clear = composeRule.onNodeWithContentDescription(context.getString(R.string.message_clear)).getBoundsInRoot()
         val alertLabel = context.getString(R.string.speech_unavailable)
         val alert = composeRule.onNode(hasText(alertLabel) or hasContentDescription(alertLabel)).getBoundsInRoot()
-        val about = composeRule.onNodeWithContentDescription(context.getString(R.string.about_open)).getBoundsInRoot()
+        val settings = composeRule.onNodeWithContentDescription(context.getString(R.string.settings_open)).getBoundsInRoot()
 
         // Chevauchés, l'appui sur « Effacer le dernier mot » effacerait toute la phrase.
         assertTrue("delete ends at ${deleteLast.right}, clear starts at ${clear.left}", deleteLast.right <= clear.left)
         val speak = composeRule.onNodeWithContentDescription(context.getString(R.string.message_speak)).getBoundsInRoot()
         assertTrue("alert ends at ${alert.right}, speak starts at ${speak.left}", alert.right <= speak.left)
-        assertTrue("clear ends at ${clear.right}, about starts at ${about.left}", clear.right <= about.left)
+        assertTrue("clear ends at ${clear.right}, settings starts at ${settings.left}", clear.right <= settings.left)
         assertEquals(clear.width, deleteLast.width)
     }
 
@@ -351,7 +382,7 @@ class BoardScreenLayoutTest {
         // endroit ne doit ni effacer un mot ni vider la phrase.
         var state by mutableStateOf(homeState.copy(message = persistentListOf(SentenceToken("je", persistentListOf()))))
         composeRule.setContent { PapotonsTheme { BoardScreen(state = state, actions = noActions) } }
-        fun buttons() = listOf(R.string.message_speak, R.string.message_delete_last, R.string.message_clear, R.string.about_open)
+        fun buttons() = listOf(R.string.message_speak, R.string.message_delete_last, R.string.message_clear, R.string.settings_open)
             .map { composeRule.onNodeWithContentDescription(context.getString(it)).getBoundsInRoot() }
         val withoutAlert = buttons()
 
@@ -379,13 +410,13 @@ class BoardScreenLayoutTest {
 
         val clear = composeRule.onNodeWithContentDescription(context.getString(R.string.message_clear)).getBoundsInRoot()
         val muted = composeRule.onNodeWithContentDescription(context.getString(R.string.volume_muted_alert)).getBoundsInRoot()
-        val about = composeRule.onNodeWithContentDescription(context.getString(R.string.about_open)).getBoundsInRoot()
+        val settings = composeRule.onNodeWithContentDescription(context.getString(R.string.settings_open)).getBoundsInRoot()
         composeRule.onNodeWithContentDescription(context.getString(R.string.lost_boards_alert)).assertDoesNotExist()
         composeRule.onNodeWithContentDescription(context.getString(R.string.speech_language_missing)).assertDoesNotExist()
 
         val speak = composeRule.onNodeWithContentDescription(context.getString(R.string.message_speak)).getBoundsInRoot()
         assertTrue("muted alert ends at ${muted.right}, speak starts at ${speak.left}", muted.right <= speak.left)
-        assertTrue("clear ends at ${clear.right}, about starts at ${about.left}", clear.right <= about.left)
+        assertTrue("clear ends at ${clear.right}, settings starts at ${settings.left}", clear.right <= settings.left)
     }
 
     @Test
@@ -411,14 +442,14 @@ class BoardScreenLayoutTest {
         val speech = composeRule.onNodeWithText(context.getString(R.string.speech_language_missing)).getBoundsInRoot()
         val muted = composeRule.onNodeWithContentDescription(context.getString(R.string.volume_muted_alert)).getBoundsInRoot()
         val lost = composeRule.onNodeWithContentDescription(context.getString(R.string.lost_boards_alert)).getBoundsInRoot()
-        val about = composeRule.onNodeWithContentDescription(context.getString(R.string.about_open)).getBoundsInRoot()
+        val settings = composeRule.onNodeWithContentDescription(context.getString(R.string.settings_open)).getBoundsInRoot()
 
         assertTrue("delete ends at ${deleteLast.right}, clear starts at ${clear.left}", deleteLast.right <= clear.left)
         val speak = composeRule.onNodeWithContentDescription(context.getString(R.string.message_speak)).getBoundsInRoot()
         assertTrue("voice alert ends at ${speech.right}, muted starts at ${muted.left}", speech.right <= muted.left)
         assertTrue("muted ends at ${muted.right}, lost boards starts at ${lost.left}", muted.right <= lost.left)
         assertTrue("lost boards ends at ${lost.right}, speak starts at ${speak.left}", lost.right <= speak.left)
-        assertTrue("clear ends at ${clear.right}, about starts at ${about.left}", clear.right <= about.left)
+        assertTrue("clear ends at ${clear.right}, settings starts at ${settings.left}", clear.right <= settings.left)
         // Densité forcée : arrondis au millième de dp près.
         assertEquals(clear.width.value, deleteLast.width.value, WIDTH_TOLERANCE_DP)
     }

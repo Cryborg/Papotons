@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Entrée des Réglages qui ouvre la modale. -->
     <string name="about_open">À propos</string>
     <string name="about_title">À propos de Papotons</string>
     <!-- Crédit exigé par la licence des pictogrammes (invariant 5) : auteur, origine, licence, propriétaire. -->

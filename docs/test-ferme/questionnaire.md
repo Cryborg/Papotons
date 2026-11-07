@@ -6,7 +6,7 @@
 
 1. Vous êtes : orthophoniste, parent ou aidant, enseignant, autre (préciser).
 2. Pour quelle personne avez-vous testé Papotons (âge, façon de communiquer aujourd'hui, autre outil de CAA utilisé) ? Rien qui permette de la reconnaître.
-3. Sur quelle tablette, et combien de temps ?
+3. Sur quel appareil (tablette, téléphone), avec quelle taille de cases, et combien de temps ?
 
 ## Le vocabulaire de base
 
@@ -21,7 +21,7 @@
 
 10. La phrase qui se construit en haut, puis se dit d'un appui : utile, gênante ? La voix est-elle assez claire ?
 11. La personne a-t-elle réussi à toucher la bonne case sans se tromper de voisine ? Les cases sont-elles assez grandes ?
-12. Faudrait-il une taille avec moins de cases, plus grosses ? Combien de cases, et quels mots garder en priorité ?
+12. Les grandes cases (12) et les moyennes (30) : la bonne taille pour la personne ? Les bons mots ? Lesquels changer ?
 
 ## L'adulte
 

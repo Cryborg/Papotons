@@ -43,7 +43,7 @@ Numérotés, jamais renumérotés (des agents et des tests les citent par numér
 2. **Hors ligne d'abord** : parler ne dépend jamais du réseau. Tout picto posé dans une grille est stocké sur l'appareil.
 3. **Une case ne change jamais de place toute seule** (planification motrice) : ajouter du vocabulaire ou agrandir la grille ne déplace aucune case existante.
 4. **Les données de l'utilisateur ne se perdent pas** : aucune migration destructive, et l'export complet (`.obz`) reste toujours possible.
-5. **Crédit ARASAAC visible** dans l'appli et sur la fiche Play : auteur Sergio Palao, origine ARASAAC, licence CC BY-NC-SA, propriété du gouvernement d'Aragon.
+5. **Crédit ARASAAC visible** dans l'appli (Réglages > À propos, derrière le contrôle parental) et sur la fiche Play : auteur Sergio Palao, origine ARASAAC, licence CC BY-NC-SA, propriété du gouvernement d'Aragon.
 
 ## Git
 

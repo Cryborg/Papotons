@@ -55,18 +55,35 @@ THEME = ROOT / "app/src/main/java/com/wobblebot/papotons/ui/theme/Theme.kt"
 KOTLIN = ROOT / "app/src/main/java/com/wobblebot/papotons/data/board/CoreVocabulary.kt"
 STRINGS_FR = ROOT / "app/src/main/res/values/strings_vocabulary.xml"
 
-# Grilles : clé, nom fr, nom en, lignes, colonnes. L'accueil d'abord : son id doit valoir 1
-# (HOME_BOARD_ID dans domain/Board.kt).
-BOARDS = [
-    ("home", "Accueil", "Home", 7, 8),
-    ("food", "Nourriture", "Food", 4, 6),
-    ("games", "Jeux", "Games", 4, 6),
-    ("people", "Personnes", "People", 4, 6),
-    ("feelings", "Émotions", "Feelings", 4, 6),
-    ("places", "Lieux", "Places", 4, 6),
-]
+# Noms des grilles par thème (fr, en) : une seule chaîne par thème, partagée entre les tailles.
+THEMES = {
+    "home": ("Accueil", "Home"),
+    "food": ("Nourriture", "Food"),
+    "games": ("Jeux", "Games"),
+    "people": ("Personnes", "People"),
+    "feelings": ("Émotions", "Feelings"),
+    "places": ("Lieux", "Places"),
+}
+MEDIUM_PREFIX = "medium_"
+LARGE_CELLS_PREFIX = "large_cells_"
+FOLDER_THEMES = ["food", "games", "people", "feelings", "places"]
+
+# Grilles : clé, thème, lignes, colonnes. L'ordre donne les ids : standard (1 à 6), moyennes
+# (7 à 12), grandes cases (13 et 14). Une grille ajoutée va À LA FIN (les ids livrés ne bougent pas) ;
+# les ids 1 à 999 sont réservés au vocabulaire de base (FIRST_USER_BOARD_ID dans data/board/BoardDao.kt).
+BOARDS = (
+    [("home", "home", 7, 8)]
+    + [(theme, theme, 4, 6) for theme in FOLDER_THEMES]
+    + [(MEDIUM_PREFIX + "home", "home", 5, 6)]
+    + [(MEDIUM_PREFIX + theme, theme, 3, 4) for theme in FOLDER_THEMES]
+    + [(LARGE_CELLS_PREFIX + "home", "home", 3, 4), (LARGE_CELLS_PREFIX + "food", "food", 2, 3)]
+)
 BOARD_IDS = {key: index + 1 for index, (key, *_rest) in enumerate(BOARDS)}
-assert BOARD_IDS["home"] == 1, "l'accueil doit garder l'id 1 (HOME_BOARD_ID)"
+BOARD_THEMES = {key: theme for key, theme, *_rest in BOARDS}
+# Les accueils de chaque taille : ids recopiés dans domain/BoardSize.kt (vérifiés par CoreVocabularyTest).
+SIZE_HOME_IDS = {"home": 1, MEDIUM_PREFIX + "home": 7, LARGE_CELLS_PREFIX + "home": 13}
+for _key, _expected in SIZE_HOME_IDS.items():
+    assert BOARD_IDS[_key] == _expected, f"{_key} doit garder l'id {_expected} (domain/BoardSize.kt)"
 
 # Catégories de la clé de Goossens modifiée (noms persistés en base : ne jamais renommer).
 PEOPLE, VERB, DESCRIPTOR, NOUN, SOCIAL, QUESTION, NEGATION, LITTLE_WORD = (
@@ -146,6 +163,26 @@ FOLDER_WORDS = {
 }
 FOLDER_COLUMNS = 6
 
+# Moyennes (5 × 6) : les colonnes de la standard, raccourcies ; la ligne 4 reste libre sous les
+# quatre premières colonnes. Des clés de mots de la standard : même libellé, même picto.
+MEDIUM_HOME_COLUMNS = [
+    ["i", "you", "he", "she"],
+    ["want", "can", "like", "am_going"],
+    ["eat", "drink", "play", "go"],
+    ["not", "more", "finished", "that"],
+    ["yes", "no", "thank_you", "where", "toilet"],
+    ["folder_" + theme for theme in FOLDER_THEMES],
+]
+MEDIUM_FOLDER_COLUMNS = 4
+# Grandes cases (3 × 4), ligne par ligne : la ligne du haut commence comme celle de la standard.
+LARGE_CELLS_HOME_ROWS = [
+    ["i", "want", "eat", "folder_food"],
+    ["not", "more", "drink", "toilet"],
+    ["yes", "no", "play", "finished"],
+]
+LARGE_CELLS_FOLDER_WORDS = {"food": ["apple", "banana", "bread", "cake", "water", "milk"]}
+LARGE_CELLS_FOLDER_COLUMNS = 3
+
 # Identifiant ARASAAC imposé par clé de case quand le premier choix automatique ne convient pas
 # (relu sur la planche contact) : doublon d'un autre mot, sens détourné, image peu parlante.
 OVERRIDES = {
@@ -183,22 +220,22 @@ class Cell(NamedTuple):
 
     @property
     def string_name(self):
-        return board_string_name(self.target) if self.target else f"vocabulary_{self.key}"
+        return board_string_name(BOARD_THEMES[self.target]) if self.target else f"vocabulary_{self.key}"
 
     @property
     def location(self):
         return f"{BOARD_IDS[self.board]}|{self.row}|{self.column}"
 
 
-def board_string_name(board_key):
-    return f"vocabulary_board_{board_key}"
+def board_string_name(theme):
+    return f"vocabulary_board_{theme}"
 
 
 def board_constant(board_key):
     return f"{board_key.upper()}_BOARD_ID"
 
 
-def cells():
+def standard_cells():
     result = []
     for column, entries in enumerate(HOME_COLUMNS):
         for row, (key, fr, en, category, search) in enumerate(entries):
@@ -208,10 +245,50 @@ def cells():
     for board, words in FOLDER_WORDS.items():
         for index, (key, fr, en, category, search) in enumerate(words):
             result.append(Cell(board, index // FOLDER_COLUMNS, index % FOLDER_COLUMNS, key, fr, en, category, search, None))
+    return result
+
+
+def placed(standard, board, row, column, key, prefix):
+    """La case de la standard [key], posée ailleurs : un dossier ouvre la grille de son thème dans le même jeu."""
+    model = standard[key]
+    target = prefix + model.target if model.target else None
+    return model._replace(board=board, row=row, column=column, target=target)
+
+
+def cells():
+    result = standard_cells()
     keys = [cell.key for cell in result]
     duplicates = sorted({key for key in keys if keys.count(key) > 1})
     if duplicates:
         sys.exit(f"Clés en double : {duplicates}")
+    # Les autres tailles ne font que reposer des mots de la standard : une clé, une seule définition.
+    standard = {cell.key: cell for cell in result}
+    medium_home = MEDIUM_PREFIX + "home"
+    for column, keys_in_column in enumerate(MEDIUM_HOME_COLUMNS):
+        for row, key in enumerate(keys_in_column):
+            result.append(placed(standard, medium_home, row, column, key, MEDIUM_PREFIX))
+    for theme in FOLDER_THEMES:
+        for index, (key, *_rest) in enumerate(FOLDER_WORDS[theme]):
+            result.append(placed(standard, MEDIUM_PREFIX + theme, index // MEDIUM_FOLDER_COLUMNS, index % MEDIUM_FOLDER_COLUMNS, key, MEDIUM_PREFIX))
+    large_cells_home = LARGE_CELLS_PREFIX + "home"
+    for row, keys_in_row in enumerate(LARGE_CELLS_HOME_ROWS):
+        for column, key in enumerate(keys_in_row):
+            result.append(placed(standard, large_cells_home, row, column, key, LARGE_CELLS_PREFIX))
+    for theme, keys_in_folder in LARGE_CELLS_FOLDER_WORDS.items():
+        for index, key in enumerate(keys_in_folder):
+            result.append(placed(standard, LARGE_CELLS_PREFIX + theme, index // LARGE_CELLS_FOLDER_COLUMNS, index % LARGE_CELLS_FOLDER_COLUMNS, key, LARGE_CELLS_PREFIX))
+    dimensions = {key: (rows, columns) for key, _theme, rows, columns in BOARDS}
+    slots = set()
+    for cell in result:
+        rows, columns = dimensions[cell.board]
+        if not (0 <= cell.row < rows and 0 <= cell.column < columns):
+            sys.exit(f"{cell.key} hors de {cell.board} ({cell.row}, {cell.column})")
+        if cell.target and cell.target not in dimensions:
+            sys.exit(f"{cell.key} ouvre une grille inconnue : {cell.target}")
+        slot = (cell.board, cell.row, cell.column)
+        if slot in slots:
+            sys.exit(f"Deux cases en {slot}")
+        slots.add(slot)
     return result
 
 
@@ -351,7 +428,7 @@ def contact_sheet(cache, choices, sheet):
     from PIL import Image, ImageDraw
     tile, columns, label, margin = SHEET_TILE_PIXELS, SHEET_COLUMNS, SHEET_LABEL_PIXELS, SHEET_MARGIN_PIXELS
     colors = theme_colors()
-    vocabulary = cells()
+    vocabulary = list({cell.key: cell for cell in cells()}.values())
     rows = (len(vocabulary) + columns - 1) // columns
     canvas = Image.new("RGB", (columns * tile, rows * (tile + label)), "white")
     draw = ImageDraw.Draw(canvas)
@@ -385,7 +462,8 @@ def board_images(out):
     choices, colors, vocabulary = read_lock(), theme_colors(), cells()
     out.mkdir(parents=True, exist_ok=True)
     tile, label, gap = BOARD_TILE_PIXELS, BOARD_LABEL_PIXELS, BOARD_GAP_PIXELS
-    for key, french, _english, rows, columns in BOARDS:
+    for key, theme, rows, columns in BOARDS:
+        french = THEMES[theme][0]
         width = columns * (tile + gap) + gap
         height = BOARD_TITLE_PIXELS + rows * (tile + label + gap) + gap
         canvas = Image.new("RGB", (width, height), "white")
@@ -438,8 +516,8 @@ def render_kotlin(choices, vocabulary):
         f"    private const val {board_constant(key)} = {BOARD_IDS[key]}L" for key, *_rest in BOARDS if key != "home"
     )
     boards = "\n".join(
-        f"            BoardEntity({board_constant(key)}, label(R.string.{board_string_name(key)}), {rows}, {columns}),"
-        for key, fr, en, rows, columns in BOARDS
+        f"            BoardEntity({board_constant(key)}, label(R.string.{board_string_name(theme)}), {rows}, {columns}),"
+        for key, theme, rows, columns in BOARDS
     )
     lines = "\n".join(
         f"            cell({board_constant(cell.board)}, {cell.row}, {cell.column}, R.string.{cell.string_name}, "
@@ -490,10 +568,13 @@ def generate(cache):
             check_transparent(data, pictogram_id, path.stem)
             write_atomically(target, data=data)
 
-    french = [(board_string_name(key), fr) for key, fr, *_rest in BOARDS]
+    french = [(board_string_name(theme), fr) for theme, (fr, _en) in THEMES.items()]
     # Appli en français seulement : les noms anglais de la spécification attendent la version anglaise.
+    # Une chaîne par mot, même posé dans plusieurs tailles.
+    written = set()
     for cell in vocabulary:
-        if cell.target is None:
+        if cell.target is None and cell.string_name not in written:
+            written.add(cell.string_name)
             french.append((cell.string_name, cell.french))
     write_strings(STRINGS_FR, french, comment="Vocabulaire de base (généré par tools/arasaac/fetch_pictograms.py).")
     write_atomically(KOTLIN, text=render_kotlin(choices, vocabulary))

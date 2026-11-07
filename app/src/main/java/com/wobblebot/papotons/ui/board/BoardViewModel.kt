@@ -17,6 +17,7 @@ import com.wobblebot.papotons.data.pictogram.isSearchable
 import com.wobblebot.papotons.data.board.CellChangedException
 import com.wobblebot.papotons.data.board.CellNotFoundException
 import com.wobblebot.papotons.domain.Board
+import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.CellContent
 import com.wobblebot.papotons.domain.SentenceWord
@@ -61,9 +62,14 @@ private data class SecondaryState(
     val isMuted: Boolean,
     val isVolumeLockedDialogOpen: Boolean,
     val isEditing: Boolean,
+    val isSettingsOpen: Boolean,
+    val settingFailure: SettingFailure?,
     val editor: CellEditorState?,
     val pictogramSearch: PictogramSearchState?,
 )
+
+/** Les deux zones réservées aux adultes. */
+private data class AdultState(val isEditing: Boolean, val isSettingsOpen: Boolean, val settingFailure: SettingFailure?)
 internal const val NAVIGATION_KEY = "navigation"
 internal const val MESSAGE_KEY = "message"
 internal const val STOP_TIMEOUT_MS = 5_000L
@@ -94,10 +100,15 @@ class BoardViewModel @Inject constructor(
     private val isVolumeLockedDialogOpen = MutableStateFlow(false)
 
     /**
-     * Le mode édition et son éditeur, derrière le contrôle parental : jamais dans [savedState], pour
-     * qu'aucun ne se rouvre sans contrôle après la mort du processus.
+     * Le mode édition, son éditeur et les Réglages, derrière le contrôle parental : jamais dans
+     * [savedState], pour qu'aucun ne se rouvre sans contrôle après la mort du processus.
      */
     private val isEditing = MutableStateFlow(false)
+    private val isSettingsOpen = MutableStateFlow(false)
+    private val settingFailure = MutableStateFlow<SettingFailure?>(null)
+
+    /** Le choix de taille en cours : un nouveau choix l'annule, le dernier appui gagne. */
+    private var sizeChoice: Job? = null
     private val editor = MutableStateFlow<CellEditorState?>(null)
     private var writeCount = 0L
 
@@ -147,11 +158,19 @@ class BoardViewModel @Inject constructor(
             speaker.status,
             // Faux d'ici la première lecture : l'écran n'attend pas l'alerte pour s'afficher.
             repository.observeLostBoards().onStart { emit(false) },
-            combine(mediaVolume.isMuted, isVolumeLockedDialogOpen, isEditing, editor, pictogramSearch) { isMuted, isDialogOpen, isEditing, editor, search ->
+            combine(
+                mediaVolume.isMuted,
+                isVolumeLockedDialogOpen,
+                combine(isEditing, isSettingsOpen, settingFailure, ::AdultState),
+                editor,
+                pictogramSearch,
+            ) { isMuted, isDialogOpen, adult, editor, search ->
                 SecondaryState(
                     isMuted = isMuted,
                     isVolumeLockedDialogOpen = isMuted && isDialogOpen,
-                    isEditing = isEditing,
+                    isEditing = adult.isEditing,
+                    isSettingsOpen = adult.isSettingsOpen,
+                    settingFailure = adult.settingFailure,
                     editor = editor,
                     pictogramSearch = search,
                 )
@@ -165,6 +184,8 @@ class BoardViewModel @Inject constructor(
                 isMuted = secondary.isMuted,
                 isVolumeLockedDialogOpen = secondary.isVolumeLockedDialogOpen,
                 isEditing = secondary.isEditing,
+                isSettingsOpen = secondary.isSettingsOpen,
+                settingFailure = secondary.settingFailure,
                 editor = secondary.editor,
                 pictogramSearch = secondary.pictogramSearch,
             )
@@ -238,10 +259,57 @@ class BoardViewModel @Inject constructor(
         message.value = persistentListOf()
     }
 
-    /** Après le contrôle parental. Les mots encore en file se taisent. */
+    /** Après le contrôle parental. Les mots encore en file se taisent ; les Réglages se ferment sur la grille à modifier. */
     fun onStartEditing() {
         speaker.stop()
+        isSettingsOpen.value = false
         isEditing.value = true
+    }
+
+    /**
+     * La roue dentée : en édition, l'adulte vient de passer le contrôle, les Réglages s'ouvrent tout
+     * de suite (vrai) ; sinon rien ne s'ouvre, le contrôle doit passer d'abord (faux).
+     */
+    fun onSettingsRequested(): Boolean {
+        if (!isEditing.value) return false
+        onOpenSettings()
+        return true
+    }
+
+    /** Après le contrôle parental (ou depuis l'édition, par [onSettingsRequested]). */
+    fun onOpenSettings() {
+        settingFailure.value = null
+        isSettingsOpen.value = true
+    }
+
+    /** « Fermer », retour arrière, et tout départ de l'appli (`ON_STOP`). */
+    fun onCloseSettings() {
+        isSettingsOpen.value = false
+    }
+
+    /**
+     * Enregistre l'accueil de [size] comme écran de départ, puis l'ouvre (la phrase reste). Après
+     * l'ouverture en cours : sinon elle pourrait finir après et rouvrir l'ancien accueil. La pile
+     * passe d'un coup au nouvel accueil : l'ancien reste affiché jusqu'à sa lecture.
+     */
+    fun onBoardSizeChosen(size: BoardSize) {
+        sizeChoice?.cancel()
+        settingFailure.value = null
+        sizeChoice = viewModelScope.launch {
+            homeOpening?.join()
+            val isAvailable = try {
+                repository.setStartBoard(size)
+            } catch (exception: IOException) {
+                Log.e(TAG, "Board size $size could not be saved", exception)
+                settingFailure.value = SettingFailure.NotSaved
+                return@launch
+            } catch (exception: SQLiteException) {
+                Log.e(TAG, "Board size $size could not be checked", exception)
+                settingFailure.value = SettingFailure.NotSaved
+                return@launch
+            }
+            if (isAvailable) navigation.value = persistentListOf(size.homeBoardId) else settingFailure.value = SettingFailure.Unavailable
+        }
     }
 
     /** « Terminer », et tout départ de l'appli (`ON_STOP`) : la tablette rendue à l'enfant n'est jamais en édition. */
@@ -484,7 +552,9 @@ class BoardViewModel @Inject constructor(
         when (target) {
             is EditTarget.NewCell ->
                 if (asFolder) {
-                    repository.addFolder(target.boardId, target.row, target.column, content)
+                    // À la taille des dossiers du jeu ouvert : un dossier de grandes cases reste en grandes cases.
+                    val size = BoardSize.withHome(navigation.value.firstOrNull()) ?: BoardSize.STANDARD
+                    repository.addFolder(target.boardId, target.row, target.column, content, size)
                 } else {
                     repository.addWord(target.boardId, target.row, target.column, content)
                 }
@@ -621,6 +691,7 @@ class BoardViewModel @Inject constructor(
             name = board.name,
             grid = layoutGrid(board.rowCount, board.columnCount, board.cells),
             canGoBack = stack.size > 1,
+            rootBoardId = stack.first(),
         )
     }
 }

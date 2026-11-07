@@ -20,6 +20,12 @@ class CellNotFoundException(cellId: Long) : SQLiteException("Cell $cellId not fo
  */
 class CellChangedException(cellId: Long) : SQLiteException("Cell $cellId changed since it was read")
 
+/**
+ * Les grilles créées par l'adulte commencent ici : 1 à 999 restent au vocabulaire de base, qui peut
+ * encore ajouter des grilles à id fixe après les premières installations.
+ */
+const val FIRST_USER_BOARD_ID = 1000L
+
 /** Les pictos (embarqués ou téléchargés) et les photos visés par les cases, lus d'un coup avec le nombre de grilles. */
 data class ReferencedImages(val boardCount: Int, val pictogramIds: Set<Long>, val photoFiles: Set<String>)
 
@@ -33,6 +39,9 @@ abstract class BoardDao {
 
     @Query("SELECT MIN(id) FROM boards")
     abstract suspend fun smallestBoardId(): Long?
+
+    @Query("SELECT MAX(id) FROM boards")
+    abstract suspend fun largestBoardId(): Long?
 
     // ABORT seulement, jamais REPLACE : REPLACE supprime puis réinsère la ligne, et la
     // clé étrangère en CASCADE effacerait au passage toutes les cases de la grille.
@@ -150,10 +159,13 @@ abstract class BoardDao {
         return previousPhoto
     }
 
-    /** Une nouvelle grille et la case-dossier qui l'ouvre, ensemble ou pas du tout. Rend l'id de la grille. */
+    /**
+     * Une nouvelle grille et la case-dossier qui l'ouvre, ensemble ou pas du tout. Rend l'id de la
+     * grille, jamais sous [FIRST_USER_BOARD_ID].
+     */
     @Transaction
     open suspend fun insertFolder(board: BoardEntity, folderCell: CellEntity): Long {
-        val boardId = insertBoard(board)
+        val boardId = insertBoard(board.copy(id = maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID)))
         insertCell(folderCell.copy(linkedBoardId = boardId))
         return boardId
     }

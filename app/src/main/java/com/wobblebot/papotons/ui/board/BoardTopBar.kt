@@ -47,7 +47,7 @@ private val WRITTEN_ALERT_MIN_BAR_WIDTH = 720.dp
 
 /**
  * L'unique barre au-dessus de la grille : navigation, phrase en cours ([message]), alertes,
- * « À propos ». Pas de titre écrit : chaque ligne gagnée revient aux cases.
+ * Réglages. Pas de titre écrit : chaque ligne gagnée revient aux cases.
  */
 @Composable
 fun BoardTopBar(
@@ -60,7 +60,7 @@ fun BoardTopBar(
     onSpeechAlertClick: () -> Unit,
     onMutedAlertClick: () -> Unit,
     onLostBoardsAlertClick: () -> Unit,
-    onAboutClick: () -> Unit,
+    onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier,
     message: @Composable RowScope.() -> Unit,
 ) {
@@ -85,7 +85,7 @@ fun BoardTopBar(
                 }
             }
             // Les alertes entre la navigation et la phrase : qu'une alerte apparaisse ou disparaisse,
-            // seule la phrase change de largeur. Les boutons de la phrase et « À propos » ne bougent
+            // seule la phrase change de largeur. Les boutons de la phrase et « Réglages » ne bougent
             // jamais sous le doigt, et ce qui glisse (la phrase, une alerte) est sans danger.
             for (alert in visibleAlerts(isAlertWritten, speechStatus, isMuted, hasLostBoards)) {
                 when (alert) {
@@ -102,8 +102,8 @@ fun BoardTopBar(
                 }
             }
             message()
-            IconButton(onClick = onAboutClick) {
-                Icon(painterResource(R.drawable.ic_info), stringResource(R.string.about_open))
+            IconButton(onClick = onSettingsClick) {
+                Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings_open))
             }
         }
     }

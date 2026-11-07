@@ -3,6 +3,7 @@ package com.wobblebot.papotons.data.board
 import android.content.Context
 import com.wobblebot.papotons.data.FakePreferences
 import com.wobblebot.papotons.domain.CellContent
+import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import com.wobblebot.papotons.domain.WordCategory
 import io.mockk.every
@@ -56,7 +57,7 @@ class BoardEditingTest {
     fun `a folder brings its own empty board named after it`() = runTest {
         val dao = FakeBoardDao(listOf(home))
 
-        repository(dao).addFolder(HOME_BOARD_ID, 1, 0, CellContent("Animaux", null, WordCategory.NOUN, null, null))
+        repository(dao).addFolder(HOME_BOARD_ID, 1, 0, CellContent("Animaux", null, WordCategory.NOUN, null, null), BoardSize.STANDARD)
 
         val folderCell = dao.cells.value.single()
         val folderBoard = dao.boards.value.single { it.id == folderCell.linkedBoardId }
@@ -146,7 +147,7 @@ class BoardEditingTest {
         val repository = repository(dao)
         val edits = listOf<suspend () -> Unit>(
             { repository.addWord(HOME_BOARD_ID, 0, 1, CellContent("eau", null, null, null, null)) },
-            { repository.addFolder(HOME_BOARD_ID, 0, 2, CellContent("Jeux", null, null, null, null)) },
+            { repository.addFolder(HOME_BOARD_ID, 0, 2, CellContent("Jeux", null, null, null, null), BoardSize.STANDARD) },
             { repository.updateCell(checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.first(), CellContent("moi", null, null, null, null)) },
             { repository.deleteCell(checkNotNull(repository.observeBoard(HOME_BOARD_ID).first()).cells.first(), HOME_BOARD_ID, HOME_BOARD_ID) },
         )

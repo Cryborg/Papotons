@@ -16,7 +16,7 @@ Ce dossier :
 4. **Les dossiers** : thèmes et contenus utiles ? Lesquels manquent ?
 5. **L'édition par l'adulte** : ajouter une case, une photo, chercher un picto, sauvegarder : est-ce faisable sans aide ?
 6. **La voix** et la phrase : compréhensible, assez rapide, « j'ai » plutôt que « je ai » ?
-7. **La taille des cases** (MVP-8) : quelles tailles sont nécessaires, et quels mots garder dans une grille de 12 cases (voir `docs/designs/MVP-8.md`) ?
+7. **Les tailles des cases** (Réglages > Taille des cases) : grandes cases (3 × 4), moyennes (5 × 6), standard (7 × 8). Les mots retenus pour les deux petites tailles sont-ils les bons ? Leurs grilles sont dans `grilles/` (07 à 14).
 
 ## Qui inviter
 
@@ -28,7 +28,7 @@ Ce dossier :
 
 1. Envoyer `invitation.md` avec les images de `grilles/`.
 2. Ajouter les volontaires comme testeurs dans la Play Console (Tests fermés : liste d'adresses e-mail, ou un groupe Google), puis leur envoyer le lien d'inscription.
-3. Sur tablette seulement tant que le MVP-8 n'est pas livré.
+3. Tablette ou téléphone : sur téléphone, proposer les moyennes (debout) ou les grandes cases.
 4. Deux à quatre semaines d'usage, puis le questionnaire.
 5. Reporter les retours dans `docs/TODO.md` : un mot à ajouter va dans la ligne libre de l'accueil ou dans un dossier ; un mot à déplacer n'est possible que tant que rien n'est publié (`tools/arasaac/fetch_pictograms.py`, voir sa documentation sur l'instantané des positions).
 
@@ -38,4 +38,4 @@ Ce dossier :
 
 - Coller l'adresse de la politique de confidentialité dans la Play Console (`docs/regles/PUBLICATION.md`).
 - Remplir le formulaire « Sécurité des données » et la section « Public cible ».
-- Vérifier sur une vraie tablette qu'une sauvegarde `.obz` s'enregistre et se restaure : un testeur qui change de tablette ne doit rien perdre.
+- Vérifier sur une vraie tablette qu'une sauvegarde `.obz` s'enregistre et se restaure : un testeur qui change d'appareil ne doit rien perdre.

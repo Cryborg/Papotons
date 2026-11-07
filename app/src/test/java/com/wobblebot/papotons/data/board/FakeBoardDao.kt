@@ -38,9 +38,17 @@ class FakeBoardDao(
         return boards.value.size
     }
 
-    override suspend fun boardExists(boardId: Long): Boolean = boards.value.any { it.id == boardId }
+    /** Levée par `boardExists` (base illisible en cours d'usage). */
+    var existsFailure: RuntimeException? = null
+
+    override suspend fun boardExists(boardId: Long): Boolean {
+        existsFailure?.let { throw it }
+        return boards.value.any { it.id == boardId }
+    }
 
     override suspend fun smallestBoardId(): Long? = boards.value.minOfOrNull { it.id }
+
+    override suspend fun largestBoardId(): Long? = boards.value.maxOfOrNull { it.id }
 
     /** Levée par l'insertion (disque plein, contrainte violée). */
     var insertFailure: RuntimeException? = null
@@ -78,7 +86,10 @@ class FakeBoardDao(
     }
 
     override suspend fun insertBoard(board: BoardEntity): Long {
-        val id = (boards.value.maxOfOrNull { it.id } ?: 0) + 1
+        // Un id donné est gardé (un doublon lève, comme ABORT) ; 0 prend max + 1, là où AUTOINCREMENT ne
+        // réutiliserait jamais l'id d'une grille supprimée (plus aucun chemin n'insère avec 0).
+        val id = if (board.id != 0L) board.id else (boards.value.maxOfOrNull { it.id } ?: 0) + 1
+        if (boards.value.any { it.id == id }) throw SQLiteConstraintException("UNIQUE constraint failed: boards.id")
         boards.value += board.copy(id = id)
         return id
     }

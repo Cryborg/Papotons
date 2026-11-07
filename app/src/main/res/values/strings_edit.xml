@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Entrée dans le mode édition, depuis « À propos ». -->
+    <!-- Entrée dans le mode édition, depuis les Réglages. -->
     <string name="edit_open">Modifier les grilles</string>
     <!-- Contrôle parental : une addition, réponse au clavier numérique. -->
     <string name="parental_gate_title">Réservé aux adultes</string>

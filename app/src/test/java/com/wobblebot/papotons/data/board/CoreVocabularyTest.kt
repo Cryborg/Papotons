@@ -1,5 +1,6 @@
 package com.wobblebot.papotons.data.board
 
+import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import com.wobblebot.papotons.domain.WordCategory
 import org.junit.Assert.assertEquals
@@ -73,6 +74,69 @@ class CoreVocabularyTest {
                 seed.cells.firstOrNull { it.boardId == HOME_BOARD_ID && it.row == lastRow && it.column == column },
             )
         }
+    }
+
+    @Test
+    fun `every size has its home at its fixed id, with its dimensions`() {
+        val expected = mapOf(BoardSize.LARGE_CELLS to (3 to 4), BoardSize.MEDIUM to (5 to 6), BoardSize.STANDARD to (7 to 8))
+        for ((size, dimensions) in expected) {
+            val sizeHome = checkNotNull(boardsById[size.homeBoardId]) { "$size home missing" }
+            assertEquals("$size", dimensions, sizeHome.rowCount to sizeHome.columnCount)
+        }
+    }
+
+    /**
+     * Chaque taille est un jeu fermé : ses dossiers restent dans sa taille, à la taille de ses
+     * dossiers, aucune case n'ouvre un accueil, et chaque grille insérée appartient à un seul jeu.
+     */
+    @Test
+    fun `the sets of the sizes are disjoint, closed, and cover the whole core vocabulary`() {
+        val homes = BoardSize.entries.map { it.homeBoardId }.toSet()
+        assertTrue(seed.cells.none { it.linkedBoardId in homes })
+        val seen = mutableSetOf<Long>()
+        for (size in BoardSize.entries) {
+            val reached = mutableSetOf(size.homeBoardId)
+            val queue = ArrayDeque(listOf(size.homeBoardId))
+            while (queue.isNotEmpty()) {
+                val boardId = queue.removeFirst()
+                for (cell in seed.cells.filter { it.boardId == boardId }) {
+                    val linked = cell.linkedBoardId ?: continue
+                    val folder = checkNotNull(boardsById[linked])
+                    assertEquals("${cell.label} in $size", size.folderRowCount to size.folderColumnCount, folder.rowCount to folder.columnCount)
+                    if (reached.add(linked)) queue.addLast(linked)
+                }
+            }
+            assertTrue("$size shares boards with another size", seen.intersect(reached).isEmpty())
+            seen += reached
+        }
+        assertEquals(boardsById.keys, seen)
+    }
+
+    @Test
+    fun `the last row of the medium home stays free under its first four columns`() {
+        val mediumHome = checkNotNull(boardsById[BoardSize.MEDIUM.homeBoardId])
+        val lastRow = mediumHome.rowCount - 1
+        for (column in 0 until 4) {
+            assertNull("column $column", seed.cells.firstOrNull { it.boardId == mediumHome.id && it.row == lastRow && it.column == column })
+        }
+    }
+
+    /** Les Réglages écrivent les dimensions de chaque taille : elles doivent suivre les grilles générées. */
+    @Test
+    fun `the dimensions shown in the settings match the home of each size`() {
+        val strings = File("src/main/res/values/strings_settings.xml").readText()
+        val names = mapOf(BoardSize.LARGE_CELLS to "board_size_large_cells", BoardSize.MEDIUM to "board_size_medium", BoardSize.STANDARD to "board_size_standard")
+        for ((size, name) in names) {
+            val shown = checkNotNull(Regex("""<string name="$name">[^<]*\((\d+) × (\d+)\)</string>""").find(strings)) { "$name has no dimensions" }
+            val (rows, columns) = shown.destructured
+            val sizeHome = checkNotNull(boardsById[size.homeBoardId])
+            assertEquals(name, sizeHome.rowCount to sizeHome.columnCount, rows.toInt() to columns.toInt())
+        }
+    }
+
+    @Test
+    fun `the core vocabulary keeps its ids below the boards of the adult`() {
+        assertTrue(seed.boards.all { it.id < FIRST_USER_BOARD_ID })
     }
 }
 

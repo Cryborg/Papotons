@@ -1,6 +1,7 @@
 package com.wobblebot.papotons.ui.board
 
 import androidx.compose.runtime.Immutable
+import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.SentenceToken
 import com.wobblebot.papotons.speech.SpeechStatus
@@ -14,7 +15,18 @@ data class DisplayedBoard(
     val name: String,
     val grid: ImmutableList<ImmutableList<Cell?>>,
     val canGoBack: Boolean,
+    /** Le bas de la pile : l'écran de départ réellement ouvert, dont on lit la taille. */
+    val rootBoardId: Long = id,
 )
+
+/** Un choix de taille qui n'a rien changé. */
+enum class SettingFailure {
+    /** Écriture ou lecture ratée : réessayer peut suffire. */
+    NotSaved,
+
+    /** Ces grilles n'ont pas l'accueil de cette taille (sauvegarde d'avant les tailles). */
+    Unavailable,
+}
 
 @Immutable
 data class BoardUiState(
@@ -31,11 +43,18 @@ data class BoardUiState(
     val isVolumeLockedDialogOpen: Boolean = false,
     /** Mode édition, ouvert par un adulte après le contrôle parental. */
     val isEditing: Boolean = false,
+    /** L'écran Réglages, ouvert par un adulte après le contrôle parental, ou depuis l'édition. */
+    val isSettingsOpen: Boolean = false,
+    /** Pourquoi le dernier choix de taille n'a rien changé, `null` s'il a réussi. */
+    val settingFailure: SettingFailure? = null,
     /** L'éditeur de case ouvert, en édition seulement. */
     val editor: CellEditorState? = null,
     /** La recherche de pictos ouverte depuis l'éditeur. */
     val pictogramSearch: PictogramSearchState? = null,
 ) {
-    /** Une phrase ou une modification est en cours : rien ne doit interrompre (redémarrage de mise à jour). */
-    val isBusy: Boolean get() = message.isNotEmpty() || isEditing
+    /** Une phrase, une modification ou un réglage est en cours : rien ne doit interrompre (redémarrage de mise à jour). */
+    val isBusy: Boolean get() = message.isNotEmpty() || isEditing || isSettingsOpen
+
+    /** La taille de la grille ouverte, lue sur l'écran réellement ouvert (pas sur le réglage) ; `null` pour un autre écran. */
+    val boardSize: BoardSize? get() = BoardSize.withHome(board?.rootBoardId)
 }

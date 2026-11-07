@@ -2,6 +2,7 @@ package com.wobblebot.papotons.ui.board
 
 import com.wobblebot.papotons.data.backup.BackupContent
 import android.content.Context
+import android.database.sqlite.SQLiteException
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
@@ -14,6 +15,7 @@ import com.wobblebot.papotons.data.pictogram.PictogramResult
 import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.CellContent
 import com.wobblebot.papotons.domain.WordCategory
+import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import com.wobblebot.papotons.domain.Picture
 import com.wobblebot.papotons.speech.SpeechStatus
@@ -39,6 +41,7 @@ import org.junit.Before
 import android.net.Uri
 import org.junit.Test
 import java.io.File
+import java.io.IOException
 
 /** Nom persisté du marqueur : le changer ferait passer toute installation existante pour neuve. */
 private val CORE_VOCABULARY_SEEDED = booleanPreferencesKey("core_vocabulary_seeded")
@@ -621,6 +624,173 @@ class BoardViewModelTest {
     }
 
     private fun BoardViewModel.cellNamed(label: String): Cell = checkNotNull(state().board).grid.flatten().filterNotNull().first { it.label == label }
+
+    // Deux jeux réduits : « grandes cases » (accueil 13 et son dossier 14, à la taille de ses
+    // dossiers) et « moyennes » (accueil 7 seul).
+    private val sizedBoards = boards + listOf(
+        BoardEntity(id = BoardSize.LARGE_CELLS.homeBoardId, name = "large", rowCount = 1, columnCount = 2),
+        BoardEntity(id = 14, name = "large food", rowCount = 2, columnCount = 3),
+        BoardEntity(id = BoardSize.MEDIUM.homeBoardId, name = "medium", rowCount = 1, columnCount = 1),
+    )
+    private val sizedCells = cells + listOf(
+        CellEntity(id = 20, boardId = BoardSize.LARGE_CELLS.homeBoardId, row = 0, column = 0, label = "food", linkedBoardId = 14, pictogramId = null, category = null),
+    )
+
+    @Test
+    fun `choosing a size saves it and opens its home, keeping the sentence`() = runTest(dispatcher) {
+        val viewModel = startViewModel(FakeBoardDao(sizedBoards, sizedCells))
+        viewModel.tap("je")
+        assertEquals(BoardSize.STANDARD, viewModel.state().boardSize)
+
+        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
+
+        assertEquals(BoardSize.LARGE_CELLS.homeBoardId, viewModel.state().board?.id)
+        assertEquals(BoardSize.LARGE_CELLS, viewModel.state().boardSize)
+        assertEquals(listOf("je"), viewModel.messageTexts())
+        assertNull(viewModel.state().settingFailure)
+        // Retenue : un nouveau lancement ouvre la même taille.
+        assertEquals(BoardSize.LARGE_CELLS.homeBoardId, startViewModel(FakeBoardDao(sizedBoards, sizedCells), voice = FakeSpeaker()).state().board?.id)
+    }
+
+    @Test
+    fun `a size that cannot be saved changes nothing and is reported`() = runTest(dispatcher) {
+        val viewModel = startViewModel(FakeBoardDao(sizedBoards, sizedCells))
+        preferences.writeFailure = IOException("disk full")
+
+        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
+
+        assertEquals(SettingFailure.NotSaved, viewModel.state().settingFailure)
+        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
+        assertEquals(BoardSize.STANDARD, viewModel.state().boardSize)
+
+        // Le message ne reste pas : un nouvel essai réussi l'efface.
+        preferences.writeFailure = null
+        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
+        assertNull(viewModel.state().settingFailure)
+        assertEquals(BoardSize.LARGE_CELLS.homeBoardId, viewModel.state().board?.id)
+    }
+
+    @Test
+    fun `a size that cannot be checked is reported instead of crashing`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(sizedBoards, sizedCells)
+        val viewModel = startViewModel(dao)
+        dao.existsFailure = SQLiteException("disk I/O error")
+
+        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
+
+        assertEquals(SettingFailure.NotSaved, viewModel.state().settingFailure)
+        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
+    }
+
+    /** Grilles restaurées d'avant les tailles : l'accueil des moyennes n'y est pas. */
+    @Test
+    fun `a size missing from the boards is reported and nothing is saved`() = runTest(dispatcher) {
+        val viewModel = startViewModel(FakeBoardDao(boards, cells))
+
+        viewModel.onBoardSizeChosen(BoardSize.MEDIUM)
+
+        assertEquals(SettingFailure.Unavailable, viewModel.state().settingFailure)
+        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
+        assertTrue(preferences.current.asMap().values.none { it == BoardSize.MEDIUM.homeBoardId })
+    }
+
+    /** Choisie pendant le premier lancement : la taille attend l'insertion du vocabulaire, qui contient son accueil. */
+    @Test
+    fun `a size chosen while the home is still opening waits for it`() = runTest(dispatcher) {
+        val dao = FakeBoardDao().apply { insertGate = CompletableDeferred() }
+        val viewModel = startViewModel(dao)
+
+        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
+        checkNotNull(dao.insertGate).complete(Unit)
+
+        assertNull(viewModel.state().settingFailure)
+        assertEquals(BoardSize.LARGE_CELLS.homeBoardId, viewModel.state().board?.id)
+    }
+
+    /** Deux appuis rapides : le second gagne, même si le premier écrit plus lentement. */
+    @Test
+    fun `the last size chosen wins over a slower earlier choice`() = runTest(dispatcher) {
+        val viewModel = startViewModel(FakeBoardDao(sizedBoards, sizedCells))
+        val slowWrite = CompletableDeferred<Unit>()
+        preferences.nextWriteGate = slowWrite
+
+        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
+        viewModel.onBoardSizeChosen(BoardSize.MEDIUM)
+        slowWrite.complete(Unit)
+
+        assertEquals(BoardSize.MEDIUM.homeBoardId, viewModel.state().board?.id)
+        assertEquals(BoardSize.MEDIUM.homeBoardId, startViewModel(FakeBoardDao(sizedBoards, sizedCells), voice = FakeSpeaker()).state().board?.id)
+    }
+
+    @Test
+    fun `a board opened inside a size survives the process death`() = runTest(dispatcher) {
+        startViewModel(FakeBoardDao(sizedBoards, sizedCells)).onBoardSizeChosen(BoardSize.LARGE_CELLS)
+        val savedState = SavedStateHandle(mapOf(NAVIGATION_KEY to longArrayOf(BoardSize.LARGE_CELLS.homeBoardId, 14)))
+
+        val restored = startViewModel(FakeBoardDao(sizedBoards, sizedCells), savedState = savedState, voice = FakeSpeaker())
+
+        assertEquals(14L, restored.state().board?.id)
+        assertEquals(BoardSize.LARGE_CELLS, restored.state().boardSize)
+    }
+
+    /** Dans un dossier du jeu (pile [13, 14]) : la taille vient de la racine, pas de la grille ouverte. */
+    @Test
+    fun `a folder created in a size takes the folder size of that size`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(sizedBoards, sizedCells)
+        val viewModel = startViewModel(dao)
+        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
+        viewModel.tap("food")
+        assertEquals(14L, viewModel.state().board?.id)
+        viewModel.onStartEditing()
+
+        viewModel.onEmptySlotClick(1, 2)
+        viewModel.onEditorSave(CellContent("Animaux", null, null, null, null), asFolder = true)
+
+        val folder = dao.boards.value.single { it.name == "Animaux" }
+        assertEquals(BoardSize.LARGE_CELLS.folderRowCount to BoardSize.LARGE_CELLS.folderColumnCount, folder.rowCount to folder.columnCount)
+    }
+
+    @Test
+    fun `the settings close when the edit mode starts, and keep the app busy while open`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        assertFalse(viewModel.state().isBusy)
+
+        viewModel.onOpenSettings()
+        assertTrue(viewModel.state().isSettingsOpen)
+        assertTrue(viewModel.state().isBusy)
+        viewModel.onCloseSettings()
+        assertFalse(viewModel.state().isBusy)
+
+        viewModel.onOpenSettings()
+        // Sinon la grille à modifier resterait cachée sous les Réglages.
+        viewModel.onStartEditing()
+        assertFalse(viewModel.state().isSettingsOpen)
+        assertTrue(viewModel.state().isEditing)
+    }
+
+    @Test
+    fun `the gear opens the settings at once only while editing`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+
+        assertFalse(viewModel.onSettingsRequested())
+        assertFalse(viewModel.state().isSettingsOpen)
+
+        viewModel.onStartEditing()
+        assertTrue(viewModel.onSettingsRequested())
+        assertTrue(viewModel.state().isSettingsOpen)
+    }
+
+    @Test
+    fun `the settings never reopen after the process died`() = runTest(dispatcher) {
+        val savedState = SavedStateHandle()
+        val first = startViewModel(savedState = savedState)
+        first.onOpenSettings()
+
+        val second = startViewModel(savedState = first.dieAndKeep(savedState), voice = FakeSpeaker())
+
+        assertFalse(second.state().isSettingsOpen)
+        assertFalse(second.state().isBusy)
+    }
 
     @Test
     fun `while editing a tap opens the editor, never speaks nor opens a folder`() = runTest(dispatcher) {

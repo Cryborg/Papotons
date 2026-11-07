@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import com.wobblebot.papotons.data.CORRUPTED_DATABASES_DIRECTORY
 import com.wobblebot.papotons.data.FakePreferences
 import com.wobblebot.papotons.data.createPreferences
+import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import com.wobblebot.papotons.domain.WordCategory
 import io.mockk.every
@@ -646,7 +647,7 @@ class BoardRepositoryTest {
         val word = CellContent("eau", null, null, null, null)
         val edits: List<suspend (BoardRepository, FakeBoardDao) -> Unit> = listOf(
             { repository, _ -> repository.addWord(HOME_BOARD_ID, 0, 0, word) },
-            { repository, _ -> repository.addFolder(HOME_BOARD_ID, 0, 0, word) },
+            { repository, _ -> repository.addFolder(HOME_BOARD_ID, 0, 0, word, BoardSize.STANDARD) },
             { repository, dao ->
                 val cell = dao.cells.value.single().let { Cell(it.id, it.row, it.column, it.label, it.linkedBoardId) }
                 repository.updateCell(cell, word.copy(label = "lait"))
