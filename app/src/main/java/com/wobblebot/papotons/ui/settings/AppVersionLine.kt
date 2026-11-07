@@ -13,6 +13,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.wobblebot.papotons.R
 
+private val VERSION_LINE_VERTICAL_PADDING = 16.dp
+
 /**
  * Version de l'appli, en bas des réglages : « Version 1.4.0 (27) ».
  *
@@ -32,7 +34,7 @@ fun AppVersionLine(modifier: Modifier = Modifier, version: AppVersion = AppVersi
         textAlign = TextAlign.Center,
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 16.dp)
+            .padding(vertical = VERSION_LINE_VERTICAL_PADDING)
     )
 }
 
