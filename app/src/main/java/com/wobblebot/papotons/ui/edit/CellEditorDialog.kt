@@ -210,7 +210,8 @@ private fun CellEditor(
                         Pictogram(currentPictogram, Modifier.size(PICTOGRAM_PREVIEW_SIZE))
                     }
                     if (state.isImportingPhoto) {
-                        Text(stringResource(R.string.editor_photo_importing))
+                        // Annoncée : la préparation d'une photo peut durer, TalkBack ne doit pas rester muet.
+                        Text(stringResource(R.string.editor_photo_importing), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                     }
                     state.photoFailure?.let { failure ->
                         Text(

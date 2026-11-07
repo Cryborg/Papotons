@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -102,7 +103,8 @@ fun PictogramSearchDialog(
                     SearchStatus.Loading -> {
                         val loading = stringResource(R.string.search_loading)
                         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(modifier = Modifier.semantics { contentDescription = loading })
+                            // Annoncée : un adulte qui n'y voit pas sait que la recherche est partie.
+                            CircularProgressIndicator(modifier = Modifier.semantics { contentDescription = loading; liveRegion = LiveRegionMode.Polite })
                         }
                     }
                     SearchStatus.Failed -> Column(verticalArrangement = Arrangement.spacedBy(ITEM_SPACING)) {
@@ -114,6 +116,11 @@ fun PictogramSearchDialog(
                         if (state.results.isEmpty()) {
                             Notice(R.string.search_none)
                         } else {
+                            // Le nombre annoncé : sans lui, une recherche réussie reste muette pour TalkBack.
+                            Text(
+                                pluralStringResource(R.plurals.search_found, state.results.size, state.results.size),
+                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                            )
                             LazyVerticalGrid(
                                 columns = GridCells.Adaptive(RESULT_MIN_SIZE),
                                 horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING),

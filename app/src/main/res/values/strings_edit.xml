@@ -46,6 +46,11 @@
     <string name="search_field">Mot à chercher</string>
     <string name="search_button">Chercher</string>
     <string name="search_loading">Recherche en cours</string>
+    <plurals name="search_found">
+        <item quantity="one">%d pictogramme trouvé</item>
+        <item quantity="many">%d pictogrammes trouvés</item>
+        <item quantity="other">%d pictogrammes trouvés</item>
+    </plurals>
     <string name="search_none">Aucun pictogramme pour ce mot. Essayez un mot plus simple ou au singulier.</string>
     <string name="search_failed">La recherche n\'a pas abouti. Vérifiez la connexion internet et réessayez dans un moment ; le reste de l\'appli fonctionne sans.</string>
     <string name="search_retry">Réessayer</string>
