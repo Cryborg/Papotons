@@ -66,8 +66,9 @@ data class PendingRestore(val fileName: String?, val content: BackupContent) {
 
 /**
  * Ce que l'écran de sauvegarde demande. Couture de test : le ViewModel se teste sur la JVM. Les
- * échecs sortent en [BackupRefusedException] (archive refusée), [IOException] ou [SecurityException]
- * (document inaccessible).
+ * échecs prévus sortent en [BackupRefusedException] (archive refusée), [IOException] ou
+ * [SecurityException] (document inaccessible), ou [android.database.sqlite.SQLiteException] (base
+ * illisible). Toute autre exception est un bug.
  */
 interface BackupStore {
     /**
@@ -258,14 +259,30 @@ class BoardBackup @Inject constructor(
      * plus longue rendrait la nouvelle illisible : ce repli n'écrit que dans un document vide.
      */
     private fun openForWriting(destination: Uri): OutputStream {
-        val stream = try {
-            context.contentResolver.openOutputStream(destination, truncatingMode)
-        } catch (exception: IllegalArgumentException) {
-            openWithoutTruncating(destination, exception)
-        } catch (exception: FileNotFoundException) {
-            openWithoutTruncating(destination, exception)
+        val stream = fromDocumentProvider {
+            try {
+                context.contentResolver.openOutputStream(destination, truncatingMode)
+            } catch (exception: IllegalArgumentException) {
+                openWithoutTruncating(destination, exception)
+            } catch (exception: FileNotFoundException) {
+                openWithoutTruncating(destination, exception)
+            }
         }
         return stream ?: throw FileNotFoundException("No output stream")
+    }
+
+    /**
+     * Le fournisseur que l'adulte a choisi (Drive, carte SD) peut lever n'importe quelle exception à
+     * travers Binder : un échec du document, pas un bug de l'appli, qui doit s'afficher et non planter.
+     * La classe seulement : son message cite souvent l'adresse du document.
+     */
+    private inline fun <T> fromDocumentProvider(block: () -> T): T = try {
+        block()
+    } catch (exception: SecurityException) {
+        throw exception
+    } catch (exception: RuntimeException) {
+        Log.w(TAG, "Document provider failed: ${exception.javaClass.simpleName}")
+        throw IOException("Document provider failed: ${exception.javaClass.simpleName}")
     }
 
     private fun openWithoutTruncating(destination: Uri, refusal: Exception): OutputStream? {
@@ -383,6 +400,8 @@ class BoardBackup @Inject constructor(
                     is StackOverflowError -> refuse(RefusalReason.Unreadable, "Nested too deeply")
                     // Une entrée au flux compressé abîmé : le fichier est abîmé, pas la restauration.
                     is ZipException -> refuse(RefusalReason.Unreadable, "Damaged zip entry")
+                    // Un chemin du manifeste que `ZipFile` ne sait pas encoder (demi-caractère isolé).
+                    is IllegalArgumentException -> refuse(RefusalReason.Unreadable, "Malformed entry (${throwable.javaClass.simpleName})")
                     else -> throw throwable
                 }
             }
@@ -501,7 +520,7 @@ class BoardBackup @Inject constructor(
     }
 
     private fun copyToRestoreFile(source: Uri) {
-        val input = context.contentResolver.openInputStream(source) ?: throw FileNotFoundException("No input stream")
+        val input = fromDocumentProvider { context.contentResolver.openInputStream(source) } ?: throw FileNotFoundException("No input stream")
         input.use {
             FileOutputStream(restoreFile).use { output -> it.copyBounded(output, MAX_ARCHIVE_BYTES) }
         }

@@ -1,6 +1,7 @@
 package com.wobblebot.papotons.ui.backup
 
 import android.net.Uri
+import android.database.sqlite.SQLiteException
 import android.os.SystemClock
 import android.util.Log
 import androidx.compose.runtime.Immutable
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.IOException
 import java.time.LocalDate
 import javax.inject.Inject
 
@@ -188,6 +190,9 @@ class BackupViewModel @Inject constructor(
                     else -> failure
                 }
             } catch (exception: Exception) {
+                // Seuls les échecs prévus par `BackupStore` deviennent un message. Le reste est un bug : il
+                // plante, pour qu'Android vitals le voie (l'appli n'a aucun rapport de plantage).
+                if (exception !is IOException && exception !is SecurityException && exception !is SQLiteException) throw exception
                 // La classe seulement : le message d'un fournisseur de documents cite souvent l'adresse.
                 Log.e(TAG, "Backup work failed: ${exception.javaClass.simpleName}")
                 failure

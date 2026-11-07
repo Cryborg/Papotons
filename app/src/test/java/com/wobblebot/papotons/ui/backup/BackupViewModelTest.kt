@@ -1,6 +1,7 @@
 package com.wobblebot.papotons.ui.backup
 
 import android.content.Context
+import android.database.sqlite.SQLiteException
 import android.net.Uri
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -31,6 +32,8 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -183,6 +186,49 @@ class BackupViewModelTest {
         assertFalse(viewModel.isAwaitingDocument)
         assertTrue(store.exported.isEmpty() && store.documentsOfferedForDeletion.isEmpty())
         assertNull(viewModel.uiState.value.message)
+    }
+
+    /** Une exception que la sauvegarde ne prévoit pas : un bug. Classe à part, pour ne pas la confondre. */
+    private class ProgrammingBug : RuntimeException()
+
+    @Test
+    fun `an unexpected failure of a backup is not shown as a failed save`() {
+        val bug = ProgrammingBug()
+        store.exportFailure = bug
+
+        // Un bug plante l'appli (Android vitals le voit) : `runTest` relance l'exception qu'aucun `catch` n'a prise.
+        val thrown = assertThrows(ProgrammingBug::class.java) {
+            runTest(dispatcher) {
+                val viewModel = viewModel()
+                viewModel.onSaveRequested("%1\$s")
+                viewModel.onSaveDocument(document)
+            }
+        }
+
+        assertSame(bug, thrown)
+    }
+
+    @Test
+    fun `a revoked document or an unreadable database is a failed save, not a crash`() = runTest(dispatcher) {
+        for (failure in listOf(SecurityException("revoked"), SQLiteException("unreadable"))) {
+            store.exportFailure = failure
+            val viewModel = viewModel()
+            viewModel.onSaveRequested("%1\$s")
+            viewModel.onSaveDocument(document)
+
+            assertEquals(failure.javaClass.simpleName, BackupMessage.SaveFailed, viewModel.uiState.value.message)
+        }
+    }
+
+    @Test
+    fun `an unreadable database during a restore is a failed restore, not a crash`() = runTest(dispatcher) {
+        store.restoreFailure = SQLiteException("unreadable")
+        val viewModel = viewModel()
+        viewModel.onRestoreRequested()
+        viewModel.onRestoreDocument(document)
+        viewModel.onConfirmRestore()
+
+        assertEquals(BackupMessage.RestoreFailed, viewModel.uiState.value.message)
     }
 
     @Test
