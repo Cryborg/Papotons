@@ -33,6 +33,8 @@ data class BoardUiState(
     val isEditing: Boolean = false,
     /** L'éditeur de case ouvert, en édition seulement. */
     val editor: CellEditorState? = null,
+    /** La recherche de pictos ouverte depuis l'éditeur. */
+    val pictogramSearch: PictogramSearchState? = null,
 ) {
     /** Une phrase ou une modification est en cours : rien ne doit interrompre (redémarrage de mise à jour). */
     val isBusy: Boolean get() = message.isNotEmpty() || isEditing

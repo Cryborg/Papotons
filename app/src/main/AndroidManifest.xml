@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Seul réseau de l'appli (invariant 1) : la recherche et le téléchargement de pictos chez
+         ARASAAC, en mode édition. Parler n'en dépend jamais (invariant 2). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Depuis Android 11, sans cette déclaration le moteur de synthèse vocale est invisible
          et l'appli reste muette. -->
     <queries>

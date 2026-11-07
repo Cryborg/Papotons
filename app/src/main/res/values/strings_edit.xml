@@ -27,6 +27,20 @@
     <string name="editor_pictogram">Pictogramme</string>
     <string name="editor_no_pictogram">Sans pictogramme</string>
     <string name="editor_remove_pictogram">Retirer le pictogramme</string>
+    <string name="editor_search_pictogram">Chercher un pictogramme</string>
+    <!-- Recherche de pictogrammes ARASAAC (réseau, en édition seulement). -->
+    <string name="search_title">Chercher un pictogramme</string>
+    <string name="search_field">Mot à chercher</string>
+    <string name="search_button">Chercher</string>
+    <string name="search_loading">Recherche en cours</string>
+    <string name="search_none">Aucun pictogramme pour ce mot. Essayez un mot plus simple ou au singulier.</string>
+    <string name="search_failed">La recherche n\'a pas abouti. Vérifiez la connexion internet et réessayez dans un moment ; le reste de l\'appli fonctionne sans.</string>
+    <string name="search_retry">Réessayer</string>
+    <string name="search_privacy">Le mot cherché est envoyé à ARASAAC : n\'y tapez ni prénom ni information personnelle.</string>
+    <string name="search_close">Fermer</string>
+    <string name="search_result_description">Pictogramme : %1$s</string>
+    <string name="search_result_unnamed">Pictogramme sans nom</string>
+    <string name="search_too_many">Trop de résultats : précisez le mot.</string>
     <string name="editor_category">Couleur (catégorie)</string>
     <string name="editor_category_none">Aucune</string>
     <string name="editor_save">Enregistrer</string>

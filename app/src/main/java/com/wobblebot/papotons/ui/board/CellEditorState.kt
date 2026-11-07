@@ -1,6 +1,9 @@
 package com.wobblebot.papotons.ui.board
 
 import androidx.compose.runtime.Immutable
+import androidx.compose.ui.graphics.ImageBitmap
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import com.wobblebot.papotons.domain.Cell
 
 /** La case qu'ouvre l'éditeur : un emplacement libre à remplir, ou une case existante. */
@@ -24,4 +27,22 @@ data class CellEditorState(
     val failure: EditFailure? = null,
     /** Unique par écriture : son résultat ne touche que l'état qu'elle a posé, jamais un éditeur égal rouvert depuis. */
     val writeToken: Long = 0,
+    /** Un picto choisi dans la recherche, pas encore gardé sur l'appareil (il l'est à l'« Enregistrer »). */
+    val chosenPictogram: ChosenPictogram? = null,
+)
+
+@Immutable
+data class ChosenPictogram(val id: Long, val image: ImageBitmap)
+
+enum class SearchStatus { Idle, Loading, Done, Failed, TooManyResults }
+
+/** Un picto trouvé ; sa vignette arrive après la liste (`null` en attendant, ou si elle a échoué). */
+@Immutable
+data class FoundPictogram(val id: Long, val keyword: String, val image: ImageBitmap? = null)
+
+@Immutable
+data class PictogramSearchState(
+    val query: String,
+    val status: SearchStatus = SearchStatus.Idle,
+    val results: ImmutableList<FoundPictogram> = persistentListOf(),
 )

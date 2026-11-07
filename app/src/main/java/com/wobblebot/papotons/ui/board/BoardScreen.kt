@@ -46,6 +46,7 @@ import com.wobblebot.papotons.speech.SpeechStatus
 import com.wobblebot.papotons.ui.about.AboutDialog
 import com.wobblebot.papotons.ui.edit.CellEditorDialog
 import com.wobblebot.papotons.ui.edit.ParentalGateDialog
+import com.wobblebot.papotons.ui.edit.PictogramSearchDialog
 import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import kotlinx.collections.immutable.persistentListOf
 
@@ -140,7 +141,17 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
             onSave = viewModel::onEditorSave,
             onDelete = viewModel::onEditorDelete,
             onOpenFolder = viewModel::onEditorOpenFolder,
+            onSearchPictogram = viewModel::onSearchOpen,
+            onRemovePictogram = viewModel::onChosenPictogramRemoved,
             onClose = viewModel::onEditorClose,
+        )
+    }
+    state.pictogramSearch?.let { search ->
+        PictogramSearchDialog(
+            state = search,
+            onSearch = viewModel::onSearch,
+            onPick = viewModel::onSearchPick,
+            onClose = viewModel::onSearchClose,
         )
     }
     if (state.isVolumeLockedDialogOpen) {

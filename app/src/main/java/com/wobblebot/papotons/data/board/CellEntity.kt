@@ -40,7 +40,10 @@ data class CellEntity(
     @ColumnInfo(name = "grid_column") val column: Int,
     val label: String,
     @ColumnInfo(name = "linked_board_id") val linkedBoardId: Long?,
-    /** Identifiant ARASAAC ; l'image est `assets/pictograms/<id>.png`. `null` : texte seul. */
+    /**
+     * Identifiant ARASAAC ; l'image est `assets/pictograms/<id>.png` (embarquée) ou
+     * `files/pictograms/<id>.png` (téléchargée en édition). `null` : texte seul.
+     */
     // Pas de valeur par défaut : un futur chemin d'écriture (édition, import) ne doit pas pouvoir
     // oublier le picto ou la catégorie en compilant quand même.
     @ColumnInfo(name = "pictogram_id") val pictogramId: Long?,

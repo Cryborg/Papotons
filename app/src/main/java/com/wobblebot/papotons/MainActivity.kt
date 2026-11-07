@@ -22,6 +22,7 @@ import com.wobblebot.papotons.data.pictogram.PictogramImages
 import com.wobblebot.papotons.ui.board.BoardRoute
 import com.wobblebot.papotons.ui.board.BoardViewModel
 import com.wobblebot.papotons.ui.board.LocalPictogramImages
+import com.wobblebot.papotons.ui.board.LocalPictogramLoader
 import com.wobblebot.papotons.ui.splash.StudioSplashScreen
 import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import com.wobblebot.papotons.update.InAppUpdateManager
@@ -56,7 +57,7 @@ class MainActivity : ComponentActivity() {
         inAppUpdateManager = InAppUpdateManager(this)
         setContent {
             PapotonsTheme {
-                CompositionLocalProvider(LocalPictogramImages provides pictogramImages::image) {
+                CompositionLocalProvider(LocalPictogramImages provides pictogramImages::image, LocalPictogramLoader provides pictogramImages::ensureLoaded) {
                     PapotonsApp(inAppUpdateManager)
                 }
             }

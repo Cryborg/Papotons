@@ -27,7 +27,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,6 +75,8 @@ fun CellEditorDialog(
     onSave: (CellContent, asFolder: Boolean) -> Unit,
     onDelete: () -> Unit,
     onOpenFolder: () -> Unit,
+    onSearchPictogram: (query: String) -> Unit,
+    onRemovePictogram: () -> Unit,
     onClose: () -> Unit,
 ) {
     val existing = (state.target as? EditTarget.ExistingCell)?.cell
@@ -84,6 +88,11 @@ fun CellEditorDialog(
     var isDeleteConfirmOpen by rememberSaveable(state.target) { mutableStateOf(false) }
     val isFolder = existing?.linkedBoardId != null || (existing == null && asFolder)
     val labelFocus = remember { FocusRequester() }
+    // Un picto choisi dans la recherche remplace celui du brouillon.
+    val chosen = state.chosenPictogram
+    LaunchedEffect(chosen) {
+        if (chosen != null) pictogramId = chosen.id
+    }
 
     Dialog(
         onDismissRequest = onClose,
@@ -135,10 +144,24 @@ fun CellEditorDialog(
                     val currentPictogram = pictogramId
                     if (currentPictogram == null) {
                         Text(stringResource(R.string.editor_no_pictogram))
+                    } else if (chosen != null && chosen.id == currentPictogram) {
+                        // Pas encore gardé sur l'appareil : l'image de la recherche.
+                        Image(bitmap = chosen.image, contentDescription = null, modifier = Modifier.size(PICTOGRAM_PREVIEW_SIZE))
                     } else {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING)) {
-                            Pictogram(currentPictogram, Modifier.size(PICTOGRAM_PREVIEW_SIZE))
-                            TextButton(onClick = { pictogramId = null }) { Text(stringResource(R.string.editor_remove_pictogram)) }
+                        Pictogram(currentPictogram, Modifier.size(PICTOGRAM_PREVIEW_SIZE))
+                    }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING)) {
+                        OutlinedButton(onClick = { onSearchPictogram(label.trim()) }, enabled = !state.isWriting) {
+                            Text(stringResource(R.string.editor_search_pictogram))
+                        }
+                        if (currentPictogram != null) {
+                            TextButton(
+                                onClick = {
+                                    pictogramId = null
+                                    onRemovePictogram()
+                                },
+                                enabled = !state.isWriting,
+                            ) { Text(stringResource(R.string.editor_remove_pictogram)) }
                         }
                     }
                 }

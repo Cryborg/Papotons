@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -222,6 +223,8 @@ internal fun Pictogram(pictogramId: Long, modifier: Modifier) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         // La table des images est un état Compose : le picto se recompose quand elle se remplit.
         val image = LocalPictogramImages.current(pictogramId)
+        val load = LocalPictogramLoader.current
+        LaunchedEffect(pictogramId) { load(pictogramId) }
         if (image != null) {
             Image(
                 bitmap = image,

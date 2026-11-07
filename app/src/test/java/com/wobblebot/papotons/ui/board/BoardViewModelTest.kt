@@ -9,6 +9,7 @@ import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.board.BoardRepository
 import com.wobblebot.papotons.data.board.CellEntity
 import com.wobblebot.papotons.data.board.FakeBoardDao
+import com.wobblebot.papotons.data.pictogram.PictogramResult
 import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.CellContent
 import com.wobblebot.papotons.domain.WordCategory
@@ -29,6 +30,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -43,6 +45,8 @@ class BoardViewModelTest {
     private val dispatcher = UnconfinedTestDispatcher()
     private val speaker = FakeSpeaker()
     private val volume = FakeMediaVolume()
+    private val arasaac = FakeArasaacClient()
+    private val pictogramStore = FakePictogramStore()
     private var filesDirectory = File("build/tmp/no-files")
     private val preferences = FakePreferences()
     private val context = mockk<Context> {
@@ -83,7 +87,7 @@ class BoardViewModelTest {
         savedState: SavedStateHandle = SavedStateHandle(),
         voice: FakeSpeaker = speaker,
     ): BoardViewModel {
-        val viewModel = BoardViewModel(BoardRepository(dao, preferences, context), voice, volume, savedState)
+        val viewModel = BoardViewModel(BoardRepository(dao, preferences, context), voice, volume, arasaac, pictogramStore, savedState)
         backgroundScope.launch { viewModel.uiState.collect {} }
         return viewModel
     }
@@ -181,7 +185,7 @@ class BoardViewModelTest {
 
     @Test
     fun `waking the screen up never shows the loading state again`() = runTest(dispatcher) {
-        val viewModel = BoardViewModel(BoardRepository(FakeBoardDao(boards, cells), preferences, context), speaker, volume, SavedStateHandle())
+        val viewModel = BoardViewModel(BoardRepository(FakeBoardDao(boards, cells), preferences, context), speaker, volume, arasaac, pictogramStore, SavedStateHandle())
         val firstCollector = backgroundScope.launch { viewModel.uiState.collect {} }
         viewModel.tap("A")
         firstCollector.cancel()
@@ -768,5 +772,222 @@ class BoardViewModelTest {
         assertFalse(viewModel.state().editor?.isWriting == true)
         assertEquals(emptyList<CellEntity>(), dao.cells.value)
         filesDirectory.deleteRecursively()
+    }
+
+    @Test
+    fun `a pictogram picked in the search is kept on the device only when the cell is saved`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 2, columnCount = 3)), emptyList())
+        val viewModel = startViewModel(dao)
+        viewModel.onStartEditing()
+        viewModel.onEmptySlotClick(0, 0)
+
+        viewModel.onSearchOpen("pomme")
+        // Ouvrir ne fait que préremplir : rien ne part avant « Chercher ».
+        assertEquals(emptyList<String>(), arasaac.searches)
+        assertEquals("pomme", viewModel.state().pictogramSearch?.query)
+        viewModel.onSearch("pomme")
+        assertEquals(listOf("pomme"), arasaac.searches)
+        assertEquals(listOf(10L, 20L), viewModel.state().pictogramSearch?.results?.map { it.id })
+        viewModel.onSearchPick(20)
+
+        assertNull(viewModel.state().pictogramSearch)
+        assertEquals(20L, viewModel.state().editor?.chosenPictogram?.id)
+        assertTrue(pictogramStore.stored.isEmpty())
+
+        viewModel.onEditorSave(CellContent("poire", 20, null), asFolder = false)
+
+        assertEquals(setOf(20L), pictogramStore.stored.keys)
+        assertEquals(20L, dao.cells.value.single().pictogramId)
+    }
+
+    @Test
+    fun `a pictogram that cannot be kept stops the save before the database`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 2, columnCount = 3)), emptyList())
+        val viewModel = startViewModel(dao)
+        viewModel.onStartEditing()
+        viewModel.onEmptySlotClick(0, 0)
+        viewModel.onSearchOpen("pomme")
+        viewModel.onSearch("pomme")
+        viewModel.onSearchPick(10)
+        pictogramStore.canStore = false
+
+        viewModel.onEditorSave(CellContent("pomme", 10, null), asFolder = false)
+
+        assertEquals(EditFailure.Storage, viewModel.state().editor?.failure)
+        assertEquals(emptyList<CellEntity>(), dao.cells.value)
+        assertEquals(10L, viewModel.state().editor?.chosenPictogram?.id)
+
+        // L'adulte réessaie une fois la place libérée : le choix n'a pas été perdu.
+        pictogramStore.canStore = true
+        viewModel.onEditorSave(CellContent("pomme", 10, null), asFolder = false)
+        assertEquals(setOf(10L), pictogramStore.stored.keys)
+        assertEquals(10L, dao.cells.value.single().pictogramId)
+    }
+
+    @Test
+    fun `an offline search says so and can be retried`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.onStartEditing()
+        viewModel.tap("je")
+        arasaac.isOffline = true
+
+        viewModel.onSearchOpen("je")
+        viewModel.onSearch("je")
+        assertEquals(SearchStatus.Failed, viewModel.state().pictogramSearch?.status)
+
+        arasaac.isOffline = false
+        viewModel.onSearch("je")
+        assertEquals(SearchStatus.Done, viewModel.state().pictogramSearch?.status)
+    }
+
+    @Test
+    fun `an empty keyword is not sent and leaving the edit closes the search`() = runTest(dispatcher) {
+        val viewModel = startViewModel()
+        viewModel.onStartEditing()
+        viewModel.tap("je")
+
+        viewModel.onSearchOpen(" ")
+        viewModel.onSearch(" ")
+        assertEquals(emptyList<String>(), arasaac.searches)
+        assertEquals(SearchStatus.Idle, viewModel.state().pictogramSearch?.status)
+
+        viewModel.onStopEditing()
+        assertNull(viewModel.state().pictogramSearch)
+    }
+
+    private fun TestScope.editingEmptyHome(): Pair<BoardViewModel, FakeBoardDao> {
+        val dao = FakeBoardDao(listOf(BoardEntity(id = HOME_BOARD_ID, name = "home", rowCount = 2, columnCount = 3)), emptyList())
+        val viewModel = startViewModel(dao)
+        viewModel.onStartEditing()
+        viewModel.onEmptySlotClick(0, 0)
+        return viewModel to dao
+    }
+
+    @Test
+    fun `a picked pictogram given up in the editor is never kept`() = runTest(dispatcher) {
+        val (viewModel, dao) = editingEmptyHome()
+        viewModel.onSearchOpen("pomme")
+        viewModel.onSearch("pomme")
+        viewModel.onSearchPick(20)
+
+        // L'adulte retire le picto et enregistre sans : rien n'est gardé.
+        viewModel.onEditorSave(CellContent("poire", null, null), asFolder = false)
+        assertTrue(pictogramStore.stored.isEmpty())
+        assertNull(dao.cells.value.single().pictogramId)
+
+        // Un choix fait dans un éditeur fermé ne suit pas dans le suivant.
+        viewModel.onEmptySlotClick(0, 1)
+        viewModel.onSearchOpen("pomme")
+        viewModel.onSearch("pomme")
+        viewModel.onSearchPick(10)
+        viewModel.onEditorClose()
+        viewModel.onEmptySlotClick(0, 2)
+        viewModel.onEditorSave(CellContent("autre", 10, null), asFolder = false)
+        assertTrue(pictogramStore.stored.isEmpty())
+    }
+
+    @Test
+    fun `a thumbnail that fails stays grey and cannot be picked`() = runTest(dispatcher) {
+        val (viewModel, _) = editingEmptyHome()
+        arasaac.failingDownloads += 10L
+
+        viewModel.onSearchOpen("pomme")
+        viewModel.onSearch("pomme")
+
+        val results = checkNotNull(viewModel.state().pictogramSearch).results
+        assertEquals(SearchStatus.Done, viewModel.state().pictogramSearch?.status)
+        assertNull(results.single { it.id == 10L }.image)
+        assertNotNull(results.single { it.id == 20L }.image)
+        viewModel.onSearchPick(10)
+        assertNull(viewModel.state().editor?.chosenPictogram)
+        assertNotNull(viewModel.state().pictogramSearch)
+    }
+
+    @Test
+    fun `a slow search replaced by a newer one never shows up`() = runTest(dispatcher) {
+        val (viewModel, _) = editingEmptyHome()
+        arasaac.resultsFor = { keyword -> if (keyword == "lent") listOf(PictogramResult(1, "lent")) else listOf(PictogramResult(2, "vite")) }
+        arasaac.searchGates["lent"] = CompletableDeferred()
+
+        viewModel.onSearchOpen("lent")
+        viewModel.onSearch("lent")
+        assertEquals(SearchStatus.Loading, viewModel.state().pictogramSearch?.status)
+        viewModel.onSearch("vite")
+        checkNotNull(arasaac.searchGates["lent"]).complete(Unit)
+
+        assertEquals(listOf(2L), viewModel.state().pictogramSearch?.results?.map { it.id })
+    }
+
+    @Test
+    fun `a search closed while loading leaves nothing behind`() = runTest(dispatcher) {
+        val (viewModel, _) = editingEmptyHome()
+        arasaac.searchGates["pomme"] = CompletableDeferred()
+        viewModel.onSearchOpen("pomme")
+        viewModel.onSearch("pomme")
+
+        viewModel.onSearchClose()
+        checkNotNull(arasaac.searchGates["pomme"]).complete(Unit)
+
+        assertNull(viewModel.state().pictogramSearch)
+        // Annulée pour de bon (la connexion se ferme) : aucune vignette n'est partie après la fermeture.
+        assertEquals(listOf("pomme"), arasaac.cancelledSearches)
+        assertEquals(emptyList<Long>(), arasaac.downloads)
+    }
+
+    @Test
+    fun `a replaced search failing late never hides the newer results`() = runTest(dispatcher) {
+        val (viewModel, _) = editingEmptyHome()
+        arasaac.resultsFor = { listOf(PictogramResult(2, "chien")) }
+        arasaac.searchGates["chat"] = CompletableDeferred()
+        arasaac.failingSearches += "chat"
+
+        viewModel.onSearchOpen("chat")
+        viewModel.onSearch("chat")
+        viewModel.onSearch("chien")
+        checkNotNull(arasaac.searchGates["chat"]).complete(Unit)
+
+        assertEquals(SearchStatus.Done, viewModel.state().pictogramSearch?.status)
+        assertEquals(listOf(2L), viewModel.state().pictogramSearch?.results?.map { it.id })
+    }
+
+    @Test
+    fun `removing a picked pictogram forgets it for good`() = runTest(dispatcher) {
+        val (viewModel, _) = editingEmptyHome()
+        viewModel.onSearchOpen("pomme")
+        viewModel.onSearch("pomme")
+        viewModel.onSearchPick(20)
+
+        viewModel.onChosenPictogramRemoved()
+
+        assertNull(viewModel.state().editor?.chosenPictogram)
+        viewModel.onEditorSave(CellContent("poire", 20, null), asFolder = false)
+        assertTrue(pictogramStore.stored.isEmpty())
+    }
+
+    @Test
+    fun `removing the picked pictogram while saving neither blocks the editor nor changes the save`() = runTest(dispatcher) {
+        val (viewModel, dao) = editingEmptyHome()
+        viewModel.onSearchOpen("pomme")
+        viewModel.onSearch("pomme")
+        viewModel.onSearchPick(20)
+        pictogramStore.storeGate = CompletableDeferred()
+
+        viewModel.onEditorSave(CellContent("poire", 20, null), asFolder = false)
+        viewModel.onChosenPictogramRemoved()
+        checkNotNull(pictogramStore.storeGate).complete(Unit)
+
+        assertNull(viewModel.state().editor)
+        assertEquals(20L, dao.cells.value.single().pictogramId)
+    }
+
+    @Test
+    fun `a too vague word asks for a more precise one`() = runTest(dispatcher) {
+        val (viewModel, _) = editingEmptyHome()
+        arasaac.tooVagueSearches += "le"
+
+        viewModel.onSearchOpen("le")
+        viewModel.onSearch("le")
+
+        assertEquals(SearchStatus.TooManyResults, viewModel.state().pictogramSearch?.status)
     }
 }

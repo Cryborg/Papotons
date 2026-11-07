@@ -7,6 +7,10 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wobblebot.papotons.data.board.BoardRepository
+import com.wobblebot.papotons.data.pictogram.ArasaacClient
+import com.wobblebot.papotons.data.pictogram.PictogramStore
+import com.wobblebot.papotons.data.pictogram.TooManyResultsException
+import com.wobblebot.papotons.data.pictogram.isSearchable
 import com.wobblebot.papotons.data.board.CellNotFoundException
 import com.wobblebot.papotons.domain.Board
 import com.wobblebot.papotons.domain.Cell
@@ -34,11 +38,15 @@ import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.io.IOException
 import javax.inject.Inject
 
 private const val TAG = "BoardViewModel"
+private const val PARALLEL_THUMBNAILS = 4
 
 /** Ce que l'écran lit en plus de la grille et de la phrase, regroupé pour tenir dans un `combine`. */
 private data class SecondaryState(
@@ -46,6 +54,7 @@ private data class SecondaryState(
     val isVolumeLockedDialogOpen: Boolean,
     val isEditing: Boolean,
     val editor: CellEditorState?,
+    val pictogramSearch: PictogramSearchState?,
 )
 internal const val NAVIGATION_KEY = "navigation"
 internal const val MESSAGE_KEY = "message"
@@ -57,6 +66,8 @@ class BoardViewModel @Inject constructor(
     private val repository: BoardRepository,
     private val speaker: Speaker,
     private val mediaVolume: MediaVolume,
+    private val arasaac: ArasaacClient,
+    private val pictogramStore: PictogramStore,
     /**
      * Miroir de la pile et de la phrase, pour survivre à la mort du processus : lu une seule fois
      * ici, à la création, puis seulement recopié (un collecteur par flux).
@@ -81,6 +92,15 @@ class BoardViewModel @Inject constructor(
     private val editor = MutableStateFlow<CellEditorState?>(null)
     private var writeCount = 0L
 
+    /** La recherche ouverte, ses images téléchargées, et le picto choisi : jamais sauvés, comme l'édition. */
+    private val pictogramSearch = MutableStateFlow<PictogramSearchState?>(null)
+    private var searchJob: Job? = null
+    private val foundBytes = HashMap<Long, ByteArray>()
+    private var chosenBytes: Pair<Long, ByteArray>? = null
+
+    /** Change à chaque recherche : une vignette d'une recherche remplacée ne touche plus rien. */
+    private var searchCount = 0L
+
     /**
      * La grille affichée reste la précédente tant que la suivante n'est pas lue : une grille
      * introuvable n'émet rien (pas d'écran vide en passant), elle fait seulement revenir d'un cran.
@@ -102,8 +122,14 @@ class BoardViewModel @Inject constructor(
             speaker.status,
             // Faux d'ici la première lecture : l'écran n'attend pas l'alerte pour s'afficher.
             repository.observeLostBoards().onStart { emit(false) },
-            combine(mediaVolume.isMuted, isVolumeLockedDialogOpen, isEditing, editor) { isMuted, isDialogOpen, isEditing, editor ->
-                SecondaryState(isMuted = isMuted, isVolumeLockedDialogOpen = isMuted && isDialogOpen, isEditing = isEditing, editor = editor)
+            combine(mediaVolume.isMuted, isVolumeLockedDialogOpen, isEditing, editor, pictogramSearch) { isMuted, isDialogOpen, isEditing, editor, search ->
+                SecondaryState(
+                    isMuted = isMuted,
+                    isVolumeLockedDialogOpen = isMuted && isDialogOpen,
+                    isEditing = isEditing,
+                    editor = editor,
+                    pictogramSearch = search,
+                )
             },
         ) { board, words, speechStatus, hasLostBoards, secondary ->
             BoardUiState(
@@ -115,6 +141,7 @@ class BoardViewModel @Inject constructor(
                 isVolumeLockedDialogOpen = secondary.isVolumeLockedDialogOpen,
                 isEditing = secondary.isEditing,
                 editor = secondary.editor,
+                pictogramSearch = secondary.pictogramSearch,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), BoardUiState())
 
@@ -192,6 +219,8 @@ class BoardViewModel @Inject constructor(
     fun onStopEditing() {
         isEditing.value = false
         editor.value = null
+        onSearchClose()
+        chosenBytes = null
     }
 
     fun onEmptySlotClick(row: Int, column: Int) {
@@ -202,11 +231,106 @@ class BoardViewModel @Inject constructor(
 
     fun onEditorClose() {
         editor.update { current -> if (current?.isWriting == true) current else null }
+        if (editor.value == null) chosenBytes = null
+    }
+
+    /**
+     * Ouvre la recherche, le champ prérempli avec [query] (le libellé de la case). Rien ne part
+     * avant « Chercher » : le libellé peut être un prénom, l'adulte lit d'abord l'avertissement.
+     */
+    fun onSearchOpen(query: String) {
+        if (editor.value == null) return
+        pictogramSearch.value = PictogramSearchState(query)
+    }
+
+    /** « Retirer » dans l'éditeur : le choix fait dans la recherche est oublié (une rotation ne le remet pas). */
+    fun onChosenPictogramRemoved() {
+        // Pendant une écriture, l'éditeur ne change pas : son résultat doit pouvoir le refermer.
+        if (editor.value?.isWriting == true) return
+        chosenBytes = null
+        editor.update { it?.copy(chosenPictogram = null) }
+    }
+
+    /**
+     * Une recherche remplace la précédente (annulée, connexions fermées). Vignettes 4 à la fois au
+     * plus ; une vignette qui échoue reste grise, les autres s'affichent.
+     */
+    fun onSearch(query: String) {
+        searchJob?.cancel()
+        foundBytes.clear()
+        val searchNumber = ++searchCount
+        if (!isSearchable(query)) {
+            pictogramSearch.value = PictogramSearchState(query)
+            return
+        }
+        pictogramSearch.value = PictogramSearchState(query, SearchStatus.Loading)
+        searchJob = viewModelScope.launch {
+            val results = try {
+                arasaac.search(query)
+            } catch (exception: TooManyResultsException) {
+                if (searchNumber == searchCount) pictogramSearch.update { it?.copy(status = SearchStatus.TooManyResults) }
+                return@launch
+            } catch (exception: IOException) {
+                // Une recherche déjà remplacée (son délai expire après coup) ne touche plus rien.
+                if (searchNumber != searchCount) return@launch
+                // Ni connexion ni réponse lisible : l'adulte a « Réessayer ».
+                Log.w(TAG, "Pictogram search failed", exception)
+                pictogramSearch.update { it?.copy(status = SearchStatus.Failed) }
+                return@launch
+            }
+            if (searchNumber != searchCount) return@launch
+            pictogramSearch.update { current ->
+                current?.copy(status = SearchStatus.Done, results = results.map { FoundPictogram(it.id, it.keyword) }.toImmutableList())
+            }
+            val permits = Semaphore(PARALLEL_THUMBNAILS)
+            coroutineScope {
+                for (result in results) {
+                    launch { permits.withPermit { loadThumbnail(result.id, searchNumber) } }
+                }
+            }
+        }
+    }
+
+    private suspend fun loadThumbnail(pictogramId: Long, searchNumber: Long) {
+        val bytes = try {
+            arasaac.download(pictogramId)
+        } catch (exception: IOException) {
+            Log.w(TAG, "Thumbnail $pictogramId failed", exception)
+            return
+        }
+        val image = pictogramStore.decode(bytes) ?: return
+        if (searchNumber != searchCount) return
+        foundBytes[pictogramId] = bytes
+        pictogramSearch.update { current ->
+            current?.copy(results = current.results.map { if (it.id == pictogramId) it.copy(image = image) else it }.toImmutableList())
+        }
+    }
+
+    /** Le picto choisi va dans l'éditeur ; il n'est gardé sur l'appareil qu'à l'« Enregistrer ». */
+    fun onSearchPick(pictogramId: Long) {
+        val bytes = foundBytes[pictogramId] ?: return
+        val image = pictogramSearch.value?.results?.firstOrNull { it.id == pictogramId }?.image ?: return
+        chosenBytes = pictogramId to bytes
+        editor.update { it?.copy(chosenPictogram = ChosenPictogram(pictogramId, image)) }
+        onSearchClose()
+    }
+
+    fun onSearchClose() {
+        searchCount++
+        searchJob?.cancel()
+        searchJob = null
+        foundBytes.clear()
+        pictogramSearch.value = null
     }
 
     /** [asFolder] ne compte que pour une nouvelle case : une case existante garde son type. */
     fun onEditorSave(content: CellContent, asFolder: Boolean) {
         writeFromEditor { target ->
+            // Le picto choisi d'abord : la case ne vise jamais un picto absent de l'appareil (invariant 2).
+            val chosen = chosenBytes
+            if (chosen != null && content.pictogramId == chosen.first && !pictogramStore.store(chosen.first, chosen.second)) {
+                throw IOException("Pictogram ${chosen.first} could not be stored")
+            }
             when (target) {
                 is EditTarget.NewCell ->
                     if (asFolder) {
@@ -232,6 +356,7 @@ class BoardViewModel @Inject constructor(
         val target = editor.value?.target as? EditTarget.ExistingCell ?: return
         val linkedBoardId = target.cell.linkedBoardId ?: return
         editor.value = null
+        chosenBytes = null
         navigation.update { stack -> if (isShowingTopOf(stack)) stack.adding(linkedBoardId) else stack }
     }
 
@@ -245,7 +370,7 @@ class BoardViewModel @Inject constructor(
             // entre-temps, un autre éditeur ne se referme pas et n'affiche pas l'échec d'un autre.
             try {
                 write(current.target)
-                editor.compareAndSet(writing, null)
+                if (editor.compareAndSet(writing, null)) chosenBytes = null
             } catch (exception: SQLiteConstraintException) {
                 // Emplacement pris entre-temps (un « + » pas encore rafraîchi) : rien n'est écrit.
                 reportEditFailure(current, writing, EditFailure.SlotTakenOrCellGone, exception)
@@ -255,7 +380,7 @@ class BoardViewModel @Inject constructor(
                 // Disque plein : rien n'est écrit à moitié (transactions).
                 reportEditFailure(current, writing, EditFailure.Storage, exception)
             } catch (exception: IOException) {
-                // Marqueur des copies impossible à écrire : rien n'a été écrit en base.
+                // Marqueur des copies ou picto choisi impossible à écrire : rien n'a été écrit en base.
                 reportEditFailure(current, writing, EditFailure.Storage, exception)
             }
         }
