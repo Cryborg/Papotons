@@ -1,7 +1,9 @@
 package com.wobblebot.papotons.ui.board
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.lifecycle.ViewModelStore
+import com.wobblebot.papotons.data.FakePreferences
 import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.board.BoardRepository
 import com.wobblebot.papotons.data.board.CellEntity
@@ -28,13 +30,20 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.File
+
+/** Nom persisté du marqueur : le changer ferait passer toute installation existante pour neuve. */
+private val CORE_VOCABULARY_SEEDED = booleanPreferencesKey("core_vocabulary_seeded")
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class BoardViewModelTest {
     private val dispatcher = UnconfinedTestDispatcher()
     private val speaker = FakeSpeaker()
+    private val preferences = FakePreferences()
     private val context = mockk<Context> {
         every { getString(any()) } answers { "label${firstArg<Int>()}" }
+        // Aucune copie de base corrompue.
+        every { filesDir } returns File("build/tmp/no-files")
     }
 
     // Accueil → dossier « A » (grille 2) → dossier « B » (grille 3) : une pile de trois
@@ -65,7 +74,7 @@ class BoardViewModelTest {
     }
 
     private fun TestScope.startViewModel(dao: FakeBoardDao = FakeBoardDao(boards, cells)): BoardViewModel {
-        val viewModel = BoardViewModel(BoardRepository(dao, context), speaker)
+        val viewModel = BoardViewModel(BoardRepository(dao, preferences, context), speaker)
         backgroundScope.launch { viewModel.uiState.collect {} }
         return viewModel
     }
@@ -85,9 +94,64 @@ class BoardViewModelTest {
         val viewModel = startViewModel(dao)
 
         assertNull(viewModel.state().board)
+        // Le marqueur suit l'insertion, jamais ne la précède.
+        assertNull(preferences.current[CORE_VOCABULARY_SEEDED])
         checkNotNull(dao.insertGate).complete(Unit)
 
         assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
+        assertEquals(true, preferences.current[CORE_VOCABULARY_SEEDED])
+    }
+
+    @Test
+    fun `lost boards raise an alert that only an acknowledgement clears`() = runTest(dispatcher) {
+        preferences.updateData { it.toMutablePreferences().apply { set(CORE_VOCABULARY_SEEDED, true) } }
+        val viewModel = startViewModel(FakeBoardDao())
+
+        // On peut parler tout de suite : le vocabulaire de base est remis.
+        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
+        assertTrue(viewModel.state().hasLostBoards)
+
+        viewModel.onAcknowledgeLostBoards()
+
+        assertFalse(viewModel.state().hasLostBoards)
+    }
+
+    @Test
+    fun `a home board emptied while in use comes back with an alert`() = runTest(dispatcher) {
+        val dao = FakeBoardDao()
+        val viewModel = startViewModel(dao)
+        viewModel.tap(checkNotNull(viewModel.state().board).grid.flatten().filterNotNull().first { it.linkedBoardId == null }.label)
+
+        // Base vidée en cours d'usage.
+        dao.cells.value = emptyList()
+        dao.boards.value = emptyList()
+
+        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
+        assertTrue(viewModel.state().hasLostBoards)
+        assertEquals(2, dao.insertCount)
+    }
+
+    @Test
+    fun `the home board is reopened only once while the reopening is pending`() = runTest(dispatcher) {
+        val dao = FakeBoardDao()
+        startViewModel(dao)
+        dao.insertGate = CompletableDeferred()
+
+        dao.boards.value = emptyList()
+        // D'autres émissions de l'accueil absent pendant que la réinsertion attend.
+        dao.cells.value = emptyList()
+        dao.cells.value = listOf(CellEntity(id = 50, boardId = 99, row = 0, column = 0, label = "x", linkedBoardId = null, pictogramId = null, category = null))
+        checkNotNull(dao.insertGate).complete(Unit)
+
+        assertEquals(2, dao.insertCount)
+    }
+
+    @Test
+    fun `a first launch raises no lost boards alert`() = runTest(dispatcher) {
+        val viewModel = startViewModel(FakeBoardDao())
+
+        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
+        assertFalse(viewModel.state().hasLostBoards)
     }
 
     @Test
@@ -108,7 +172,7 @@ class BoardViewModelTest {
 
     @Test
     fun `waking the screen up never shows the loading state again`() = runTest(dispatcher) {
-        val viewModel = BoardViewModel(BoardRepository(FakeBoardDao(boards, cells), context), speaker)
+        val viewModel = BoardViewModel(BoardRepository(FakeBoardDao(boards, cells), preferences, context), speaker)
         val firstCollector = backgroundScope.launch { viewModel.uiState.collect {} }
         viewModel.tap("A")
         firstCollector.cancel()

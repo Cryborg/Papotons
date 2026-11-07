@@ -23,6 +23,8 @@ data class BoardUiState(
     /** La phrase telle qu'elle s'affiche et se dit (« j'ai », pas « je ai »). */
     val message: ImmutableList<SentenceToken> = persistentListOf(),
     val speechStatus: SpeechStatus = SpeechStatus.Initializing,
+    /** Les grilles ont été trouvées perdues : alerte pour l'adulte, jusqu'à acquittement. */
+    val hasLostBoards: Boolean = false,
 ) {
     /** Une phrase est en cours : rien ne doit interrompre (redémarrage de mise à jour). */
     val isComposingMessage: Boolean get() = message.isNotEmpty()

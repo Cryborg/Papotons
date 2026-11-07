@@ -60,6 +60,7 @@ data class BoardActions(
     val onDeleteLastWord: () -> Unit,
     val onClearMessage: () -> Unit,
     val onSpeechAlertClick: () -> Unit,
+    val onLostBoardsAlertClick: () -> Unit,
     val onAboutClick: () -> Unit,
 )
 
@@ -70,6 +71,7 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
     var isSpeechDialogOpen by rememberSaveable { mutableStateOf(false) }
     var areSettingsUnreachable by rememberSaveable { mutableStateOf(false) }
     var isAboutOpen by rememberSaveable { mutableStateOf(false) }
+    var isLostBoardsDialogOpen by rememberSaveable { mutableStateOf(false) }
     val actions = remember(viewModel) {
         BoardActions(
             onCellClick = viewModel::onCellClick,
@@ -82,6 +84,7 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
                 areSettingsUnreachable = false
                 isSpeechDialogOpen = true
             },
+            onLostBoardsAlertClick = { isLostBoardsDialogOpen = true },
             onAboutClick = { isAboutOpen = true },
         )
     }
@@ -90,6 +93,15 @@ fun BoardRoute(viewModel: BoardViewModel, state: BoardUiState) {
     BackHandler(enabled = state.board?.canGoBack == true, onBack = viewModel::onBack)
     BoardScreen(state = state, actions = actions)
     if (isAboutOpen) AboutDialog(onClose = { isAboutOpen = false })
+    if (isLostBoardsDialogOpen && state.hasLostBoards) {
+        LostBoardsDialog(
+            onAcknowledge = {
+                isLostBoardsDialogOpen = false
+                viewModel.onAcknowledgeLostBoards()
+            },
+            onClose = { isLostBoardsDialogOpen = false },
+        )
+    }
     // La voix revenue referme la modale pour de bon : une panne suivante ne doit pas la rouvrir
     // seule. Une relance en cours (Initializing, par exemple à la rotation) la masque sans la fermer.
     val isSpeechReady = state.speechStatus == SpeechStatus.Ready
@@ -124,9 +136,11 @@ fun BoardScreen(state: BoardUiState, actions: BoardActions, modifier: Modifier =
             BoardTopBar(
                 canGoBack = board?.canGoBack == true,
                 speechStatus = state.speechStatus,
+                hasLostBoards = state.hasLostBoards,
                 onBack = actions.onBack,
                 onHome = actions.onHome,
                 onSpeechAlertClick = actions.onSpeechAlertClick,
+                onLostBoardsAlertClick = actions.onLostBoardsAlertClick,
                 onAboutClick = actions.onAboutClick,
             ) {
                 MessageBar(
@@ -199,7 +213,7 @@ private fun BoardScreenPreview() {
                 message = persistentListOf(SentenceToken("je", persistentListOf()), SentenceToken("veux", persistentListOf())),
                 speechStatus = SpeechStatus.LanguageMissing,
             ),
-            actions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}),
+            actions = BoardActions({}, {}, {}, {}, {}, {}, {}, {}, {}),
         )
     }
 }

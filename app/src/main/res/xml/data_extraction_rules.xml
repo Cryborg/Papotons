@@ -4,6 +4,8 @@
   Tout est inclus : les grilles et les réglages de l'utilisateur sont précisément ce qu'il
   ne doit jamais perdre en changeant de tablette. ⚠️ La sauvegarde Google plafonne à
   25 Mo par appli : avec des photos, l'export manuel (.obz) reste indispensable.
+  La base (databases/) et les préférences (files/datastore/) partent ensemble ou pas du tout :
+  le marqueur « vocabulaire amorcé » restauré sans sa base ferait croire à une perte des grilles.
 -->
 <data-extraction-rules>
     <cloud-backup />

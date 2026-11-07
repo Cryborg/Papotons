@@ -46,16 +46,18 @@ private const val ALERT_MAX_LINES = 2
 private val WRITTEN_ALERT_MIN_BAR_WIDTH = 720.dp
 
 /**
- * L'unique barre au-dessus de la grille : navigation, phrase en cours ([message]), alerte de voix,
- * « À propos ». Pas de titre écrit : chaque ligne gagnée revient aux cases.
+ * L'unique barre au-dessus de la grille : navigation, phrase en cours ([message]), alertes (voix,
+ * grilles perdues), « À propos ». Pas de titre écrit : chaque ligne gagnée revient aux cases.
  */
 @Composable
 fun BoardTopBar(
     canGoBack: Boolean,
     speechStatus: SpeechStatus,
+    hasLostBoards: Boolean,
     onBack: () -> Unit,
     onHome: () -> Unit,
     onSpeechAlertClick: () -> Unit,
+    onLostBoardsAlertClick: () -> Unit,
     onAboutClick: () -> Unit,
     modifier: Modifier = Modifier,
     message: @Composable RowScope.() -> Unit,
@@ -81,6 +83,15 @@ fun BoardTopBar(
                 }
             }
             message()
+            // Barre étroite : une seule alerte, deux de plus ne laisseraient plus de place aux boutons
+            // de la phrase. La voix d'abord (sans elle on ne parle plus), puis les grilles perdues,
+            // qui durent jusqu'à leur acquittement. Barre large : les deux.
+            if (hasLostBoards && (isAlertWritten || !speechStatus.needsAttention)) {
+                // Icône propre (dossier barré) : elle ne se confond pas avec l'alerte de voix.
+                IconButton(onClick = onLostBoardsAlertClick) {
+                    Icon(painterResource(R.drawable.ic_folder_off), stringResource(R.string.lost_boards_alert), tint = MaterialTheme.colorScheme.error)
+                }
+            }
             if (speechStatus.needsAttention) {
                 val alertLabel = stringResource(speechAlertLabel(speechStatus))
                 if (isAlertWritten) {

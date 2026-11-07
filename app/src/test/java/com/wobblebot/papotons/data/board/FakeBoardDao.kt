@@ -24,14 +24,24 @@ class FakeBoardDao(
     /** Retient les lectures tant qu'il vaut vrai : Room lit sur son propre exécuteur, en différé. */
     val areReadsHeld = MutableStateFlow(false)
 
-    override suspend fun countBoards(): Int = boards.value.size
+    /** Appelé à chaque `countBoards` : la vraie première requête ouvre la base (et copie une base corrompue). */
+    var onCountBoards: () -> Unit = {}
+
+    override suspend fun countBoards(): Int {
+        onCountBoards()
+        return boards.value.size
+    }
 
     override suspend fun boardExists(boardId: Long): Boolean = boards.value.any { it.id == boardId }
 
     override suspend fun smallestBoardId(): Long? = boards.value.minOfOrNull { it.id }
 
+    /** Levée par l'insertion (disque plein, contrainte violée). */
+    var insertFailure: RuntimeException? = null
+
     override suspend fun insertAll(boards: List<BoardEntity>, cells: List<CellEntity>) {
         insertGate?.await()
+        insertFailure?.let { throw it }
         insertCount++
         val firstCellId = this.cells.value.size + 1L
         this.boards.value += boards

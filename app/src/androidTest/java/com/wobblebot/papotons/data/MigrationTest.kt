@@ -1,6 +1,5 @@
 package com.wobblebot.papotons.data
 
-import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -34,7 +33,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DATABASE_NAME, 2, true).close()
 
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val database = Room.databaseBuilder(context, PapotonsDatabase::class.java, DATABASE_NAME).build()
+        val database = buildDatabase(context, DATABASE_NAME)
         try {
             val home = runBlocking { checkNotNull(database.boardDao().observeBoard(1).first()) }
             assertEquals("home", home.board.name)

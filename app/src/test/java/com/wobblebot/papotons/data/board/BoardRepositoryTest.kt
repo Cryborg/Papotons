@@ -1,25 +1,57 @@
 package com.wobblebot.papotons.data.board
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
+import com.wobblebot.papotons.data.CORRUPTED_DATABASES_DIRECTORY
+import com.wobblebot.papotons.data.FakePreferences
+import com.wobblebot.papotons.data.createPreferences
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import com.wobblebot.papotons.domain.WordCategory
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
+import java.io.IOException
+
+/** Nom persisté du marqueur : le changer ferait passer toute installation existante pour neuve. */
+private val CORE_VOCABULARY_SEEDED = booleanPreferencesKey("core_vocabulary_seeded")
+
+/** Nom persisté de l'alerte : le changer ferait oublier une perte pas encore acquittée. */
+private val BOARDS_LOST_AT = longPreferencesKey("boards_lost_at")
 
 class BoardRepositoryTest {
+    @get:Rule
+    val folder = TemporaryFolder()
+
+    private val preferencesFile by lazy { File(folder.root, "settings.preferences_pb") }
+
+    /** Le vrai DataStore, sur fichier : celui de l'appli, avec son gestionnaire de corruption. */
+    private val preferences by lazy { createPreferences { preferencesFile } }
+
     private val context = mockk<Context> {
         every { getString(any()) } answers { "label${firstArg<Int>()}" }
+        every { filesDir } answers { folder.root }
     }
 
     @Test
     fun `the first launch inserts the whole core vocabulary once`() = runTest {
         val dao = FakeBoardDao()
-        val repository = BoardRepository(dao, context)
+        val repository = BoardRepository(dao, preferences, context)
 
         assertEquals(HOME_BOARD_ID, repository.ensureHomeBoard())
         repository.ensureHomeBoard()
@@ -38,7 +70,7 @@ class BoardRepositoryTest {
     fun `existing boards are never overwritten by the core vocabulary`() = runTest {
         val dao = FakeBoardDao(boards = listOf(BoardEntity(id = HOME_BOARD_ID, name = "mine", rowCount = 1, columnCount = 1)))
 
-        BoardRepository(dao, context).ensureHomeBoard()
+        BoardRepository(dao, preferences, context).ensureHomeBoard()
 
         assertEquals(0, dao.insertCount)
         assertEquals(listOf("mine"), dao.boards.value.map { it.name })
@@ -56,7 +88,7 @@ class BoardRepositoryTest {
             ),
         )
 
-        val board = checkNotNull(BoardRepository(dao, context).observeBoard(HOME_BOARD_ID).first())
+        val board = checkNotNull(BoardRepository(dao, preferences, context).observeBoard(HOME_BOARD_ID).first())
 
         assertEquals("home", board.name)
         assertEquals(2, board.rowCount)
@@ -79,7 +111,7 @@ class BoardRepositoryTest {
             ),
         )
 
-        val cells = checkNotNull(BoardRepository(dao, context).observeBoard(HOME_BOARD_ID).first()).cells.associateBy { it.label }
+        val cells = checkNotNull(BoardRepository(dao, preferences, context).observeBoard(HOME_BOARD_ID).first()).cells.associateBy { it.label }
 
         assertEquals(6632L, cells.getValue("full").pictogramId)
         assertEquals(WordCategory.PEOPLE, cells.getValue("full").category)
@@ -98,14 +130,215 @@ class BoardRepositoryTest {
             ),
         )
 
-        assertEquals(5L, BoardRepository(dao, context).ensureHomeBoard())
+        assertEquals(5L, BoardRepository(dao, preferences, context).ensureHomeBoard())
         assertEquals(0, dao.insertCount)
     }
 
     @Test
     fun `an unknown board is observed as null`() = runTest {
-        val repository = BoardRepository(FakeBoardDao(), context)
+        val repository = BoardRepository(FakeBoardDao(), preferences, context)
 
         assertEquals(null, repository.observeBoard(42).first())
+    }
+
+    @Test
+    fun `the first launch sets the marker and raises no alert`() = runTest {
+        val repository = BoardRepository(FakeBoardDao(), preferences, context)
+
+        repository.ensureHomeBoard()
+
+        assertEquals(true, preferences.data.first()[CORE_VOCABULARY_SEEDED])
+        assertFalse(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `an emptied database gets the core vocabulary back and raises an alert until acknowledged`() = runTest {
+        preferences.edit { it[CORE_VOCABULARY_SEEDED] = true }
+        val dao = FakeBoardDao()
+        val repository = BoardRepository(dao, preferences, context)
+
+        assertEquals(HOME_BOARD_ID, repository.ensureHomeBoard())
+
+        assertEquals(1, dao.insertCount)
+        assertTrue(repository.observeLostBoards().first())
+        repository.acknowledgeLostBoards()
+        assertFalse(repository.observeLostBoards().first())
+
+        // Le marqueur reste : une perte suivante est signalée à son tour.
+        dao.boards.value = emptyList()
+        repository.ensureHomeBoard()
+        assertTrue(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `an unacknowledged alert survives the next launches`() = runTest {
+        preferences.edit { it[CORE_VOCABULARY_SEEDED] = true }
+        val dao = FakeBoardDao()
+        BoardRepository(dao, preferences, context).ensureHomeBoard()
+
+        val nextLaunch = BoardRepository(dao, preferences, context)
+        nextLaunch.ensureHomeBoard()
+
+        assertTrue(nextLaunch.observeLostBoards().first())
+    }
+
+    @Test
+    fun `a second launch raises no alert`() = runTest {
+        val dao = FakeBoardDao()
+        BoardRepository(dao, preferences, context).ensureHomeBoard()
+
+        val repository = BoardRepository(dao, preferences, context)
+        repository.ensureHomeBoard()
+
+        assertEquals(1, dao.insertCount)
+        assertFalse(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `a loss is recorded before the core vocabulary goes back in`() = runTest {
+        preferences.edit { it[CORE_VOCABULARY_SEEDED] = true }
+        val dao = FakeBoardDao().apply { insertFailure = IllegalStateException("killed") }
+        val repository = BoardRepository(dao, preferences, context)
+
+        runCatching { repository.ensureHomeBoard() }
+
+        assertTrue(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `a kept copy of a corrupted database means a loss even without marker`() = runTest {
+        File(folder.root, "$CORRUPTED_DATABASES_DIRECTORY/000001-copy").mkdirs()
+        val repository = BoardRepository(FakeBoardDao(), preferences, context)
+
+        repository.ensureHomeBoard()
+
+        assertTrue(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `a copy made while opening the database is seen`() = runTest {
+        // Préférences perdues avec la base : seule la copie, faite à l'ouverture, signale la perte.
+        val dao = FakeBoardDao().apply { onCountBoards = { File(folder.root, "$CORRUPTED_DATABASES_DIRECTORY/000001-copy").mkdirs() } }
+        val repository = BoardRepository(dao, preferences, context)
+
+        repository.ensureHomeBoard()
+
+        assertTrue(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `unreadable preferences open the core vocabulary without any alert`() = runTest {
+        val unreadable = FakePreferences().apply { readFailure = IOException("unreadable") }
+        val dao = FakeBoardDao()
+        val repository = BoardRepository(dao, unreadable, context)
+
+        assertEquals(HOME_BOARD_ID, repository.ensureHomeBoard())
+
+        assertEquals(1, dao.insertCount)
+        // Lu sur le faux lui-même : `observeLostBoards` réessaie sans fin sur une lecture ratée.
+        assertNull(unreadable.current[BOARDS_LOST_AT])
+    }
+
+    @Test
+    fun `an existing installation without marker gets one, so a later loss is noticed`() = runTest {
+        val dao = FakeBoardDao(boards = listOf(BoardEntity(id = HOME_BOARD_ID, name = "mine", rowCount = 1, columnCount = 1)))
+        val repository = BoardRepository(dao, preferences, context)
+
+        repository.ensureHomeBoard()
+        assertEquals(0, dao.insertCount)
+        assertFalse(repository.observeLostBoards().first())
+
+        dao.boards.value = emptyList()
+        repository.ensureHomeBoard()
+
+        assertTrue(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `a failed insertion leaves no marker`() = runTest {
+        val dao = FakeBoardDao().apply { insertFailure = IllegalStateException("disk full") }
+        val repository = BoardRepository(dao, preferences, context)
+
+        try {
+            repository.ensureHomeBoard()
+            fail("the insertion failure must surface")
+        } catch (expected: IllegalStateException) {
+            assertNull(preferences.data.first()[CORE_VOCABULARY_SEEDED])
+        }
+    }
+
+    @Test
+    fun `a corrupted preferences file is replaced and the marker set again`() = runTest {
+        // 0xFF répété : varint sans fin, jamais un protobuf valide.
+        preferencesFile.writeBytes(ByteArray(64) { 0xFF.toByte() })
+        val dao = FakeBoardDao(boards = listOf(BoardEntity(id = HOME_BOARD_ID, name = "mine", rowCount = 1, columnCount = 1)))
+        val repository = BoardRepository(dao, preferences, context)
+
+        assertEquals(HOME_BOARD_ID, repository.ensureHomeBoard())
+
+        assertEquals(true, preferences.data.first()[CORE_VOCABULARY_SEEDED])
+        assertFalse(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `reset preferences next to a kept copy raise the alert again`() = runTest {
+        File(folder.root, "$CORRUPTED_DATABASES_DIRECTORY/000001-copy").mkdirs()
+        val dao = FakeBoardDao(boards = listOf(BoardEntity(id = HOME_BOARD_ID, name = "core", rowCount = 1, columnCount = 1)))
+        val repository = BoardRepository(dao, preferences, context)
+
+        repository.ensureHomeBoard()
+
+        assertTrue(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `a failed preferences read does not end the alert stream`() = runTest {
+        val flaky = FakePreferences().apply { readFailure = IOException("busy") }
+        val seen = mutableListOf<Boolean>()
+        backgroundScope.launch { BoardRepository(FakeBoardDao(), flaky, context).observeLostBoards().collect { seen += it } }
+        runCurrent()
+
+        flaky.readFailure = null
+        flaky.updateData { it.toMutablePreferences().apply { set(BOARDS_LOST_AT, 1L) } }
+        advanceTimeBy(60_000)
+
+        assertEquals(listOf(true), seen)
+    }
+
+    @Test
+    fun `a loss that could not be saved is still shown for the session`() = runTest {
+        val failing = FakePreferences().apply {
+            updateData { it.toMutablePreferences().apply { set(CORE_VOCABULARY_SEEDED, true) } }
+            writeFailure = IOException("disk full")
+        }
+        val repository = BoardRepository(FakeBoardDao(), failing, context)
+
+        repository.ensureHomeBoard()
+
+        assertTrue(repository.observeLostBoards().first())
+        repository.acknowledgeLostBoards()
+        assertFalse(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `a preferences write failure never keeps the board from opening`() = runTest {
+        val failing = FakePreferences().apply { writeFailure = IOException("disk full") }
+        val repository = BoardRepository(FakeBoardDao(), failing, context)
+
+        assertEquals(HOME_BOARD_ID, repository.ensureHomeBoard())
+        // Premier lancement : rien de perdu, même si rien n'a pu s'écrire.
+        assertFalse(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `a copy proves a loss even when the preferences cannot be read`() = runTest {
+        val unreadable = FakePreferences().apply { readFailure = IOException("unreadable") }
+        val dao = FakeBoardDao().apply { onCountBoards = { File(folder.root, "$CORRUPTED_DATABASES_DIRECTORY/000001-copy").mkdirs() } }
+        val repository = BoardRepository(dao, unreadable, context)
+
+        repository.ensureHomeBoard()
+
+        unreadable.readFailure = null
+        assertTrue(repository.observeLostBoards().first())
     }
 }

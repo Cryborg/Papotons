@@ -1,7 +1,9 @@
 package com.wobblebot.papotons.data
 
+import android.content.Context
 import androidx.room.AutoMigration
 import androidx.room.Database
+import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.wobblebot.papotons.data.board.BoardDao
 import com.wobblebot.papotons.data.board.BoardEntity
@@ -25,3 +27,12 @@ abstract class PapotonsDatabase : RoomDatabase() {
         const val NAME = "papotons.db"
     }
 }
+
+/**
+ * La seule façon d'ouvrir la base, partagée par l'appli et ses tests instrumentés : la copie de
+ * secours d'une base corrompue ([CorruptionCopyingOpenHelperFactory]) ne peut pas être oubliée.
+ */
+fun buildDatabase(context: Context, name: String): PapotonsDatabase =
+    Room.databaseBuilder(context, PapotonsDatabase::class.java, name)
+        .openHelperFactory(CorruptionCopyingOpenHelperFactory(context))
+        .build()

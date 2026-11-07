@@ -15,6 +15,7 @@ import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -56,17 +58,28 @@ class BoardViewModel @Inject constructor(
     }
 
     val uiState: StateFlow<BoardUiState> =
-        combine(displayedBoard, message, speaker.status) { board, words, speechStatus ->
-            BoardUiState(board = board, message = sentenceTokens(words).toImmutableList(), speechStatus = speechStatus)
+        combine(
+            displayedBoard,
+            message,
+            speaker.status,
+            // Faux d'ici la première lecture : l'écran n'attend pas l'alerte pour s'afficher.
+            repository.observeLostBoards().onStart { emit(false) },
+        ) { board, words, speechStatus, hasLostBoards ->
+            BoardUiState(
+                board = board,
+                message = sentenceTokens(words).toImmutableList(),
+                speechStatus = speechStatus,
+                hasLostBoards = hasLostBoards,
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), BoardUiState())
+
+    /** L'ouverture de l'accueil en cours, pour ne pas la lancer deux fois. */
+    private var homeOpening: Job? = null
 
     init {
         // On n'observe rien avant la fin de l'insertion : sinon l'accueil serait lu absent
         // au premier lancement. Une erreur ici remonte en plantage (Android vitals).
-        viewModelScope.launch {
-            val homeBoardId = repository.ensureHomeBoard()
-            navigation.value = persistentListOf(homeBoardId)
-        }
+        reopenHome()
     }
 
     fun onCellClick(cell: Cell) {
@@ -104,6 +117,10 @@ class BoardViewModel @Inject constructor(
         message.value = persistentListOf()
     }
 
+    fun onAcknowledgeLostBoards() {
+        viewModelScope.launch { repository.acknowledgeLostBoards() }
+    }
+
     /**
      * À chaque `ON_START` (retour au premier plan, mais aussi rotation) et sur « Réessayer » :
      * une voix a pu être installée ou le moteur réactivé entre-temps, parfois sans que l'appli
@@ -119,11 +136,23 @@ class BoardViewModel @Inject constructor(
 
     private fun isShowingTopOf(stack: PersistentList<Long>): Boolean = uiState.value.board?.id == stack.lastOrNull()
 
+    private fun reopenHome() {
+        if (homeOpening?.isActive == true) return
+        homeOpening = viewModelScope.launch {
+            val homeBoardId = repository.ensureHomeBoard()
+            navigation.value = persistentListOf(homeBoardId)
+        }
+    }
+
     private fun display(board: Board?, stack: PersistentList<Long>): DisplayedBoard? {
         if (board == null) {
             Log.e(TAG, "Board ${stack.last()} not found (stack $stack)")
             // Seulement si la pile n'a pas bougé entre-temps : sinon on dépilerait la grille d'un autre appui.
             navigation.update { current -> if (current == stack && current.size > 1) current.removingAt(current.lastIndex) else current }
+            // L'accueil lui-même est introuvable (base vidée en cours d'usage) : sans relance, rien ne
+            // s'afficherait plus jusqu'à la fin du processus. `ensureHomeBoard` remet le vocabulaire de
+            // base et lève l'alerte si c'est une perte.
+            if (stack.size == 1) reopenHome()
             return null
         }
         return DisplayedBoard(

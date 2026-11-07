@@ -2,7 +2,7 @@
 
 Source : `docs/TODO.md` § Feuille de route, MVP-1. Décisions prises avec Franck le 2026-11-06 : D-3 tranché pour Room (OBF seulement à l'import et à l'export, MVP-4) ; cases en texte seul au MVP-1, les pictos arrivent avec le vocabulaire de base (MVP-2).
 
-Le contrat de la voix fait foi dans la KDoc de `speech/RecoveringSpeaker.kt` ; le choix d'une voix hors ligne dans `speech/VoiceSelection.kt`. Les reports sont TODO-3 à TODO-6 et IDEE-6 dans `docs/TODO.md` (TODO-3 est prérequis du MVP-3).
+Le contrat de la voix fait foi dans la KDoc de `speech/RecoveringSpeaker.kt` ; le choix d'une voix hors ligne dans `speech/VoiceSelection.kt`. Les reports sont dans `docs/TODO.md`.
 
 ## 1. Contrat et fichiers touchés
 
