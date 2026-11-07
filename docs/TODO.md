@@ -21,7 +21,6 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 
 ## Dette ouverte
 
-- **TODO-1** Pas encore de `docs/regles/INVARIANTS.md` ni de tests qui gardent les invariants 1 à 5 du CLAUDE.md : à écrire avec les premières fonctions (S).
 
 ## Feuille de route (MVP)
 
