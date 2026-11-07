@@ -26,6 +26,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.DpSize
@@ -344,6 +345,33 @@ class BoardScreenLayoutTest {
         assertTrue("label ${label.width}, pictogram ${pictogram.width}", label.width > pictogram.width)
         assertTrue("label starts at ${label.top}, pictogram ends at ${pictogram.bottom}", pictogram.bottom <= label.top)
         assertEquals((pictogram.left + pictogram.right).value / 2, (label.left + label.right).value / 2, CENTER_TOLERANCE_DP)
+    }
+
+    /** Les écrans sont dans la barre du bas, d'épaisseur fixe : créer le deuxième ne déplace aucune case (invariant 3). */
+    @Test
+    fun aSecondScreenDoesNotMoveTheCells() {
+        val home = checkNotNull(homeState.board)
+        var state by mutableStateOf(homeState.copy(board = home.copy(screens = persistentListOf(Screen(1, "Accueil", BoardSize.STANDARD)))))
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = state, actions = noActions, profileName = "Léo") } }
+        val original = cellBounds("Manger")
+
+        state = homeState.copy(board = home.copy(screens = persistentListOf(Screen(1, "Accueil", BoardSize.STANDARD), Screen(1000, "Maison", BoardSize.LARGE_CELLS))))
+
+        composeRule.onNodeWithText("Maison").assertIsDisplayed()
+        assertEquals(original, cellBounds("Manger"))
+    }
+
+    /** Centrés sur la barre, même quand un long prénom occupe la gauche. */
+    @Test
+    fun theScreensAreCenteredOnTheBottomBar() {
+        val screens = persistentListOf(Screen(1, "Accueil", BoardSize.STANDARD), Screen(1000, "Maison", BoardSize.LARGE_CELLS))
+        val twoScreens = homeState.copy(board = checkNotNull(homeState.board).copy(screens = screens))
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = twoScreens, actions = noActions, profileName = "Marie-Charlotte Dupont-Lefèvre") } }
+
+        val rowBounds = composeRule.onNodeWithContentDescription(context.getString(R.string.screen_tabs_description)).getBoundsInRoot()
+        val rootBounds = composeRule.onRoot().getBoundsInRoot()
+
+        assertEquals(((rootBounds.left + rootBounds.right) / 2).value, ((rowBounds.left + rowBounds.right) / 2).value, CENTER_TOLERANCE_DP)
     }
 
     /** Un seul écran : aucun onglet, la grille garde toute sa place. */

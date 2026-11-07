@@ -488,14 +488,19 @@ fun BoardScreen(
                     )
                 }
             }
-            // Deux écrans au moins : leurs onglets, arrivés avec la grille (jamais une grille qui glisse ensuite).
-            val board = state.board
-            if (board != null && board.screens.size > 1) {
-                ScreenTabs(screens = board.screens, selectedId = board.rootId, onChosen = actions.onScreenChosen)
-            }
             BoardContent(state, actions, Modifier.weight(1f).fillMaxWidth())
-            // Toujours là, même pendant le chargement : les Réglages restent atteignables.
-            BoardAdultBar(profileName, isLeaveGated, onLeaveClick = actions.onLeaveClick, onSettingsClick = actions.onSettingsClick)
+            // Toujours là, même pendant le chargement : les Réglages restent atteignables. Les écrans y
+            // arrivent avec la grille, dans une barre d'épaisseur fixe : la grille ne bouge pas.
+            val board = state.board
+            BoardAdultBar(
+                profileName = profileName,
+                isLeaveGated = isLeaveGated,
+                onLeaveClick = actions.onLeaveClick,
+                onSettingsClick = actions.onSettingsClick,
+                screens = board?.screens ?: persistentListOf(),
+                selectedScreenId = board?.rootId,
+                onScreenChosen = actions.onScreenChosen,
+            )
         }
     }
 }

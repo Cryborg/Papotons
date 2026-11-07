@@ -4,7 +4,7 @@
     <string name="settings_screens">Écrans</string>
     <!-- %1$s : le prénom de l'utilisateur ouvert. -->
     <string name="settings_screens_of">Écrans (%1$s)</string>
-    <string name="settings_screens_explanation">Chaque écran a ses propres cases. Dès qu\'il y a deux écrans, l\'enfant passe de l\'un à l\'autre par des onglets au-dessus de la grille. Le premier s\'ouvre au lancement.</string>
+    <string name="settings_screens_explanation">Chaque écran a ses propres cases. Dès qu\'il y a deux écrans, l\'enfant passe de l\'un à l\'autre par leurs noms, au centre de la barre du bas. Le premier s\'ouvre au lancement.</string>
     <!-- Sous le nom du premier écran de la liste. -->
     <string name="screen_first">S\'ouvre au lancement</string>
     <string name="screen_add">Ajouter un écran</string>

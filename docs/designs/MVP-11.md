@@ -12,6 +12,8 @@ Choix tranchés par Franck le 2026-11-07 :
 
 L'appli n'est pas publiée (`versionCode = 1`) : comme pour PROFILS, la migration et la lecture des anciens formats restent (invariant 4), sans compatibilité au-delà.
 
+Révision du 2026-11-07, demandée par Franck après livraison : les écrans ne sont plus en onglets au-dessus de la grille, mais au centre de la barre du bas (celle du prénom, de Bureau et de la roue dentée). La barre a déjà son épaisseur fixe : la grille ne rétrécit plus quand le deuxième écran apparaît. Les écrans sont centrés sur la barre, quelle que soit la longueur du prénom (`BoardAdultBar`, mise en page mesurée).
+
 ## Contrat et fichiers touchés
 
 Deux commits. A se livre seul ; B ne dépend pas de A (mêmes fichiers, donc l'un après l'autre).
