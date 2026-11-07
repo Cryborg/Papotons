@@ -22,6 +22,7 @@ import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.CellContent
 import com.wobblebot.papotons.domain.ConjugationTable
+import com.wobblebot.papotons.domain.Screen
 import com.wobblebot.papotons.domain.SentenceWord
 import com.wobblebot.papotons.domain.WordCategory
 import com.wobblebot.papotons.domain.layoutGrid
@@ -68,13 +69,12 @@ private data class SecondaryState(
     val isVolumeLockedDialogOpen: Boolean,
     val isEditing: Boolean,
     val settingsPage: SettingsPage?,
-    val settingFailure: SettingFailure?,
     val editor: CellEditorState?,
     val pictogramSearch: PictogramSearchState?,
 )
 
 /** Les deux zones réservées aux adultes. */
-private data class AdultState(val isEditing: Boolean, val settingsPage: SettingsPage?, val settingFailure: SettingFailure?)
+private data class AdultState(val isEditing: Boolean, val settingsPage: SettingsPage?)
 internal const val NAVIGATION_KEY = "navigation"
 internal const val MESSAGE_KEY = "message"
 internal const val STOP_TIMEOUT_MS = 5_000L
@@ -115,10 +115,6 @@ class BoardViewModel @Inject constructor(
      * rotation, jamais après la mort du processus (un état sauvé non lu rouvrirait la page plus tard).
      */
     private val settingsPage = MutableStateFlow<SettingsPage?>(null)
-    private val settingFailure = MutableStateFlow<SettingFailure?>(null)
-
-    /** Le choix de taille en cours : un nouveau choix l'annule, le dernier appui gagne. */
-    private var sizeChoice: Job? = null
     private val editor = MutableStateFlow<CellEditorState?>(null)
     private var writeCount = 0L
 
@@ -168,9 +164,15 @@ class BoardViewModel @Inject constructor(
         } else {
             // L'id d'origine du bas de la pile dit la taille de ses cases, même ouvert dans un dossier.
             // `distinctUntilChanged` : toute écriture dans `boards` relit l'id d'origine, sans raison de redessiner.
-            combine(repository.observeBoard(stack.last()), repository.observeCoreBoardId(stack.first()).distinctUntilChanged()) { board, rootCoreBoardId ->
-                board to rootCoreBoardId
-            }.mapNotNull { (board, rootCoreBoardId) -> display(board, stack, rootCoreBoardId) }
+            // Les onglets dans la même émission que la grille : jamais une grille qui glisse sous le doigt
+            // quand ils arrivent ; et ceux de l'utilisateur de la pile, pas de l'utilisateur ouvert, qui
+            // change avant elle.
+            combine(
+                repository.observeBoard(stack.last()),
+                repository.observeCoreBoardId(stack.first()).distinctUntilChanged(),
+                repository.observeScreensBesides(stack.first()).distinctUntilChanged(),
+            ) { board, rootCoreBoardId, screens -> Triple(board, rootCoreBoardId, screens) }
+                .mapNotNull { (board, rootCoreBoardId, screens) -> display(board, stack, rootCoreBoardId, screens) }
         }
     }
 
@@ -184,7 +186,7 @@ class BoardViewModel @Inject constructor(
             combine(
                 mediaVolume.isMuted,
                 isVolumeLockedDialogOpen,
-                combine(isEditing, settingsPage, settingFailure, ::AdultState),
+                combine(isEditing, settingsPage, ::AdultState),
                 editor,
                 pictogramSearch,
             ) { isMuted, isDialogOpen, adult, editor, search ->
@@ -193,7 +195,6 @@ class BoardViewModel @Inject constructor(
                     isVolumeLockedDialogOpen = isMuted && isDialogOpen,
                     isEditing = adult.isEditing,
                     settingsPage = adult.settingsPage,
-                    settingFailure = adult.settingFailure,
                     editor = editor,
                     pictogramSearch = search,
                 )
@@ -208,7 +209,6 @@ class BoardViewModel @Inject constructor(
                 isVolumeLockedDialogOpen = secondary.isVolumeLockedDialogOpen,
                 isEditing = secondary.isEditing,
                 settingsPage = secondary.settingsPage,
-                settingFailure = secondary.settingFailure,
                 editor = secondary.editor,
                 pictogramSearch = secondary.pictogramSearch,
             )
@@ -217,9 +217,6 @@ class BoardViewModel @Inject constructor(
 
     /** L'ouverture de l'écran de départ en cours, pour ne pas la lancer deux fois. */
     private var homeOpening: Job? = null
-
-    /** La réouverture après un changement d'utilisateur ou une restauration, tant qu'elle attend [homeOpening]. */
-    private var reopening: Job? = null
 
     init {
         // On n'observe rien avant la fin de l'insertion : sinon l'accueil serait lu absent
@@ -316,6 +313,12 @@ class BoardViewModel @Inject constructor(
         navigation.update { stack -> if (stack.size > 1) persistentListOf(stack.first()) else stack }
     }
 
+    /** Un onglet : l'écran [boardId] s'ouvre à sa racine, la phrase reste. */
+    fun onScreenChosen(boardId: Long) {
+        verbForms.value = null
+        navigation.update { stack -> if (stack.isEmpty() || stack == persistentListOf(boardId)) stack else persistentListOf(boardId) }
+    }
+
     fun onSpeakMessage() {
         val words = message.value
         if (words.isEmpty()) return
@@ -353,7 +356,6 @@ class BoardViewModel @Inject constructor(
 
     /** Après le contrôle parental (ou depuis l'édition, par [onSettingsRequested]). */
     fun onOpenSettings() {
-        settingFailure.value = null
         settingsPage.value = SettingsPage.Home
     }
 
@@ -365,33 +367,6 @@ class BoardViewModel @Inject constructor(
     /** « Fermer », retour arrière, et tout départ de l'appli (`ON_STOP`). */
     fun onCloseSettings() {
         settingsPage.value = null
-    }
-
-    /**
-     * Enregistre l'accueil de [size] comme écran de départ, puis l'ouvre (la phrase reste). Après
-     * l'ouverture en cours : sinon elle pourrait finir après et rouvrir l'ancien accueil. La pile
-     * passe d'un coup au nouvel accueil : l'ancien reste affiché jusqu'à sa lecture.
-     */
-    fun onBoardSizeChosen(size: BoardSize) {
-        sizeChoice?.cancel()
-        settingFailure.value = null
-        sizeChoice = viewModelScope.launch {
-            // Après un changement d'utilisateur en cours : sinon la taille s'appliquerait à l'utilisateur d'avant.
-            reopening?.join()
-            homeOpening?.join()
-            val startBoardId = try {
-                repository.setStartBoard(size)
-            } catch (exception: IOException) {
-                Log.e(TAG, "Board size $size could not be saved", exception)
-                settingFailure.value = SettingFailure.NotSaved
-                return@launch
-            } catch (exception: SQLiteException) {
-                Log.e(TAG, "Board size $size could not be checked", exception)
-                settingFailure.value = SettingFailure.NotSaved
-                return@launch
-            }
-            if (startBoardId != null) navigation.value = persistentListOf(startBoardId) else settingFailure.value = SettingFailure.Unavailable
-        }
     }
 
     /** « Terminer », et tout départ de l'appli (`ON_STOP`) : la tablette rendue à l'enfant n'est jamais en édition. */
@@ -411,20 +386,17 @@ class BoardViewModel @Inject constructor(
     }
 
     /**
-     * Repart de l'écran de départ, éditeur fermé. Un choix de taille déjà lancé est annulé (il ouvrirait
-     * l'accueil d'avant), un choix lancé ensuite attend cette réouverture ; une ouverture en cours a
-     * pu lire l'utilisateur d'avant : on l'attend, puis on relit.
+     * Repart du premier écran, éditeur fermé. Une ouverture en cours a pu lire l'utilisateur d'avant :
+     * on l'attend, puis on relit.
      */
     private fun reopenFromStart() {
-        sizeChoice?.cancel()
-        settingFailure.value = null
         editor.value = null
         // Pas seulement le collecteur de pile : une pile qui revient à la même valeur ([1], [], [1]) peut lui échapper.
         verbForms.value = null
         onSearchClose()
         chosenBytes = null
         discardUnsavedPhoto()
-        reopening = viewModelScope.launch {
+        viewModelScope.launch {
             homeOpening?.join()
             navigation.value = persistentListOf()
             reopenHome()
@@ -759,11 +731,14 @@ class BoardViewModel @Inject constructor(
         if (homeOpening?.isActive == true) return
         homeOpening = viewModelScope.launch {
             val homeBoardId = repository.ensureHomeBoard()
+            // L'enfant était peut-être sur un autre onglet : la pile se garde si elle part d'un écran à lui.
+            val profileId = repository.openProfileId.value
             navigation.value = when {
                 savedStack.isNullOrEmpty() -> persistentListOf(homeBoardId)
                 savedStack.first() == homeBoardId -> savedStack.toPersistentList()
+                profileId != null && repository.isScreenOf(savedStack.first(), profileId) -> savedStack.toPersistentList()
                 else -> {
-                    Log.w(TAG, "Saved stack $savedStack does not start at home board $homeBoardId, dropped")
+                    Log.w(TAG, "Saved stack $savedStack does not start at a screen of profile $profileId, dropped")
                     persistentListOf(homeBoardId)
                 }
             }
@@ -776,9 +751,11 @@ class BoardViewModel @Inject constructor(
     private fun restoredMessage(): PersistentList<SentenceWord> =
         savedState.get<ArrayList<SavedWord>>(MESSAGE_KEY).orEmpty().map { it.toSentenceWord() }.toPersistentList()
 
-    private fun display(board: Board?, stack: PersistentList<Long>, rootCoreBoardId: Long?): DisplayedBoard? {
+    private fun display(board: Board?, stack: PersistentList<Long>, rootCoreBoardId: Long?, screens: List<Screen>): DisplayedBoard? {
         if (board == null) {
-            Log.e(TAG, "Board ${stack.last()} not found (stack $stack)")
+            // Un avertissement, pas une erreur : c'est aussi le chemin d'un écran supprimé dans les
+            // Réglages pendant qu'il était affiché (la pile revient au premier écran).
+            Log.w(TAG, "Board ${stack.last()} not found (stack $stack)")
             // Seulement si la pile n'a pas bougé entre-temps : sinon on dépilerait la grille d'un autre appui.
             navigation.update { current -> if (current == stack && current.size > 1) current.removingAt(current.lastIndex) else current }
             // L'accueil lui-même est introuvable (base vidée en cours d'usage) : sans relance, rien ne
@@ -795,6 +772,8 @@ class BoardViewModel @Inject constructor(
             grid = layoutGrid(board.rowCount, board.columnCount, board.cells),
             canGoBack = stack.size > 1,
             rootCoreBoardId = rootCoreBoardId,
+            rootId = stack.first(),
+            screens = screens.toImmutableList(),
         )
     }
 }

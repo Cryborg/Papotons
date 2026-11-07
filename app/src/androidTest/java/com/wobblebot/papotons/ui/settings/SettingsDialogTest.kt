@@ -11,6 +11,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -18,6 +19,7 @@ import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.Caregiver
 import com.wobblebot.papotons.domain.Profile
+import com.wobblebot.papotons.domain.Screen
 import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
@@ -39,11 +41,12 @@ class SettingsDialogTest {
     private var closedCount = 0
     private val exitLockChanges = mutableListOf<Pair<Long, Boolean>>()
     private val leoAndAnna = persistentListOf(Profile(1, "Léo", isExitLocked = true), Profile(2, "Anna", isExitLocked = false))
+    private val screenMoves = mutableListOf<Pair<Long, Int>>()
+    private val homeAndHouse = persistentListOf(Screen(1, "Accueil", BoardSize.STANDARD), Screen(1000, "Maison", BoardSize.LARGE_CELLS))
 
     private fun show(
         caregivers: ImmutableList<Caregiver>? = persistentListOf(),
-        boardSize: BoardSize? = BoardSize.STANDARD,
-        isBoardShown: Boolean = true,
+        screens: ImmutableList<Screen> = homeAndHouse,
         profiles: ProfilesUiState = ProfilesUiState(leoAndAnna, openProfileId = 1),
         isAppPinned: Boolean = false,
     ) {
@@ -52,12 +55,12 @@ class SettingsDialogTest {
                 SettingsDialog(
                     page = page,
                     content = SettingsContent(
-                        boardSize = boardSize,
-                        settingFailure = null,
+                        screens = screens,
+                        screensState = ScreensUiState(),
+                        newScreenSize = BoardSize.STANDARD,
                         profiles = profiles,
                         caregivers = CaregiversUiState(caregivers),
                         hasUnsavedChanges = false,
-                        isBoardShown = isBoardShown,
                         isAppPinned = isAppPinned,
                     ),
                     profileActions = ProfileActions(
@@ -68,8 +71,8 @@ class SettingsDialogTest {
                         onExitLockChanged = { id, isLocked -> exitLockChanges += id to isLocked },
                     ),
                     caregiverActions = CaregiverActions(onSave = { _, _, _ -> }, onDelete = {}),
+                    screenActions = ScreenActions(onCreate = { _, _ -> }, onRename = { _, _ -> }, onDelete = {}, onMove = { id, offset -> screenMoves += id to offset }),
                     onPageChosen = { page = it },
-                    onBoardSizeChosen = {},
                     onEditBoards = {},
                     onBackup = {},
                     onClose = { closedCount++ },
@@ -192,17 +195,40 @@ class SettingsDialogTest {
         composeRule.onNodeWithText(string(R.string.settings_open_profile)).assertIsDisplayed()
     }
 
-    /** Grille pas encore lue : la taille n'est pas « non reconnue », elle est inconnue. */
     @Test
-    fun theSizeIsNotCalledUnknownWhileNoGridIsShown() {
-        show(boardSize = null, isBoardShown = false)
-        composeRule.onNodeWithText(string(R.string.settings_board_size)).assertIsDisplayed()
-        composeRule.onNodeWithText(string(R.string.settings_board_size_unknown)).assertDoesNotExist()
+    fun theScreensRowNamesTheScreensAndOpensTheirPage() {
+        show()
+
+        composeRule.onNodeWithText("Accueil, Maison").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.settings_screens)).performScrollTo().performClick()
+
+        assertEquals(SettingsPage.Screens, page)
+        composeRule.onNodeWithText(string(R.string.screen_add)).assertIsDisplayed()
     }
 
+    /** Pas de « Monter » au premier, pas de « Descendre » au dernier : seuls les vrais voisins. */
     @Test
-    fun aShownGridOutsideTheSizesIsCalledUnknown() {
-        show(boardSize = null, isBoardShown = true)
-        composeRule.onNodeWithText(string(R.string.settings_board_size_unknown)).assertIsDisplayed()
+    fun theScreensPageMovesOnlyTowardARealNeighbor() {
+        page = SettingsPage.Screens
+        show()
+
+        composeRule.onNodeWithContentDescription(string(R.string.screen_move_up_description, "Accueil")).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(string(R.string.screen_move_down_description, "Maison")).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(string(R.string.screen_move_up_description, "Maison")).performClick()
+
+        assertEquals(listOf(1000L to -1), screenMoves)
+        composeRule.onNodeWithText(string(R.string.screen_first)).assertIsDisplayed()
+    }
+
+    /** Il faut un écran pour parler : le dernier ne propose pas « Supprimer ». */
+    @Test
+    fun theLastScreenCannotBeDeleted() {
+        page = SettingsPage.Screens
+        show(screens = persistentListOf(Screen(1, "Accueil", BoardSize.STANDARD)))
+
+        composeRule.onNodeWithContentDescription(string(R.string.screen_edit_description, "Accueil")).performClick()
+
+        composeRule.onNodeWithText(string(R.string.screen_edit_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.screen_delete)).assertDoesNotExist()
     }
 }

@@ -11,6 +11,7 @@ import com.wobblebot.papotons.data.backup.MAX_BOARDS
 import com.wobblebot.papotons.data.profile.FIRST_PROFILE_ID
 import com.wobblebot.papotons.data.profile.MAX_PROFILES
 import com.wobblebot.papotons.data.profile.ProfileEntity
+import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import kotlinx.coroutines.flow.Flow
 
 private const val TAG = "BoardDao"
@@ -22,8 +23,8 @@ data class DeletedCells(val boardCount: Int, val photoFiles: List<String>)
 class CellNotFoundException(cellId: Long) : SQLiteException("Cell $cellId not found")
 
 /**
- * La photo de la case a changé depuis l'ouverture de l'éditeur (case pas encore relue après un
- * enregistrement) : l'écrire remettrait une photo déjà effacée et ferait effacer la nouvelle.
+ * La case a changé depuis sa lecture : sa photo depuis l'ouverture de l'éditeur (l'écrire remettrait
+ * une photo déjà effacée et ferait effacer la nouvelle), ou sa place depuis le début d'un déplacement.
  */
 class CellChangedException(cellId: Long) : SQLiteException("Cell $cellId changed since it was read")
 
@@ -33,6 +34,9 @@ class CellChangedException(cellId: Long) : SQLiteException("Cell $cellId changed
  * migration), qui peut encore ajouter des grilles à id fixe après les premières installations.
  */
 const val FIRST_USER_BOARD_ID = 1000L
+
+/** Le rang que prend un écran le temps d'échanger le sien : l'index unique refuse deux écrans au même. */
+private const val SWAP_SCREEN_POSITION = -1
 
 /** Supprimer le dernier utilisateur qui a des grilles viderait la base : refusé. */
 class LastProfileException(profileId: Long) : SQLiteException("Profile $profileId is the last one with boards")
@@ -70,15 +74,16 @@ abstract class BoardDao {
     abstract suspend fun insertAll(boards: List<BoardEntity>, cells: List<CellEntity>)
 
     /**
-     * Insère [seed] (ids fixes de `CoreVocabulary`) si aucune grille n'existe encore, chez le plus
-     * petit utilisateur, créé sous le nom [defaultProfileName] s'il n'y en a aucun. Vrai si
-     * l'insertion a eu lieu.
+     * Insère [seed] (le sous-arbre de l'accueil standard, ids fixes de `CoreVocabulary`) si aucune
+     * grille n'existe encore, chez le plus petit utilisateur, créé sous le nom [defaultProfileName]
+     * s'il n'y en a aucun ; l'accueil devient son premier écran. Vrai si l'insertion a eu lieu.
      */
     @Transaction
     open suspend fun seedIfEmpty(seed: VocabularySeed, defaultProfileName: String): Boolean {
         if (countBoards() > 0) return false
         val profileId = smallestProfileId() ?: insertProfile(ProfileEntity(FIRST_PROFILE_ID, defaultProfileName, startBoardId = null))
-        insertAll(seed.boards.map { it.copy(profileId = profileId, coreBoardId = it.id) }, seed.cells)
+        val boards = seed.boards.map { it.copy(profileId = profileId, coreBoardId = it.id) }
+        insertAll(boards.asScreen(rootCoreBoardId = HOME_BOARD_ID, position = FIRST_SCREEN_POSITION, name = null), seed.cells)
         // Les autres, restés sans grille (base abîmée), ne s'ouvriraient jamais et rendraient l'export impossible.
         val removed = deleteProfilesWithoutBoards()
         if (removed > 0) Log.w(TAG, "$removed profiles without boards removed while reseeding")
@@ -115,9 +120,6 @@ abstract class BoardDao {
     @Query("UPDATE profiles SET is_exit_locked = :isLocked WHERE id = :profileId")
     abstract suspend fun setExitLocked(profileId: Long, isLocked: Boolean): Int
 
-    @Query("UPDATE profiles SET start_board_id = :boardId WHERE id = :profileId")
-    abstract suspend fun setStartBoard(profileId: Long, boardId: Long): Int
-
     @Query("DELETE FROM profiles WHERE id = :profileId")
     abstract suspend fun deleteProfileRow(profileId: Long): Int
 
@@ -138,23 +140,33 @@ abstract class BoardDao {
     @Query("SELECT MIN(id) FROM boards WHERE profile_id = :profileId")
     abstract suspend fun smallestBoardIdOf(profileId: Long): Long?
 
-    /** Un écran de départ de l'utilisateur : une grille à lui qu'aucune case n'ouvre. */
-    @Query(
-        "SELECT EXISTS(SELECT 1 FROM boards WHERE id = :boardId AND profile_id = :profileId " +
-            "AND id NOT IN (SELECT linked_board_id FROM cells WHERE linked_board_id IS NOT NULL))"
-    )
-    abstract suspend fun isStartBoardOf(boardId: Long, profileId: Long): Boolean
+    @Query("SELECT EXISTS(SELECT 1 FROM boards WHERE id = :boardId AND profile_id = :profileId AND screen_position IS NOT NULL)")
+    abstract suspend fun isScreenOf(boardId: Long, profileId: Long): Boolean
 
-    /** La copie de la grille [coreBoardId] du vocabulaire de base chez l'utilisateur, si aucune case ne l'ouvre. */
-    @Query(
-        "SELECT id FROM boards WHERE profile_id = :profileId AND core_board_id = :coreBoardId " +
-            "AND id NOT IN (SELECT linked_board_id FROM cells WHERE linked_board_id IS NOT NULL) ORDER BY id LIMIT 1"
-    )
-    abstract suspend fun startBoardCopyOf(profileId: Long, coreBoardId: Long): Long?
+    /** Son premier écran, dans l'ordre des onglets ; `null` s'il n'en a aucun (base abîmée). */
+    @Query("SELECT id FROM boards WHERE profile_id = :profileId AND screen_position IS NOT NULL ORDER BY screen_position LIMIT 1")
+    abstract suspend fun firstScreenOf(profileId: Long): Long?
 
-    /** Les grilles, de tous les utilisateurs, copies de [coreBoardIds]. */
-    @Query("SELECT id FROM boards WHERE core_board_id IN (:coreBoardIds)")
-    abstract suspend fun copiesOf(coreBoardIds: Set<Long>): List<Long>
+    /** Les écrans de tous les utilisateurs. */
+    @Query("SELECT id FROM boards WHERE screen_position IS NOT NULL")
+    abstract suspend fun allScreenIds(): List<Long>
+
+    @Query("SELECT * FROM boards WHERE profile_id = :profileId AND screen_position IS NOT NULL ORDER BY screen_position")
+    abstract suspend fun screensOf(profileId: Long): List<BoardEntity>
+
+    /** Les écrans de l'utilisateur à qui appartient [boardId], dans l'ordre ; vide si la grille n'existe pas. */
+    @Query(
+        "SELECT * FROM boards WHERE screen_position IS NOT NULL " +
+            "AND profile_id = (SELECT profile_id FROM boards WHERE id = :boardId) ORDER BY screen_position"
+    )
+    abstract fun observeScreensBesides(boardId: Long): Flow<List<BoardEntity>>
+
+    @Query("UPDATE boards SET screen_position = :position WHERE id = :boardId")
+    abstract suspend fun setScreenPosition(boardId: Long, position: Int)
+
+    /** Rend le nombre d'écrans renommés : 0 si [boardId] n'est pas (ou plus) un écran de [profileId]. */
+    @Query("UPDATE boards SET name = :name WHERE id = :boardId AND profile_id = :profileId AND screen_position IS NOT NULL")
+    abstract suspend fun renameScreen(profileId: Long, boardId: Long, name: String): Int
 
     /** `null` pour une grille de l'adulte ou absente. */
     @Query("SELECT core_board_id FROM boards WHERE id = :boardId")
@@ -171,8 +183,59 @@ abstract class BoardDao {
         val profileId = insertProfile(ProfileEntity(name = name, startBoardId = null))
         val firstBoardId = maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID)
         val copy = seed.forProfile(profileId, firstBoardId)
-        insertAll(copy.boards, copy.cells)
+        insertAll(copy.boards.asScreen(rootCoreBoardId = HOME_BOARD_ID, position = FIRST_SCREEN_POSITION, name = null), copy.cells)
         return profileId
+    }
+
+    /**
+     * Un nouvel écran de [profileId] : [seed] (le sous-arbre d'un accueil de taille, ids de
+     * `CoreVocabulary`) copié à neuf, racine nommée [name], rangée après le dernier écran. Jamais
+     * au-delà de [MAX_SCREENS] écrans ni de [MAX_BOARDS] grilles. Rend l'id de l'écran.
+     */
+    @Transaction
+    open suspend fun insertScreen(profileId: Long, name: String, seed: VocabularySeed, rootCoreBoardId: Long): Long {
+        if (profile(profileId) == null) throw ProfileNotFoundException(profileId)
+        val screens = screensOf(profileId)
+        // Au-delà, la sauvegarde refuserait la base : l'export doit rester possible (invariant 4).
+        if (screens.size >= MAX_SCREENS || countBoards() + seed.boards.size > MAX_BOARDS) throw TooManyScreensException()
+        val position = (screens.mapNotNull { it.screenPosition }.maxOrNull() ?: (FIRST_SCREEN_POSITION - 1)) + 1
+        val copy = seed.forProfile(profileId, maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID))
+        val boards = copy.boards.asScreen(rootCoreBoardId, position, name)
+        insertAll(boards, copy.cells)
+        return boards.first { it.screenPosition != null }.id
+    }
+
+    /**
+     * Supprime l'écran [boardId] de [profileId] et les grilles de ses dossiers que plus rien ne vise,
+     * ensemble ou pas du tout ; jamais son dernier écran, jamais un écran qu'une case ouvre encore (il
+     * ne partirait pas), jamais une grille qui n'est pas un écran de [profileId] (id périmé). Rend les
+     * grilles supprimées et les photos de leurs cases, à effacer ensuite.
+     */
+    @Transaction
+    open suspend fun deleteScreen(profileId: Long, boardId: Long): DeletedCells {
+        val screens = screensOf(profileId)
+        if (screens.none { it.id == boardId }) throw ScreenNotFoundException(boardId)
+        if (screens.size == 1) throw LastScreenException(boardId)
+        if (countLinksTo(boardId) > 0) throw ScreenStillLinkedException(boardId)
+        return deleteOrphanSubtree(boardId, protectedBoardIds = allScreenIds().toSet() - boardId)
+    }
+
+    /**
+     * Échange le rang de l'écran [boardId] de [profileId] avec celui de son voisin, d'un cran vers la
+     * fin ([offset] positif) ou vers le début : le voisin dans l'ordre, pas le rang ± 1 (une suppression
+     * laisse des trous). Sans voisin de ce côté, rien. Rang temporaire négatif : l'index unique.
+     */
+    @Transaction
+    open suspend fun moveScreen(profileId: Long, boardId: Long, offset: Int) {
+        val screens = screensOf(profileId)
+        val index = screens.indexOfFirst { it.id == boardId }
+        if (index < 0) throw ScreenNotFoundException(boardId)
+        val neighbor = screens.getOrNull(index + offset.coerceIn(-1, 1)) ?: return
+        val position = checkNotNull(screens[index].screenPosition)
+        val neighborPosition = checkNotNull(neighbor.screenPosition)
+        setScreenPosition(boardId, SWAP_SCREEN_POSITION)
+        setScreenPosition(neighbor.id, position)
+        setScreenPosition(boardId, neighborPosition)
     }
 
     @Query("SELECT photo_file FROM cells WHERE photo_file IS NOT NULL AND board_id IN (SELECT id FROM boards WHERE profile_id = :profileId)")
@@ -251,7 +314,7 @@ abstract class BoardDao {
     abstract suspend fun updateCellContent(cellId: Long, label: String, pictogramId: Long?, category: String?, photoFile: String?, spokenText: String?): Int
 
     @Query("UPDATE boards SET name = :name WHERE id = :boardId")
-    abstract suspend fun renameBoard(boardId: Long, name: String)
+    abstract suspend fun renameBoard(boardId: Long, name: String): Int
 
     @Query("SELECT * FROM cells WHERE id = :cellId")
     abstract suspend fun cell(cellId: Long): CellEntity?
@@ -324,26 +387,37 @@ abstract class BoardDao {
     }
 
     /**
-     * Supprime une case et, si c'est un dossier, les grilles de son sous-arbre que plus rien ne
-     * vise. RESTRICT se vérifie ligne à ligne : une grille n'est supprimée que quand aucune case ne
-     * la vise, et la cascade retire ses cases, donc ses liens vers les grilles suivantes. Une grille
-     * encore visée ailleurs, ou dans [protectedBoardIds], reste ; un cycle ne boucle pas. Rend les
-     * grilles supprimées et les photos des cases parties avec elles, à effacer ensuite.
+     * Supprime une case et, si c'est un dossier, les grilles de son sous-arbre que plus rien ne vise.
+     * Les écrans, lus ici, et [protectedBoardIds] ne partent jamais. Rend les grilles supprimées et les
+     * photos des cases parties avec elles, à effacer ensuite.
      */
     @Transaction
     open suspend fun deleteCellAndOrphanBoards(cellId: Long, protectedBoardIds: Set<Long>): DeletedCells {
         val deletedCell = cell(cellId)
-        val photoFiles = listOfNotNull(deletedCell?.photoFile).toMutableList()
+        val photoFiles = listOfNotNull(deletedCell?.photoFile)
         val folderBoardId = deletedCell?.linkedBoardId
         deleteCell(cellId)
         if (folderBoardId == null) return DeletedCells(boardCount = 0, photoFiles = photoFiles)
+        val subtree = deleteOrphanSubtree(folderBoardId, protectedBoardIds + allScreenIds())
+        return subtree.copy(photoFiles = photoFiles + subtree.photoFiles)
+    }
+
+    /**
+     * Supprime [rootBoardId] et les grilles qu'elle ouvre, de proche en proche, dès que plus rien ne
+     * les vise (à appeler dans une transaction). RESTRICT se vérifie ligne à ligne : une grille n'est
+     * supprimée que quand aucune case ne la vise, et la cascade retire ses cases, donc ses liens vers
+     * les grilles suivantes. Une grille encore visée ailleurs, ou dans [protectedBoardIds], reste ; un
+     * cycle ne boucle pas.
+     */
+    protected suspend fun deleteOrphanSubtree(rootBoardId: Long, protectedBoardIds: Set<Long>): DeletedCells {
         val candidates = LinkedHashSet<Long>()
-        val toVisit = ArrayDeque(listOf(folderBoardId))
+        val toVisit = ArrayDeque(listOf(rootBoardId))
         while (toVisit.isNotEmpty()) {
             val boardId = toVisit.removeFirst()
             if (candidates.add(boardId)) toVisit.addAll(linkedBoardIds(boardId))
         }
         candidates.removeAll(protectedBoardIds)
+        val photoFiles = ArrayList<String>()
         var deletedCount = 0
         while (true) {
             val orphans = candidates.filter { countLinksTo(it) == 0 }

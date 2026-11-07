@@ -55,6 +55,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.wobblebot.papotons.R
+import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.SentenceToken
 import com.wobblebot.papotons.domain.layoutGrid
@@ -70,6 +71,8 @@ import com.wobblebot.papotons.ui.settings.CaregiverActions
 import com.wobblebot.papotons.ui.settings.CaregiversViewModel
 import com.wobblebot.papotons.ui.settings.ProfileActions
 import com.wobblebot.papotons.ui.settings.ProfilesViewModel
+import com.wobblebot.papotons.ui.settings.ScreenActions
+import com.wobblebot.papotons.ui.settings.ScreensViewModel
 import com.wobblebot.papotons.ui.settings.SettingsContent
 import com.wobblebot.papotons.ui.settings.SettingsDialog
 import com.wobblebot.papotons.ui.settings.SettingsPage
@@ -106,6 +109,7 @@ data class BoardActions(
     val onCellLongClick: (Cell) -> Unit = {},
     val onVerbFormClick: (String) -> Unit = {},
     val onLeaveClick: () -> Unit = {},
+    val onScreenChosen: (Long) -> Unit = {},
 )
 
 /** Ce qu'ouvre le contrôle des adultes (code d'un accompagnant, ou calcul) quand il est passé. */
@@ -119,10 +123,12 @@ fun BoardRoute(
     backupViewModel: BackupViewModel = hiltViewModel(),
     profilesViewModel: ProfilesViewModel = hiltViewModel(),
     caregiversViewModel: CaregiversViewModel = hiltViewModel(),
+    screensViewModel: ScreensViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
     val backupState by backupViewModel.uiState.collectAsStateWithLifecycle()
     val profilesState by profilesViewModel.uiState.collectAsStateWithLifecycle()
+    val screensState by screensViewModel.uiState.collectAsStateWithLifecycle()
     // Collecté dès l'écran affiché : le contrôle ne doit pas attendre la lecture au moment de l'appui.
     val caregiversState by caregiversViewModel.uiState.collectAsStateWithLifecycle()
     val caregiverActions = remember(caregiversViewModel) {
@@ -135,6 +141,14 @@ fun BoardRoute(
             onRename = profilesViewModel::onRename,
             onDelete = profilesViewModel::onDelete,
             onExitLockChanged = profilesViewModel::onExitLockChanged,
+        )
+    }
+    val screenActions = remember(screensViewModel) {
+        ScreenActions(
+            onCreate = screensViewModel::onCreate,
+            onRename = screensViewModel::onRename,
+            onDelete = screensViewModel::onDelete,
+            onMove = screensViewModel::onMove,
         )
     }
     val backupFileNamePattern = stringResource(R.string.backup_file_name)
@@ -188,6 +202,7 @@ fun BoardRoute(
             onLeaveClick = {
                 if (isLeaveGated) gatedAction = GatedAction.LeaveApp else activity?.let(::leaveToHomeScreen)
             },
+            onScreenChosen = viewModel::onScreenChosen,
         )
     }
     // Utilisateur pas encore lu : pas d'épinglage (il serait demandé à chaque lancement d'un utilisateur
@@ -229,25 +244,26 @@ fun BoardRoute(
         if (state.isSettingsOpen) {
             profilesViewModel.onShown()
             caregiversViewModel.onShown()
+            screensViewModel.onShown()
         }
     }
     if (state.isSettingsOpen) {
         SettingsDialog(
             page = state.settingsPage ?: SettingsPage.Home,
             content = SettingsContent(
-                boardSize = state.boardSize,
-                settingFailure = state.settingFailure,
+                screens = state.board?.screens ?: persistentListOf(),
+                screensState = screensState,
+                newScreenSize = state.boardSize ?: BoardSize.STANDARD,
                 profiles = profilesState,
                 caregivers = caregiversState,
                 hasUnsavedChanges = backupState.hasUnsavedChanges,
-                isBoardShown = state.board != null,
                 // Relu seulement Réglages ouverts.
                 isAppPinned = rememberIsPinned(),
             ),
             profileActions = profileActions,
             caregiverActions = caregiverActions,
+            screenActions = screenActions,
             onPageChosen = viewModel::onSettingsPageChosen,
-            onBoardSizeChosen = viewModel::onBoardSizeChosen,
             onEditBoards = viewModel::onStartEditing,
             // La sauvegarde n'existe qu'en édition : on y entre, comme « Restaurer » des grilles perdues.
             onBackup = {
@@ -468,6 +484,11 @@ fun BoardScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
+            }
+            // Deux écrans au moins : leurs onglets, arrivés avec la grille (jamais une grille qui glisse ensuite).
+            val board = state.board
+            if (board != null && board.screens.size > 1) {
+                ScreenTabs(screens = board.screens, selectedId = board.rootId, onChosen = actions.onScreenChosen)
             }
             BoardContent(state, actions, Modifier.weight(1f).fillMaxWidth())
             // Toujours là, même pendant le chargement : les Réglages restent atteignables.

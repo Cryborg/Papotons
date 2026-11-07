@@ -2,6 +2,7 @@ package com.wobblebot.papotons.data.backup
 
 import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.board.CellEntity
+import com.wobblebot.papotons.data.board.withFirstScreens
 import com.wobblebot.papotons.data.photo.CELL_PHOTO_NAME
 import com.wobblebot.papotons.data.profile.FIRST_PROFILE_ID
 import com.wobblebot.papotons.data.profile.MAX_PROFILES
@@ -9,16 +10,18 @@ import com.wobblebot.papotons.data.profile.isValidProfileName
 import com.wobblebot.papotons.data.profile.NO_PROFILE
 import com.wobblebot.papotons.data.profile.ProfileEntity
 import com.wobblebot.papotons.data.profile.legacyCoreBoardId
-import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 
 /** Version du format de sauvegarde écrite par cette version de l'appli ; une plus récente est refusée. */
-const val BACKUP_FORMAT_VERSION = 2
+const val BACKUP_FORMAT_VERSION = 3
 
 /** Le format d'avant les utilisateurs : toutes ses grilles deviennent celles d'un seul. */
 private const val SINGLE_PROFILE_FORMAT_VERSION = 1
+
+/** Le format d'avant les écrans : l'écran de départ de chaque utilisateur devient son premier écran. */
+private const val BEFORE_SCREENS_FORMAT_VERSION = 2
 
 const val MANIFEST_PATH = "manifest.json"
 private const val OPEN_BOARD_FORMAT = "open-board-0.1"
@@ -79,6 +82,7 @@ private const val KEY_START_BOARD_ID = "ext_papotons_start_board_id"
 private const val KEY_EXIT_LOCKED = "ext_papotons_exit_locked"
 private const val KEY_PROFILE_ID = "ext_papotons_profile_id"
 private const val KEY_CORE_BOARD_ID = "ext_papotons_core_board_id"
+private const val KEY_SCREEN_POSITION = "ext_papotons_screen_position"
 
 /** Licence des pictos ARASAAC (invariant 5), sans adresse : aucune URL dans le code (invariant 1, `InvariantsTest`). */
 private val ARASAAC_LICENSE = mapOf(
@@ -139,6 +143,14 @@ fun validate(content: BackupContent) {
     // Un utilisateur sans grille ne s'ouvrirait jamais, et l'appli n'en produit pas (créé avec son
     // vocabulaire, supprimé avec ses grilles, en transaction).
     (profileIds - profileOfBoard.values.toSet()).firstOrNull()?.let { refuse(RefusalReason.Invalid, "Profile $it without boards") }
+    // Un dossier qui viserait un écran passe : une base migrée depuis des données abîmées peut en avoir
+    // un, et doit pouvoir s'exporter. Deux écrans au même rang, eux, la base les refuse (index unique).
+    val screenPlaces = HashSet<Pair<Long, Int>>()
+    for (board in boards) {
+        val position = board.screenPosition ?: continue
+        if (position < 0 || !screenPlaces.add(board.profileId to position)) refuse(RefusalReason.Invalid, "Screen ${board.id} position")
+    }
+    (profileIds - screenPlaces.map { it.first }.toSet()).firstOrNull()?.let { refuse(RefusalReason.Invalid, "Profile $it without screens") }
     val positions = HashSet<Triple<Long, Int, Int>>()
     for (cell in cells) {
         val profileId = profileOfBoard[cell.boardId] ?: refuse(RefusalReason.Invalid, "Cell in missing board ${cell.boardId}")
@@ -173,9 +185,10 @@ private fun checkLength(text: String, boardId: Long) {
 fun backupEntries(content: BackupContent, pictogramsInArchive: Set<Long>, photosInArchive: Set<String>): Map<String, String> {
     validate(content)
     val cellsByBoard = content.cells.groupBy { it.boardId }
-    // Pour les autres lecteurs seulement : l'accueil standard du premier utilisateur.
+    // Pour les autres lecteurs seulement : le premier écran du premier utilisateur.
     val firstProfileId = content.profiles.minOf { it.id }
-    val rootId = content.boards.firstOrNull { it.profileId == firstProfileId && it.coreBoardId == HOME_BOARD_ID }?.id ?: content.boards.minOf { it.id }
+    val rootId = content.boards.filter { it.profileId == firstProfileId && it.screenPosition != null }.minByOrNull { checkNotNull(it.screenPosition) }?.id
+        ?: content.boards.minOf { it.id }
     val boardPaths = JSONObject()
     val imagePaths = JSONObject()
     val entries = LinkedHashMap<String, String>()
@@ -228,6 +241,7 @@ fun backupEntries(content: BackupContent, pictogramsInArchive: Set<Long>, photos
             .put(KEY_IMAGES, JSONArray(images.values))
             .put(KEY_PROFILE_ID, board.profileId)
         board.coreBoardId?.let { boardJson.put(KEY_CORE_BOARD_ID, it) }
+        board.screenPosition?.let { boardJson.put(KEY_SCREEN_POSITION, it) }
         entries[boardPath(board.id)] = boardJson.toString()
     }
     val manifest = JSONObject()
@@ -236,10 +250,7 @@ fun backupEntries(content: BackupContent, pictogramsInArchive: Set<Long>, photos
         .put(KEY_PATHS, JSONObject().put(KEY_BOARDS, boardPaths).put(KEY_IMAGES, imagePaths))
         .put(KEY_BACKUP, BACKUP_FORMAT_VERSION)
         .put(KEY_PROFILES, JSONArray(content.profiles.map { profile ->
-            JSONObject().put(KEY_ID, profile.id).put(KEY_NAME, profile.name).also { json ->
-                profile.startBoardId?.let { json.put(KEY_START_BOARD_ID, it) }
-                json.put(KEY_EXIT_LOCKED, profile.isExitLocked)
-            }
+            JSONObject().put(KEY_ID, profile.id).put(KEY_NAME, profile.name).put(KEY_EXIT_LOCKED, profile.isExitLocked)
         }))
     val all = linkedMapOf(MANIFEST_PATH to manifest.toString()) + entries
     // Ce que la restauration refuserait ne s'écrit pas : une sauvegarde de Papotons se restaure toujours.
@@ -257,8 +268,8 @@ private fun order(board: BoardEntity, cells: List<CellEntity>): JSONArray {
     })
 }
 
-/** Le manifeste d'une sauvegarde de Papotons : ses grilles, et ses utilisateurs (`null` au format 1, d'avant eux). */
-data class BackupManifest(val boardPaths: List<String>, val profiles: List<ProfileEntity>?)
+/** Le manifeste d'une sauvegarde de Papotons : son format, ses grilles, et ses utilisateurs (`null` au format 1, d'avant eux). */
+data class BackupManifest(val version: Long, val boardPaths: List<String>, val profiles: List<ProfileEntity>?)
 
 /** Le manifeste d'une sauvegarde de Papotons, ou un refus. */
 fun readManifest(text: String): BackupManifest = parse {
@@ -271,14 +282,15 @@ fun readManifest(text: String): BackupManifest = parse {
     val boardPaths = boards.keys().asSequence().map { boards.opt(it) as? String ?: refuse(RefusalReason.Unreadable, "Board path") }.toList()
     // Un même chemin listé mille fois ferait relire mille fois la même grille.
     if (boardPaths.size != boardPaths.toSet().size) refuse(RefusalReason.Invalid, "Repeated board path")
-    if (version.toLong() == SINGLE_PROFILE_FORMAT_VERSION.toLong()) return@parse BackupManifest(boardPaths, profiles = null)
+    if (version.toLong() == SINGLE_PROFILE_FORMAT_VERSION.toLong()) return@parse BackupManifest(version.toLong(), boardPaths, profiles = null)
     val profiles = manifest.optJSONArray(KEY_PROFILES) ?: refuse(RefusalReason.Invalid, "No profiles")
     if (profiles.length() > MAX_PROFILES) refuse(RefusalReason.TooLarge, "${profiles.length()} profiles")
-    BackupManifest(boardPaths, (0 until profiles.length()).map { index ->
+    BackupManifest(version.toLong(), boardPaths, (0 until profiles.length()).map { index ->
         val profile = profiles.optJSONObject(index) ?: refuse(RefusalReason.Invalid, "Profile $index")
         ProfileEntity(
             id = profile.longOrNull(KEY_ID) ?: refuse(RefusalReason.Invalid, "Profile $index without id"),
             name = profile.stringOrNull(KEY_NAME) ?: refuse(RefusalReason.Invalid, "Profile $index without name"),
+            // Lu seulement au format 2 (le premier écran en dépend), jamais écrit depuis.
             startBoardId = profile.longOrNull(KEY_START_BOARD_ID),
             // Absent (sauvegarde d'avant l'option) : protégé, comme un nouvel utilisateur.
             isExitLocked = profile.booleanOrNull(KEY_EXIT_LOCKED) ?: true,
@@ -289,16 +301,22 @@ fun readManifest(text: String): BackupManifest = parse {
 /**
  * Le contenu d'une sauvegarde à partir de son manifeste et de ses grilles lues. Au format 1, toutes
  * les grilles deviennent celles d'un seul utilisateur, nommé [defaultProfileName], et les copies du
- * vocabulaire de base sont reconnues comme le fait la migration 3 → 4.
+ * vocabulaire de base sont reconnues comme le fait la migration 3 → 4. Aux formats 1 et 2, le premier
+ * écran de chaque utilisateur est choisi comme le fait la migration 4 → 5, et l'écran de départ, qui
+ * ne sert plus, n'est pas gardé.
  */
 fun backupContent(manifest: BackupManifest, boards: List<BoardEntity>, cells: List<CellEntity>, defaultProfileName: String): BackupContent {
-    if (manifest.profiles != null) return BackupContent(manifest.profiles, boards, cells)
-    val linkedBoardIds = cells.mapNotNullTo(HashSet()) { it.linkedBoardId }
+    if (manifest.version > BEFORE_SCREENS_FORMAT_VERSION) return BackupContent(checkNotNull(manifest.profiles), boards, cells)
+    val profiles = manifest.profiles ?: listOf(ProfileEntity(FIRST_PROFILE_ID, defaultProfileName, startBoardId = null))
+    val profiledBoards = if (manifest.profiles != null) {
+        boards
+    } else {
+        val linkedBoardIds = cells.mapNotNullTo(HashSet()) { it.linkedBoardId }
+        boards.map { board -> board.copy(profileId = FIRST_PROFILE_ID, coreBoardId = legacyCoreBoardId(board.id, isLinked = board.id in linkedBoardIds)) }
+    }
     return BackupContent(
-        profiles = listOf(ProfileEntity(FIRST_PROFILE_ID, defaultProfileName, startBoardId = null)),
-        boards = boards.map { board ->
-            board.copy(profileId = FIRST_PROFILE_ID, coreBoardId = legacyCoreBoardId(board.id, isLinked = board.id in linkedBoardIds))
-        },
+        profiles = profiles.map { it.copy(startBoardId = null) },
+        boards = withFirstScreens(profiles, profiledBoards, cells),
         cells = cells,
     )
 }
@@ -316,6 +334,8 @@ fun readBoard(text: String): Pair<BoardEntity, List<CellEntity>> = parse {
         // Absent au format 1 : posé ensuite par [backupContent] ; au format 2, un absent est refusé par [validate].
         profileId = json.longOrNull(KEY_PROFILE_ID) ?: NO_PROFILE,
         coreBoardId = json.longOrNull(KEY_CORE_BOARD_ID),
+        // Absent : un dossier (au format 3) ; aux formats 1 et 2, posé ensuite par [backupContent].
+        screenPosition = json.intOrNull(KEY_SCREEN_POSITION),
     )
     val buttons = json.optJSONArray(KEY_BUTTONS) ?: JSONArray()
     if (buttons.length() > MAX_CELLS) refuse(RefusalReason.TooLarge, "Board $boardId: ${buttons.length()} buttons")

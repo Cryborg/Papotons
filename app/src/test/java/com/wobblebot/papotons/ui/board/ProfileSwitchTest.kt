@@ -108,15 +108,16 @@ class ProfileSwitchTest {
         assertEquals(homeOf(anna), viewModel.state().board?.id)
     }
 
+    /** Un écran en grandes cases d'Anna (ids ≥ 1000) : sa taille se lit par l'id d'origine de la racine. */
     @Test
-    fun `the size of a second profile is read from the origin of its root, even in a folder`() = runTest(dispatcher) {
+    fun `the size of a second profile's screen is read from the origin of its root, even in a folder`() = runTest(dispatcher) {
         val anna = createAnna()
         repository.switchProfile(anna)
         val viewModel = startViewModel()
+        val annaLarge = repository.createScreen("Maison", BoardSize.LARGE_CELLS)
 
-        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
+        viewModel.onScreenChosen(annaLarge)
 
-        val annaLarge = dao.boards.value.single { it.profileId == anna && it.coreBoardId == BoardSize.LARGE_CELLS.homeBoardId }.id
         assertEquals(annaLarge, viewModel.state().board?.id)
         assertEquals(BoardSize.LARGE_CELLS, viewModel.state().boardSize)
         val folder = checkNotNull(viewModel.state().board).grid.flatten().filterNotNull().first { it.linkedBoardId != null }
@@ -125,15 +126,15 @@ class ProfileSwitchTest {
     }
 
     @Test
-    fun `a folder created under a second profile's large cells takes their folder size`() = runTest(dispatcher) {
+    fun `a folder created in a second profile's large cells screen takes their folder size`() = runTest(dispatcher) {
         val anna = createAnna()
+        repository.switchProfile(anna)
+        val annaLarge = repository.createScreen("Maison", BoardSize.LARGE_CELLS)
         // Les grandes cases sont pleines : une place libérée pour le dossier.
-        val annaLarge = dao.boards.value.single { it.profileId == anna && it.coreBoardId == BoardSize.LARGE_CELLS.homeBoardId }.id
         val freed = dao.cells.value.first { it.boardId == annaLarge && it.linkedBoardId == null }
         dao.cells.value -= freed
-        repository.switchProfile(anna)
         val viewModel = startViewModel()
-        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
+        viewModel.onScreenChosen(annaLarge)
         viewModel.onStartEditing()
 
         viewModel.onEmptySlotClick(freed.row, freed.column)
@@ -144,26 +145,17 @@ class ProfileSwitchTest {
         assertEquals(anna, created.profileId)
     }
 
-    /** Choisie pendant un changement encore en cours, la taille va au nouvel utilisateur, jamais à l'ancien. */
+    /** Les onglets sont ceux de l'utilisateur affiché : ceux de Léo ne restent pas chez Anna. */
     @Test
-    fun `a size chosen while a switch is still opening goes to the new profile`() = runTest(dispatcher) {
+    fun `switching profiles shows the tabs of the new profile`() = runTest(dispatcher) {
         val anna = createAnna()
-        val slowRead = CompletableDeferred<Unit>()
-        dao.nextProfileReadGate = slowRead
+        val leoSchool = repository.createScreen("École", BoardSize.LARGE_CELLS)
         val viewModel = startViewModel()
+        assertEquals(listOf(homeOf(FIRST_PROFILE_ID), leoSchool), viewModel.state().board?.screens?.map { it.id })
 
         repository.switchProfile(anna)
-        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
-        // La réouverture chez Anna est lente aussi : la taille ne doit pas passer pendant ce temps.
-        val slowReopening = CompletableDeferred<Unit>()
-        dao.nextProfileReadGate = slowReopening
-        slowRead.complete(Unit)
-        slowReopening.complete(Unit)
 
-        val annaLarge = dao.boards.value.single { it.profileId == anna && it.coreBoardId == BoardSize.LARGE_CELLS.homeBoardId }.id
-        assertEquals(annaLarge, viewModel.state().board?.id)
-        assertEquals(annaLarge, dao.profiles.value.single { it.id == anna }.startBoardId)
-        assertNull(dao.profiles.value.single { it.id == FIRST_PROFILE_ID }.startBoardId)
+        assertEquals(listOf(homeOf(anna)), viewModel.state().board?.screens?.map { it.id })
     }
 
     /** Invariant 2 : une préférence illisible ne doit jamais empêcher de parler. */

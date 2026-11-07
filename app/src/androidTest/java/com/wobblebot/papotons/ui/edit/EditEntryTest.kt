@@ -16,7 +16,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.wobblebot.papotons.MainActivity
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.ui.board.BoardViewModel
-import com.wobblebot.papotons.domain.BoardSize
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -25,10 +24,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 private const val SPLASH_TIMEOUT_MS = 10_000L
-
-/** L'accueil des grandes cases, tel que le vocabulaire de base le dessine. */
-private const val LARGE_CELLS_ROWS = 3
-private const val LARGE_CELLS_COLUMNS = 4
 
 /**
  * L'enfant n'entre ni dans les Réglages ni en édition par hasard : la roue dentée passe par le
@@ -134,26 +129,6 @@ class EditEntryTest {
 
         composeRule.onNodeWithText(string(R.string.about_arasaac_credit)).assertIsDisplayed()
     }
-
-    @Test
-    fun choosingTheLargeCellsOpensTheirHome() {
-        openSettings()
-
-        try {
-            // Dans sa sous-page, depuis l'accueil des Réglages.
-            composeRule.onNodeWithText(string(R.string.settings_board_size)).performScrollTo().performClick()
-            composeRule.onNodeWithText(string(R.string.board_size_large_cells)).performScrollTo().performClick()
-            composeRule.waitUntil(SPLASH_TIMEOUT_MS) { board()?.id == BoardSize.LARGE_CELLS.homeBoardId }
-            assertEquals(LARGE_CELLS_ROWS, board()?.grid?.size)
-            assertEquals(LARGE_CELLS_COLUMNS, board()?.grid?.first()?.size)
-        } finally {
-            // Remise en standard, même en échec : l'émulateur garde ses données d'un test à l'autre.
-            ViewModelProvider(composeRule.activity)[BoardViewModel::class.java].onBoardSizeChosen(BoardSize.STANDARD)
-            composeRule.waitUntil(SPLASH_TIMEOUT_MS) { board()?.id == BoardSize.STANDARD.homeBoardId }
-        }
-    }
-
-    private fun board() = ViewModelProvider(composeRule.activity)[BoardViewModel::class.java].uiState.value.board
 
     @Test
     fun theRightAnswerOpensTheSettingsThenTheEditMode() {

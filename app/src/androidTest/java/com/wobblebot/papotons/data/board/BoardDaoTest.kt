@@ -20,6 +20,10 @@ import org.junit.runner.RunWith
 
 private val LEO = ProfileEntity(id = 1, name = "Léo", startBoardId = null)
 
+/** Les grandes cases dans `CoreVocabulary` : l'accueil et son dossier. */
+private const val LARGE_CELLS_HOME_ID = 13L
+private const val LARGE_CELLS_FOOD_ID = 14L
+
 /** Ce que le DAO factice des tests JVM ne sait pas faire : index, clés étrangères, conflits. */
 @RunWith(AndroidJUnit4::class)
 class BoardDaoTest {
@@ -238,12 +242,14 @@ class BoardDaoTest {
     /** Le RESTRICT réel des dossiers imbriqués : les cases d'abord, puis les grilles, puis l'utilisateur ; l'autre reste. */
     @Test
     fun aProfileIsCreatedWithItsVocabularyAndDeletedWithAllItsBoards() = runBlocking {
-        val seed = CoreVocabulary.build { "label$it" }
+        val vocabulary = CoreVocabulary.build { "label$it" }
+        val seed = vocabulary.subtree(HOME_BOARD_ID)
         assertTrue(boardDao.seedIfEmpty(seed, "Léo"))
         val leoBoards = boardDao.allBoards()
 
         val anna = boardDao.insertProfileWithCoreVocabulary("Anna", seed)
-        val annaHome = checkNotNull(boardDao.startBoardCopyOf(anna, HOME_BOARD_ID))
+        val annaHome = checkNotNull(boardDao.firstScreenOf(anna))
+        boardDao.insertScreen(anna, "Maison", vocabulary.subtree(LARGE_CELLS_HOME_ID), LARGE_CELLS_HOME_ID)
         val nested = boardDao.insertFolder(BoardEntity(name = "dossier", rowCount = 1, columnCount = 1), word(6, 7, "dossier").copy(boardId = annaHome))
         boardDao.insertFolder(BoardEntity(name = "dedans", rowCount = 1, columnCount = 1), word(0, 0, "dedans").copy(boardId = nested))
         assertEquals(anna, boardDao.profileOf(nested))
@@ -254,7 +260,7 @@ class BoardDaoTest {
 
         val deleted = boardDao.deleteProfile(anna)
 
-        assertEquals(seed.boards.size + 2, deleted.boardCount)
+        assertEquals(seed.boards.size + 2 + 2, deleted.boardCount)
         assertEquals(listOf("anna.jpg"), deleted.photoFiles)
         assertEquals(leoBoards, boardDao.allBoards())
         assertEquals(leoCells, boardDao.allCells())
@@ -262,29 +268,63 @@ class BoardDaoTest {
         assertEquals(listOf(LEO.id), boardDao.allProfiles().map { it.id })
     }
 
-    /** Chaque requête par utilisateur ne regarde que ses grilles : le SQL réel, que le DAO factice imite. */
+    /** Chaque requête d'écrans ne regarde que les grilles de l'utilisateur : le SQL réel, que le DAO factice imite. */
     @Test
-    fun startBoardQueriesStayWithinTheProfile() = runBlocking {
-        val seed = CoreVocabulary.build { "label$it" }
-        boardDao.seedIfEmpty(seed, "Léo")
-        val anna = boardDao.insertProfileWithCoreVocabulary("Anna", seed)
-        val annaMedium = checkNotNull(boardDao.startBoardCopyOf(anna, 7))
+    fun screenQueriesStayWithinTheProfile() = runBlocking {
+        val vocabulary = CoreVocabulary.build { "label$it" }
+        boardDao.seedIfEmpty(vocabulary.subtree(HOME_BOARD_ID), "Léo")
+        val anna = boardDao.insertProfileWithCoreVocabulary("Anna", vocabulary.subtree(HOME_BOARD_ID))
+        val annaHome = checkNotNull(boardDao.firstScreenOf(anna))
+        val annaHouse = boardDao.insertScreen(anna, "Maison", vocabulary.subtree(LARGE_CELLS_HOME_ID), LARGE_CELLS_HOME_ID)
+        val annaHouseFolder = boardDao.allBoards().single { it.profileId == anna && it.coreBoardId == LARGE_CELLS_FOOD_ID }.id
 
-        assertTrue(annaMedium >= FIRST_USER_BOARD_ID)
-        assertEquals(7L, boardDao.startBoardCopyOf(LEO.id, 7))
-        assertTrue(boardDao.isStartBoardOf(annaMedium, anna))
-        assertFalse(boardDao.isStartBoardOf(7, anna))
-        assertFalse(boardDao.isStartBoardOf(annaMedium, LEO.id))
-        assertEquals(setOf(7L, 13L, annaMedium, checkNotNull(boardDao.startBoardCopyOf(anna, 13))), boardDao.copiesOf(setOf(7L, 13L)).toSet())
+        assertTrue(annaHome >= FIRST_USER_BOARD_ID)
+        assertEquals(HOME_BOARD_ID, boardDao.firstScreenOf(LEO.id))
+        assertTrue(boardDao.isScreenOf(annaHouse, anna))
+        assertFalse(boardDao.isScreenOf(annaHouse, LEO.id))
+        assertFalse(boardDao.isScreenOf(annaHouseFolder, anna))
+        assertEquals(listOf(annaHome, annaHouse), boardDao.screensOf(anna).map { it.id })
+        assertEquals("Maison", boardDao.screensOf(anna).last().name)
+        assertEquals(listOf(annaHome, annaHouse), boardDao.observeScreensBesides(annaHouseFolder).first().map { it.id })
+        assertEquals(setOf(HOME_BOARD_ID, annaHome, annaHouse), boardDao.allScreenIds().toSet())
+        assertEquals(0, boardDao.renameScreen(LEO.id, annaHouse, "Volé"))
         assertEquals(anna, boardDao.smallestOtherProfileWithBoards(LEO.id))
     }
 
+    /** L'index unique réel : deux écrans au même rang refusés, l'échange passe par un rang temporaire. */
     @Test
-    fun aBoardOpenedByAFolderIsNeverAStartBoard() = runBlocking {
-        boardDao.insertAll(listOf(home, folderBoard), listOf(folder))
+    fun screensSwapUnderTheUniqueIndexAndNeverShareAPlace() = runBlocking<Unit> {
+        val vocabulary = CoreVocabulary.build { "label$it" }
+        boardDao.seedIfEmpty(vocabulary.subtree(HOME_BOARD_ID), "Léo")
+        val house = boardDao.insertScreen(LEO.id, "Maison", vocabulary.subtree(LARGE_CELLS_HOME_ID), LARGE_CELLS_HOME_ID)
 
-        assertTrue(boardDao.isStartBoardOf(home.id, LEO.id))
-        assertFalse(boardDao.isStartBoardOf(folderBoard.id, LEO.id))
+        boardDao.moveScreen(LEO.id, house, -1)
+
+        assertEquals(listOf(house, HOME_BOARD_ID), boardDao.screensOf(LEO.id).map { it.id })
+        assertThrows(SQLiteConstraintException::class.java) {
+            runBlocking { boardDao.insertAll(listOf(BoardEntity(id = 3000, name = "doublon", rowCount = 1, columnCount = 1, profileId = LEO.id, screenPosition = 0)), emptyList()) }
+        }
+    }
+
+    /** Le RESTRICT réel : l'écran part avec ses dossiers imbriqués, l'autre écran et ses dossiers restent. */
+    @Test
+    fun aScreenIsDeletedWithItsNestedFoldersOnly() = runBlocking<Unit> {
+        val vocabulary = CoreVocabulary.build { "label$it" }
+        boardDao.seedIfEmpty(vocabulary.subtree(HOME_BOARD_ID), "Léo")
+        val leoBoards = boardDao.allBoards()
+        val house = boardDao.insertScreen(LEO.id, "Maison", vocabulary.subtree(LARGE_CELLS_HOME_ID), LARGE_CELLS_HOME_ID)
+        val houseFood = boardDao.allBoards().single { it.coreBoardId == LARGE_CELLS_FOOD_ID }.id
+        // Les grandes cases sont pleines : une place libérée pour le dossier.
+        boardDao.allCells().singleOrNull { it.boardId == houseFood && it.row == 1 && it.column == 2 }?.let { boardDao.deleteCell(it.id) }
+        val nested = boardDao.insertFolder(BoardEntity(name = "dedans", rowCount = 1, columnCount = 1), word(1, 2, "dedans").copy(boardId = houseFood))
+        boardDao.insertCell(word(0, 0, "Papi").copy(boardId = nested, photoFile = "papi.jpg"))
+
+        val deleted = boardDao.deleteScreen(LEO.id, house)
+
+        assertEquals(3, deleted.boardCount)
+        assertEquals(listOf("papi.jpg"), deleted.photoFiles)
+        assertEquals(leoBoards, boardDao.allBoards())
+        assertThrows(LastScreenException::class.java) { runBlocking { boardDao.deleteScreen(LEO.id, HOME_BOARD_ID) } }
     }
 
     /** Ensemble ou pas du tout : un utilisateur sans grille ne s'ouvrirait jamais et bloquerait l'export. */

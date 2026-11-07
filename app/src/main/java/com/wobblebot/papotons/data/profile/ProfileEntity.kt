@@ -27,8 +27,9 @@ fun isValidProfileName(name: String): Boolean = name.isNotBlank() && name.length
 
 /**
  * Un utilisateur : la personne qui communique, avec ses propres grilles (`boards.profile_id`).
- * [startBoardId] est l'écran de départ choisi (l'accueil d'une taille), sans clé étrangère : il est
- * revalidé à chaque lancement, et `null` ouvre l'accueil standard de l'utilisateur. [isExitLocked] :
+ * [startBoardId] : l'écran de départ choisi avant les écrans ; plus lu ni écrit depuis (le
+ * premier écran s'ouvre), seulement lu une fois par la migration 4 → 5 et par une sauvegarde au
+ * format 2. La colonne reste : la retirer recréerait la table. [isExitLocked] :
  * le bouton Bureau (quitter vers le bureau de la tablette) demande le contrôle des adultes ; vrai par
  * défaut, un enfant ne quitte pas l'appli par erreur.
  */

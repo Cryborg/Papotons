@@ -2,6 +2,7 @@ package com.wobblebot.papotons.data
 
 import androidx.room.testing.MigrationTestHelper
 import com.wobblebot.papotons.R
+import com.wobblebot.papotons.data.board.Migration4To5
 import com.wobblebot.papotons.data.profile.ProfileEntity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -111,6 +112,46 @@ class MigrationTest {
             assertEquals(listOf(1L, 2L, 7L, null, null), boards.map { it.coreBoardId })
             assertEquals(6, cells.size)
             assertEquals(mapOf("manger" to 2L, "Mamie" to 13L, "animaux" to 1000L), cells.filter { it.linkedBoardId != null }.associate { it.label to it.linkedBoardId })
+        } finally {
+            database.close()
+        }
+    }
+
+    /**
+     * L'écran de départ de chaque utilisateur devient son premier écran, sans qu'aucun id, aucune case
+     * ni aucun lien ne bouge. Léo avait choisi les moyennes ; Anna n'avait rien choisi, et son accueil
+     * a un id plus grand que son dossier ; Zoé visait la grille de Léo (restauration) : son accueil.
+     */
+    @Test
+    fun version4StartBoardsBecomeFirstScreensWithoutLosingAnything() {
+        helper.createDatabase(DATABASE_NAME, 4).apply {
+            execSQL("INSERT INTO profiles (id, name, start_board_id) VALUES (1, 'Léo', 7), (2, 'Anna', NULL), (3, 'Zoé', 1)")
+            execSQL(
+                "INSERT INTO boards (id, name, row_count, column_count, profile_id, core_board_id) VALUES " +
+                    "(1, 'home', 2, 2, 1, 1), (2, 'food', 1, 1, 1, 2), (7, 'medium', 1, 1, 1, 7), " +
+                    "(1000, 'food', 1, 1, 2, 2), (1001, 'home', 2, 2, 2, 1), (1100, 'home', 1, 1, 3, 1)"
+            )
+            execSQL(
+                "INSERT INTO cells (id, board_id, grid_row, grid_column, label, linked_board_id) VALUES " +
+                    "(1, 1, 0, 0, 'manger', 2), (2, 7, 0, 0, 'je', NULL), (3, 1001, 1, 1, 'manger', 1000), (4, 1000, 0, 0, 'pomme', NULL)"
+            )
+            close()
+        }
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+
+        helper.runMigrationsAndValidate(DATABASE_NAME, 5, true, Migration4To5).apply {
+            query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
+            close()
+        }
+
+        val database = buildDatabase(context, DATABASE_NAME)
+        try {
+            val (_, boards, cells) = runBlocking { database.boardDao().snapshot() }
+            assertEquals(listOf(1L, 2L, 7L, 1000L, 1001L, 1100L), boards.map { it.id })
+            assertEquals(listOf(null, null, 0, null, 0, 0), boards.map { it.screenPosition })
+            assertEquals(4, cells.size)
+            assertEquals(mapOf(2L to 2L, 1000L to 1000L), cells.mapNotNull { it.linkedBoardId }.associateWith { it })
+            assertEquals(1001L, runBlocking { database.boardDao().firstScreenOf(2) })
         } finally {
             database.close()
         }

@@ -8,6 +8,7 @@ import androidx.room.RoomDatabase
 import com.wobblebot.papotons.data.board.BoardDao
 import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.board.CellEntity
+import com.wobblebot.papotons.data.board.Migration4To5
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.data.profile.Migration3To4
 import com.wobblebot.papotons.data.profile.ProfileEntity
@@ -19,7 +20,7 @@ import com.wobblebot.papotons.data.profile.ProfileEntity
  */
 @Database(
     entities = [ProfileEntity::class, BoardEntity::class, CellEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
     autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
@@ -38,7 +39,7 @@ abstract class PapotonsDatabase : RoomDatabase() {
 fun buildDatabase(context: Context, name: String): PapotonsDatabase =
     Room.databaseBuilder(context, PapotonsDatabase::class.java, name)
         .openHelperFactory(CorruptionCopyingOpenHelperFactory(context))
-        .addMigrations(migration3To4(context))
+        .addMigrations(migration3To4(context), Migration4To5)
         .build()
 
 /** Partagée avec MigrationTest : le nom du premier utilisateur vient des ressources. */

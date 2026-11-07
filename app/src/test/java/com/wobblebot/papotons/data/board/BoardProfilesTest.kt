@@ -87,21 +87,22 @@ class BoardProfilesTest {
     }
 
     @Test
-    fun `each profile keeps its own size`() = runTest {
+    fun `each profile keeps its own screens`() = runTest {
         val dao = FakeBoardDao()
         val repository = freshRepository(dao)
         val anna = repository.createProfile("Anna")
         repository.switchProfile(anna)
         repository.ensureHomeBoard()
 
-        val annaMedium = checkNotNull(repository.setStartBoard(BoardSize.MEDIUM))
+        val annaHouse = repository.createScreen("Maison", BoardSize.MEDIUM)
+        repository.moveScreen(annaHouse, -1)
 
-        assertNotEquals(BoardSize.MEDIUM.homeBoardId, annaMedium)
-        assertEquals(BoardSize.MEDIUM.homeBoardId, dao.boards.value.single { it.id == annaMedium }.coreBoardId)
+        assertEquals(anna, dao.boards.value.single { it.id == annaHouse }.profileId)
+        assertEquals(BoardSize.MEDIUM.homeBoardId, dao.boards.value.single { it.id == annaHouse }.coreBoardId)
         repository.switchProfile(FIRST_PROFILE_ID)
         assertEquals(HOME_BOARD_ID, repository.ensureHomeBoard())
         repository.switchProfile(anna)
-        assertEquals(annaMedium, repository.ensureHomeBoard())
+        assertEquals(annaHouse, repository.ensureHomeBoard())
     }
 
     /** Écrit pendant un changement d'utilisateur, un dossier ne doit jamais relier deux utilisateurs. */
@@ -177,11 +178,12 @@ class BoardProfilesTest {
     }
 
     @Test
-    fun `deleting a folder never deletes the size home of a profile added later`() = runTest {
+    fun `deleting a folder never deletes a screen of a profile added later`() = runTest {
         val dao = FakeBoardDao()
         val repository = freshRepository(dao)
         val anna = repository.createProfile("Anna")
-        val annaLarge = dao.boards.value.single { it.profileId == anna && it.coreBoardId == BoardSize.LARGE_CELLS.homeBoardId }.id
+        repository.switchProfile(anna)
+        val annaLarge = repository.createScreen("Maison", BoardSize.LARGE_CELLS)
         val annaHome = dao.homeOf(anna)
         repository.addWord(annaHome, 6, 7, CellContent("porte", null, null, null, null))
         val door = dao.cells.value.single { it.label == "porte" }

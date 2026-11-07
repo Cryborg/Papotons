@@ -29,6 +29,4 @@
     <!-- Entre deux prénoms d'une liste (confirmation de restauration). -->
     <string name="names_separator">", "</string>
     <string name="profile_limit_reached">%1$d utilisateurs au plus.</string>
-    <!-- Titre de la taille des cases : elle ne vaut que pour l'utilisateur ouvert. -->
-    <string name="settings_board_size_of">Taille des cases (%1$s)</string>
 </resources>

@@ -12,6 +12,7 @@ import com.wobblebot.papotons.data.board.BoardRepository
 import com.wobblebot.papotons.data.board.CellEntity
 import com.wobblebot.papotons.data.board.FakeBoardDao
 import com.wobblebot.papotons.data.pictogram.PictogramResult
+import com.wobblebot.papotons.data.profile.FIRST_PROFILE_ID
 import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.CellContent
 import com.wobblebot.papotons.domain.ConjugationTable
@@ -636,125 +637,110 @@ class BoardViewModelTest {
 
     private fun BoardViewModel.cellNamed(label: String): Cell = checkNotNull(state().board).grid.flatten().filterNotNull().first { it.label == label }
 
-    // Deux jeux réduits : « grandes cases » (accueil 13 et son dossier 14, à la taille de ses
-    // dossiers) et « moyennes » (accueil 7 seul).
-    private val sizedBoards = boards + listOf(
-        BoardEntity(id = BoardSize.LARGE_CELLS.homeBoardId, name = "large", rowCount = 1, columnCount = 2),
+    // Deux écrans : l'accueil (1, standard) et « grandes cases » (13, et son dossier 14, à la taille de ses
+    // dossiers), plus l'accueil moyen (7) caché, comme sur un appareil d'avant les écrans.
+    private val screenBoards = boards.map { if (it.id == HOME_BOARD_ID) it.copy(screenPosition = 0) else it } + listOf(
+        BoardEntity(id = BoardSize.LARGE_CELLS.homeBoardId, name = "large", rowCount = 1, columnCount = 2, screenPosition = 1),
         BoardEntity(id = 14, name = "large food", rowCount = 2, columnCount = 3),
         BoardEntity(id = BoardSize.MEDIUM.homeBoardId, name = "medium", rowCount = 1, columnCount = 1),
     )
-    private val sizedCells = cells + listOf(
+    private val screenCells = cells + listOf(
         CellEntity(id = 20, boardId = BoardSize.LARGE_CELLS.homeBoardId, row = 0, column = 0, label = "food", linkedBoardId = 14, pictogramId = null, category = null),
     )
 
     @Test
-    fun `choosing a size saves it and opens its home, keeping the sentence`() = runTest(dispatcher) {
-        val dao = FakeBoardDao(sizedBoards, sizedCells)
-        val viewModel = startViewModel(dao)
-        viewModel.tap("je")
-        assertEquals(BoardSize.STANDARD, viewModel.state().boardSize)
+    fun `the tabs come with the board, in their order`() = runTest(dispatcher) {
+        val viewModel = startViewModel(FakeBoardDao(screenBoards, screenCells))
 
-        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
+        val board = checkNotNull(viewModel.state().board)
+        assertEquals(listOf(HOME_BOARD_ID, BoardSize.LARGE_CELLS.homeBoardId), board.screens.map { it.id })
+        assertEquals(listOf(BoardSize.STANDARD, BoardSize.LARGE_CELLS), board.screens.map { it.size })
+        assertEquals(HOME_BOARD_ID, board.rootId)
+    }
+
+    @Test
+    fun `choosing a tab opens that screen at its root, keeping the sentence`() = runTest(dispatcher) {
+        val viewModel = startViewModel(FakeBoardDao(screenBoards, screenCells))
+        viewModel.tap("je")
+        viewModel.tap("A")
+
+        viewModel.onScreenChosen(BoardSize.LARGE_CELLS.homeBoardId)
 
         assertEquals(BoardSize.LARGE_CELLS.homeBoardId, viewModel.state().board?.id)
+        assertEquals(false, viewModel.state().board?.canGoBack)
         assertEquals(BoardSize.LARGE_CELLS, viewModel.state().boardSize)
         assertEquals(listOf("je"), viewModel.messageTexts())
-        assertNull(viewModel.state().settingFailure)
-        // Retenue : un nouveau lancement ouvre la même taille.
-        assertEquals(BoardSize.LARGE_CELLS.homeBoardId, startViewModel(dao, voice = FakeSpeaker()).state().board?.id)
     }
 
+    /** Depuis un dossier de l'écran, son onglet reste marqué, et « Accueil » ramène à cet écran. */
     @Test
-    fun `a size that cannot be saved changes nothing and is reported`() = runTest(dispatcher) {
-        val dao = FakeBoardDao(sizedBoards, sizedCells)
-        val viewModel = startViewModel(dao)
-        dao.startBoardWriteFailure = SQLiteException("disk full")
+    fun `inside a folder the tab of its screen stays marked and home returns to that screen`() = runTest(dispatcher) {
+        val viewModel = startViewModel(FakeBoardDao(screenBoards, screenCells))
+        viewModel.onScreenChosen(BoardSize.LARGE_CELLS.homeBoardId)
+        viewModel.tap("food")
 
-        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
+        assertEquals(14L, viewModel.state().board?.id)
+        assertEquals(BoardSize.LARGE_CELLS.homeBoardId, viewModel.state().board?.rootId)
+        viewModel.onHome()
+        assertEquals(BoardSize.LARGE_CELLS.homeBoardId, viewModel.state().board?.id)
+    }
 
-        assertEquals(SettingFailure.NotSaved, viewModel.state().settingFailure)
-        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
-        assertEquals(BoardSize.STANDARD, viewModel.state().boardSize)
+    /** Le premier onglet s'ouvre au lancement : le rang décide, pas l'id. */
+    @Test
+    fun `the first screen by position opens at launch`() = runTest(dispatcher) {
+        val reordered = screenBoards.map {
+            when (it.id) {
+                HOME_BOARD_ID -> it.copy(screenPosition = 4)
+                BoardSize.LARGE_CELLS.homeBoardId -> it.copy(screenPosition = 2)
+                else -> it
+            }
+        }
 
-        // Le message ne reste pas : un nouvel essai réussi l'efface.
-        dao.startBoardWriteFailure = null
-        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
-        assertNull(viewModel.state().settingFailure)
+        val viewModel = startViewModel(FakeBoardDao(reordered, screenCells))
+
         assertEquals(BoardSize.LARGE_CELLS.homeBoardId, viewModel.state().board?.id)
     }
 
     @Test
-    fun `a size that cannot be checked is reported instead of crashing`() = runTest(dispatcher) {
-        val dao = FakeBoardDao(sizedBoards, sizedCells)
-        val viewModel = startViewModel(dao)
-        dao.existsFailure = SQLiteException("disk I/O error")
-
-        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
-
-        assertEquals(SettingFailure.NotSaved, viewModel.state().settingFailure)
-        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
-    }
-
-    /** Grilles restaurées d'avant les tailles : l'accueil des moyennes n'y est pas. */
-    @Test
-    fun `a size missing from the boards is reported and nothing is saved`() = runTest(dispatcher) {
-        val dao = FakeBoardDao(boards, cells)
-        val viewModel = startViewModel(dao)
-
-        viewModel.onBoardSizeChosen(BoardSize.MEDIUM)
-
-        assertEquals(SettingFailure.Unavailable, viewModel.state().settingFailure)
-        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
-        assertNull(dao.profiles.value.single().startBoardId)
-    }
-
-    /** Choisie pendant le premier lancement : la taille attend l'insertion du vocabulaire, qui contient son accueil. */
-    @Test
-    fun `a size chosen while the home is still opening waits for it`() = runTest(dispatcher) {
-        val dao = FakeBoardDao().apply { insertGate = CompletableDeferred() }
-        val viewModel = startViewModel(dao)
-
-        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
-        checkNotNull(dao.insertGate).complete(Unit)
-
-        assertNull(viewModel.state().settingFailure)
-        assertEquals(BoardSize.LARGE_CELLS.homeBoardId, viewModel.state().board?.id)
-    }
-
-    /** Deux appuis rapides : le second gagne, même si le premier écrit plus lentement. */
-    @Test
-    fun `the last size chosen wins over a slower earlier choice`() = runTest(dispatcher) {
-        val dao = FakeBoardDao(sizedBoards, sizedCells)
-        val viewModel = startViewModel(dao)
-        val slowWrite = CompletableDeferred<Unit>()
-        preferences.nextWriteGate = slowWrite
-
-        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
-        viewModel.onBoardSizeChosen(BoardSize.MEDIUM)
-        slowWrite.complete(Unit)
-
-        assertEquals(BoardSize.MEDIUM.homeBoardId, viewModel.state().board?.id)
-        assertEquals(BoardSize.MEDIUM.homeBoardId, startViewModel(dao, voice = FakeSpeaker()).state().board?.id)
-    }
-
-    @Test
-    fun `a board opened inside a size survives the process death`() = runTest(dispatcher) {
-        val dao = FakeBoardDao(sizedBoards, sizedCells)
-        startViewModel(dao).onBoardSizeChosen(BoardSize.LARGE_CELLS)
+    fun `a stack saved on another screen survives the process death`() = runTest(dispatcher) {
         val savedState = SavedStateHandle(mapOf(NAVIGATION_KEY to longArrayOf(BoardSize.LARGE_CELLS.homeBoardId, 14)))
 
-        val restored = startViewModel(dao, savedState = savedState, voice = FakeSpeaker())
+        val restored = startViewModel(FakeBoardDao(screenBoards, screenCells), savedState = savedState)
 
         assertEquals(14L, restored.state().board?.id)
         assertEquals(BoardSize.LARGE_CELLS, restored.state().boardSize)
     }
 
-    /** Dans un dossier du jeu (pile [13, 14]) : la taille vient de la racine, pas de la grille ouverte. */
+    /** L'accueil moyen n'est pas un écran : une pile qui part de lui ne se garde pas. */
     @Test
-    fun `a folder created in a size takes the folder size of that size`() = runTest(dispatcher) {
-        val dao = FakeBoardDao(sizedBoards, sizedCells)
+    fun `a saved stack that does not start at a screen is dropped`() = runTest(dispatcher) {
+        val savedState = SavedStateHandle(mapOf(NAVIGATION_KEY to longArrayOf(BoardSize.MEDIUM.homeBoardId)))
+
+        val restored = startViewModel(FakeBoardDao(screenBoards, screenCells), savedState = savedState)
+
+        assertEquals(HOME_BOARD_ID, restored.state().board?.id)
+    }
+
+    /** Supprimé dans les Réglages pendant qu'il est affiché, même depuis un de ses dossiers : le premier écran revient. */
+    @Test
+    fun `a shown screen deleted in the settings gives way to the first screen`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(screenBoards, screenCells)
         val viewModel = startViewModel(dao)
-        viewModel.onBoardSizeChosen(BoardSize.LARGE_CELLS)
+        viewModel.onScreenChosen(BoardSize.LARGE_CELLS.homeBoardId)
+        viewModel.tap("food")
+
+        dao.deleteScreen(FIRST_PROFILE_ID, BoardSize.LARGE_CELLS.homeBoardId)
+
+        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
+        assertEquals(listOf(HOME_BOARD_ID), viewModel.state().board?.screens?.map { it.id })
+    }
+
+    /** Dans un dossier de l'écran (pile [13, 14]) : la taille vient de la racine, pas de la grille ouverte. */
+    @Test
+    fun `a folder created in a large cells screen takes their folder size`() = runTest(dispatcher) {
+        val dao = FakeBoardDao(screenBoards, screenCells)
+        val viewModel = startViewModel(dao)
+        viewModel.onScreenChosen(BoardSize.LARGE_CELLS.homeBoardId)
         viewModel.tap("food")
         assertEquals(14L, viewModel.state().board?.id)
         viewModel.onStartEditing()
@@ -764,6 +750,7 @@ class BoardViewModelTest {
 
         val folder = dao.boards.value.single { it.name == "Animaux" }
         assertEquals(BoardSize.LARGE_CELLS.folderRowCount to BoardSize.LARGE_CELLS.folderColumnCount, folder.rowCount to folder.columnCount)
+        assertNull(folder.screenPosition)
     }
 
     @Test

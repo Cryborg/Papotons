@@ -57,7 +57,7 @@ class BoardRepositoryTest {
     }
 
     @Test
-    fun `the first launch inserts the whole core vocabulary once`() = runTest {
+    fun `the first launch inserts the standard core vocabulary once`() = runTest {
         val dao = FakeBoardDao()
         val repository = BoardRepository(dao, preferences, context)
 
@@ -65,7 +65,7 @@ class BoardRepositoryTest {
         repository.ensureHomeBoard()
 
         assertEquals(1, dao.insertCount)
-        val seed = CoreVocabulary.build { "label$it" }
+        val seed = CoreVocabulary.build { "label$it" }.subtree(HOME_BOARD_ID)
         assertEquals(seed.boards.size, dao.boards.value.size)
         assertEquals(seed.cells.size, dao.cells.value.size)
         val home = checkNotNull(repository.observeBoard(HOME_BOARD_ID).first())

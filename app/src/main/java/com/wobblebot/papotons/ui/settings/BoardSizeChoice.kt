@@ -33,7 +33,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.BoardSize
-import com.wobblebot.papotons.ui.board.SettingFailure
 
 private val CARD_PADDING = 16.dp
 private val CARD_SPACING = 12.dp
@@ -66,22 +65,14 @@ private fun BoardSize.description(): Int = when (this) {
 
 /**
  * Les trois tailles en cartes empilées (lisibles à police agrandie), groupe radio : le bouton radio dit
- * le choix, le contour le souligne. Appliquée dès l'appui : la grille de la taille s'ouvre derrière.
+ * le choix, le contour le souligne. Le choix de la taille d'un nouvel écran.
  */
 @Composable
-fun BoardSizePage(current: BoardSize?, failure: SettingFailure?, onChosen: (BoardSize) -> Unit) {
-    PageExplanation(stringResource(R.string.settings_board_size_explanation))
+fun BoardSizeChoice(selected: BoardSize, onChosen: (BoardSize) -> Unit) {
     Column(modifier = Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(CARD_SPACING)) {
         for (size in BoardSize.entries) {
-            BoardSizeCard(size, isSelected = size == current, onClick = { onChosen(size) })
+            BoardSizeCard(size, isSelected = size == selected, onClick = { onChosen(size) })
         }
-    }
-    if (failure != null) {
-        val message = when (failure) {
-            SettingFailure.NotSaved -> R.string.settings_board_size_failed
-            SettingFailure.Unavailable -> R.string.settings_board_size_unavailable
-        }
-        FailureText(stringResource(message))
     }
 }
 

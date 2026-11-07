@@ -41,7 +41,7 @@ class DatabaseCorruptionTest {
         buildDatabase(context, DATABASE_NAME).apply {
             runBlocking {
                 boardDao().insertProfile(ProfileEntity(id = 1, name = "Léo", startBoardId = null))
-                boardDao().insertAll(listOf(BoardEntity(id = 1, name = "home", rowCount = 1, columnCount = 1, profileId = 1)), emptyList())
+                boardDao().insertAll(listOf(BoardEntity(id = 1, name = "home", rowCount = 1, columnCount = 1, profileId = 1, screenPosition = 0)), emptyList())
             }
             close()
         }
@@ -92,7 +92,7 @@ class DatabaseCorruptionTest {
                 assertNull(withTimeout(EMISSION_TIMEOUT_MS) { emissions.receive() })
 
                 database.boardDao().insertProfile(ProfileEntity(id = 1, name = "Léo", startBoardId = null))
-                database.boardDao().insertAll(listOf(BoardEntity(id = 1, name = "home", rowCount = 1, columnCount = 1, profileId = 1)), emptyList())
+                database.boardDao().insertAll(listOf(BoardEntity(id = 1, name = "home", rowCount = 1, columnCount = 1, profileId = 1, screenPosition = 0)), emptyList())
 
                 assertNotNull(withTimeout(EMISSION_TIMEOUT_MS) { emissions.receive() })
                 collector.cancel()

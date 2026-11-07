@@ -313,7 +313,7 @@ class BoardBackup @Inject constructor(
             cells += boardCells
             if (cells.size > MAX_CELLS) refuse(RefusalReason.TooLarge, "More than $MAX_CELLS cells")
         }
-        if (manifest.profiles == null) Log.i(TAG, "Backup from before profiles, read as a single profile")
+        if (manifest.version < BACKUP_FORMAT_VERSION) Log.i(TAG, "Backup in format ${manifest.version}, read with its first screens")
         val content = backupContent(manifest, boards, cells, context.getString(R.string.profile_default_name))
         validate(content)
         // Les images aussi, avant la confirmation : un refus après elle viendrait trop tard.

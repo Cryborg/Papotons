@@ -63,7 +63,7 @@ class BoardBackupTest {
     private val pictograms = PictogramImages(context)
 
     private val boards = listOf(
-        BoardEntity(id = 1, name = "Accueil", rowCount = 2, columnCount = 2, profileId = 1),
+        BoardEntity(id = 1, name = "Accueil", rowCount = 2, columnCount = 2, profileId = 1, screenPosition = 0),
         BoardEntity(id = 7, name = "Manger", rowCount = 1, columnCount = 2, profileId = 1),
     )
 
@@ -116,7 +116,7 @@ class BoardBackupTest {
         val before = content()
         backup.export(Uri.fromFile(archive))
         // Tout part : autres grilles, images supprimées.
-        database.boardDao().replaceAll(listOf(ProfileEntity(id = 1, name = "Autre", startBoardId = null)), listOf(BoardEntity(1, "autre", 1, 1, profileId = 1)), listOf(cell(1, 0, 0, "autre")))
+        database.boardDao().replaceAll(listOf(ProfileEntity(id = 1, name = "Autre", startBoardId = null)), listOf(BoardEntity(1, "autre", 1, 1, profileId = 1, screenPosition = 0)), listOf(cell(1, 0, 0, "autre")))
         File(photosDirectory, PHOTO).delete()
         downloaded.delete()
 
@@ -181,7 +181,7 @@ class BoardBackupTest {
     @Test
     fun aRestoreGoesToTheEndEvenWhenItsCallerIsCancelled() = runBlocking {
         backup.export(Uri.fromFile(archive))
-        database.boardDao().replaceAll(listOf(ProfileEntity(id = 1, name = "Autre", startBoardId = null)), listOf(BoardEntity(1, "autre", 1, 1, profileId = 1)), listOf(cell(1, 0, 0, "autre")))
+        database.boardDao().replaceAll(listOf(ProfileEntity(id = 1, name = "Autre", startBoardId = null)), listOf(BoardEntity(1, "autre", 1, 1, profileId = 1, screenPosition = 0)), listOf(cell(1, 0, 0, "autre")))
         val pending = backup.analyze(Uri.fromFile(archive))
 
         val job = launch(start = CoroutineStart.UNDISPATCHED) { backup.restore(pending) }

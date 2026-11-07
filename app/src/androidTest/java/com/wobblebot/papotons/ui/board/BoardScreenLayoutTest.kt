@@ -51,6 +51,10 @@ import kotlinx.collections.immutable.toImmutableList
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import com.wobblebot.papotons.domain.Screen
+import com.wobblebot.papotons.domain.BoardSize
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotSelected
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -340,6 +344,29 @@ class BoardScreenLayoutTest {
         assertTrue("label ${label.width}, pictogram ${pictogram.width}", label.width > pictogram.width)
         assertTrue("label starts at ${label.top}, pictogram ends at ${pictogram.bottom}", pictogram.bottom <= label.top)
         assertEquals((pictogram.left + pictogram.right).value / 2, (label.left + label.right).value / 2, CENTER_TOLERANCE_DP)
+    }
+
+    /** Un seul écran : aucun onglet, la grille garde toute sa place. */
+    @Test
+    fun aSingleScreenShowsNoTabs() {
+        val oneScreen = homeState.copy(board = checkNotNull(homeState.board).copy(screens = persistentListOf(Screen(1, "Accueil", BoardSize.STANDARD))))
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = oneScreen, actions = noActions) } }
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.screen_tabs_description)).assertDoesNotExist()
+    }
+
+    /** Deux écrans : leurs onglets, l'ouvert marqué ; en toucher un l'ouvre. */
+    @Test
+    fun twoScreensShowTheirTabsAndATabOpensItsScreen() {
+        val chosen = mutableListOf<Long>()
+        val screens = persistentListOf(Screen(1, "Accueil", BoardSize.STANDARD), Screen(1000, "Maison", BoardSize.LARGE_CELLS))
+        val twoScreens = homeState.copy(board = checkNotNull(homeState.board).copy(screens = screens))
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = twoScreens, actions = noActions.copy(onScreenChosen = { chosen += it })) } }
+
+        composeRule.onNodeWithText("Accueil").assertIsSelected()
+        composeRule.onNodeWithText("Maison").assertIsNotSelected().performClick()
+
+        assertEquals(listOf(1000L), chosen)
     }
 
     @Test

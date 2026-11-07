@@ -17,8 +17,8 @@ private const val MISSING_PHOTO = "0a1b2c3d-0000-4000-8000-00000000000b.jpg"
 private const val DEFAULT_NAME = "Utilisateur"
 
 class BackupArchiveTest {
-    private val leo = ProfileEntity(id = 1, name = "Léo", startBoardId = 7)
-    private val home = BoardEntity(id = 1, name = "Accueil", rowCount = 2, columnCount = 3, profileId = 1, coreBoardId = 1)
+    private val leo = ProfileEntity(id = 1, name = "Léo", startBoardId = null)
+    private val home = BoardEntity(id = 1, name = "Accueil", rowCount = 2, columnCount = 3, profileId = 1, coreBoardId = 1, screenPosition = 0)
     private val food = BoardEntity(id = 7, name = "Manger", rowCount = 1, columnCount = 2, profileId = 1, coreBoardId = 2)
 
     /** Une grille inatteignable : elle existe en base, elle revient. */
@@ -206,11 +206,11 @@ class BackupArchiveTest {
     }
 
     @Test
-    fun `the root is the home board, or the smallest one without it`() {
+    fun `the root is the first screen by position, not by id`() {
         assertEquals("boards/1.obf", JSONObject(checkNotNull(entries()[MANIFEST_PATH])).getString("root"))
-        val withoutHome = BackupContent(listOf(leo), listOf(food, unreachable), cells.filter { it.boardId != 1L })
-        assertEquals("boards/7.obf", JSONObject(checkNotNull(entries(withoutHome)[MANIFEST_PATH])).getString("root"))
-        assertEquals(withoutHome.boards.toSet(), restore(entries(withoutHome)).boards.toSet())
+        val reordered = content.copy(boards = listOf(home.copy(screenPosition = 3), food, unreachable.copy(screenPosition = 1)))
+        assertEquals("boards/12.obf", JSONObject(checkNotNull(entries(reordered)[MANIFEST_PATH])).getString("root"))
+        assertEquals(reordered.boards.toSet(), restore(entries(reordered)).boards.toSet())
     }
 
     @Test
@@ -285,17 +285,19 @@ class BackupArchiveTest {
     }
 
     @Test
-    fun `every profile comes back with its boards, origins, start board and exit lock`() {
+    fun `every profile comes back with its boards, origins, screens and exit lock`() {
         // Léo protégé, Anna non : un aller-retour qui perdrait l'option la remettrait à protégé.
         val anna = ProfileEntity(id = 4, name = "Anna", startBoardId = null, isExitLocked = false)
-        val annaHome = BoardEntity(id = 1000, name = "Accueil", rowCount = 2, columnCount = 3, profileId = 4, coreBoardId = 1)
-        val twoProfiles = content.copy(profiles = listOf(leo, anna), boards = content.boards + annaHome, cells = cells + cell(20, 1000, 0, 0, "moi"))
+        // Deux écrans chez Anna, le second avant le premier par l'id : les rangs reviennent tels quels.
+        val annaHome = BoardEntity(id = 1000, name = "Accueil", rowCount = 2, columnCount = 3, profileId = 4, coreBoardId = 1, screenPosition = 5)
+        val annaHouse = BoardEntity(id = 1001, name = "Maison", rowCount = 3, columnCount = 4, profileId = 4, coreBoardId = 13, screenPosition = 2)
+        val twoProfiles = content.copy(profiles = listOf(leo, anna), boards = content.boards + annaHome + annaHouse, cells = cells + cell(20, 1000, 0, 0, "moi"))
 
         val restored = restore(entries(twoProfiles))
 
         assertEquals(twoProfiles.profiles, restored.profiles)
         assertEquals(twoProfiles.boards.toSet(), restored.boards.toSet())
-        assertEquals(listOf(1L, 1L, 1L, 4L), restored.boards.sortedBy { it.id }.map { it.profileId })
+        assertEquals(listOf(1L, 1L, 1L, 4L, 4L), restored.boards.sortedBy { it.id }.map { it.profileId })
     }
 
     private fun withExitLockOfFirstProfile(change: (JSONObject) -> Unit): Map<String, String> {
@@ -330,7 +332,7 @@ class BackupArchiveTest {
         archive[MANIFEST_PATH] = manifest.toString()
         for (board in content.boards) {
             archive[boardPath(board.id)] = JSONObject(checkNotNull(archive[boardPath(board.id)]))
-                .apply { remove("ext_papotons_profile_id"); remove("ext_papotons_core_board_id") }.toString()
+                .apply { remove("ext_papotons_profile_id"); remove("ext_papotons_core_board_id"); remove("ext_papotons_screen_position") }.toString()
         }
 
         val restored = restore(archive)
@@ -339,12 +341,66 @@ class BackupArchiveTest {
         // 7 est visé par un dossier : avant les tailles, c'était un dossier de l'adulte, pas l'accueil moyen.
         assertEquals(mapOf(1L to 1L, 7L to null, 12L to 12L), restored.boards.associate { it.id to it.coreBoardId })
         assertTrue(restored.boards.all { it.profileId == 1L })
+        assertEquals(mapOf(1L to 0, 7L to null, 12L to null), restored.boards.associate { it.id to it.screenPosition })
+    }
+
+    /** Une sauvegarde au format 2 : `content` écrit comme avant les écrans, avec l'écran de départ [startBoardId]. */
+    private fun beforeScreens(startBoardId: Long?, value: BackupContent = content): Map<String, String> {
+        val archive = entries(value).toMutableMap()
+        val manifest = JSONObject(checkNotNull(archive[MANIFEST_PATH])).put("ext_papotons_backup", 2)
+        manifest.getJSONArray("ext_papotons_profiles").getJSONObject(0).put("ext_papotons_start_board_id", startBoardId ?: JSONObject.NULL)
+        archive[MANIFEST_PATH] = manifest.toString()
+        for (board in value.boards) {
+            archive[boardPath(board.id)] = JSONObject(checkNotNull(archive[boardPath(board.id)])).apply { remove("ext_papotons_screen_position") }.toString()
+        }
+        return archive
+    }
+
+    @Test
+    fun `a backup from before screens opens on its start board, which is then forgotten`() {
+        val restored = restore(beforeScreens(startBoardId = 12))
+
+        assertEquals(mapOf(1L to null, 7L to null, 12L to 0), restored.boards.associate { it.id to it.screenPosition })
+        assertEquals(listOf(leo.copy(startBoardId = null)), restored.profiles)
+    }
+
+    /** L'écran de départ d'un format 2 qui vise un dossier : l'accueil standard le remplace. */
+    @Test
+    fun `a start board of a backup from before screens that is a folder gives way to the home`() {
+        val restored = restore(beforeScreens(startBoardId = 7))
+
+        assertEquals(mapOf(1L to 0, 7L to null, 12L to null), restored.boards.associate { it.id to it.screenPosition })
+    }
+
+    /** Données abîmées : toutes les grilles d'un utilisateur sont visées. L'export et la restauration passent quand même. */
+    @Test
+    fun `a profile whose boards are all opened by folders still restores and exports`() {
+        val cycle = content.copy(cells = cells + cell(30, 7, 0, 0).copy(linkedBoardId = 1) + cell(31, 12, 0, 1).copy(linkedBoardId = 12))
+
+        val restored = restore(beforeScreens(startBoardId = null, value = cycle))
+
+        assertEquals(mapOf(1L to 0, 7L to null, 12L to null), restored.boards.associate { it.id to it.screenPosition })
+        entries(restored)
+    }
+
+    @Test
+    fun `a profile without screens is refused`() {
+        assertRefused(RefusalReason.Invalid) { validate(content.copy(boards = listOf(home.copy(screenPosition = null), food, unreachable))) }
+    }
+
+    @Test
+    fun `two screens at one place or a negative place are refused`() {
+        assertRefused(RefusalReason.Invalid) { validate(content.copy(boards = listOf(home, food, unreachable.copy(screenPosition = 0)))) }
+        assertRefused(RefusalReason.Invalid) { validate(content.copy(boards = listOf(home.copy(screenPosition = -1), food, unreachable))) }
+        // Le même rang chez deux utilisateurs, lui, passe.
+        val anna = ProfileEntity(id = 2, name = "Anna", startBoardId = null)
+        validate(content.copy(profiles = listOf(leo, anna), boards = content.boards + home.copy(id = 1000, profileId = 2)))
     }
 
     @Test
     fun `a folder that opens another profile's board is refused`() {
         val anna = ProfileEntity(id = 2, name = "Anna", startBoardId = null)
-        val annaHome = BoardEntity(id = 1000, name = "Accueil", rowCount = 1, columnCount = 1, profileId = 2, coreBoardId = 1)
+        val annaHome = BoardEntity(id = 1000, name = "Accueil", rowCount = 1, columnCount = 1, profileId = 2, coreBoardId = 1, screenPosition = 0)
         val crossing = content.copy(profiles = listOf(leo, anna), boards = content.boards + annaHome, cells = cells + cell(20, 1000, 0, 0).copy(linkedBoardId = 7))
 
         assertRefused(RefusalReason.Invalid) { validate(crossing) }
@@ -383,7 +439,7 @@ class BackupArchiveTest {
     fun `the largest number of profiles passes, one more is refused`() {
         fun withProfiles(count: Int): BackupContent {
             val profiles = (1L..count).map { ProfileEntity(it, "p$it", startBoardId = null) }
-            val boards = profiles.map { BoardEntity(id = it.id, name = "b", rowCount = 1, columnCount = 1, profileId = it.id) }
+            val boards = profiles.map { BoardEntity(id = it.id, name = "b", rowCount = 1, columnCount = 1, profileId = it.id, screenPosition = 0) }
             return BackupContent(profiles, boards, emptyList())
         }
 
@@ -397,8 +453,8 @@ class BackupArchiveTest {
         val first = ProfileEntity(id = 1, name = "Léo", startBoardId = null)
         val second = ProfileEntity(id = 4, name = "Anna", startBoardId = null)
         val boards = listOf(
-            BoardEntity(id = 1, name = "Accueil", rowCount = 1, columnCount = 1, profileId = 4, coreBoardId = 1),
-            BoardEntity(id = 1001, name = "Accueil", rowCount = 1, columnCount = 1, profileId = 1, coreBoardId = 1),
+            BoardEntity(id = 1, name = "Accueil", rowCount = 1, columnCount = 1, profileId = 4, coreBoardId = 1, screenPosition = 0),
+            BoardEntity(id = 1001, name = "Accueil", rowCount = 1, columnCount = 1, profileId = 1, coreBoardId = 1, screenPosition = 0),
         )
 
         val manifest = JSONObject(checkNotNull(entries(BackupContent(listOf(second, first), boards, emptyList()))[MANIFEST_PATH]))

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Réglages, page Écrans : les écrans de l'utilisateur ouvert, un onglet chacun pour l'enfant. -->
+    <string name="settings_screens">Écrans</string>
+    <!-- %1$s : le prénom de l'utilisateur ouvert. -->
+    <string name="settings_screens_of">Écrans (%1$s)</string>
+    <string name="settings_screens_explanation">Chaque écran a ses propres cases. Dès qu\'il y a deux écrans, l\'enfant passe de l\'un à l\'autre par des onglets au-dessus de la grille. Le premier s\'ouvre au lancement.</string>
+    <!-- Sous le nom du premier écran de la liste. -->
+    <string name="screen_first">S\'ouvre au lancement</string>
+    <string name="screen_add">Ajouter un écran</string>
+    <string name="screen_limit_reached">%1$d écrans au plus.</string>
+    <!-- Lus par TalkBack sur les boutons d'une ligne : %1$s est le nom de l'écran. -->
+    <string name="screen_move_up_description">Monter %1$s</string>
+    <string name="screen_move_down_description">Descendre %1$s</string>
+    <string name="screen_edit_description">Modifier %1$s</string>
+    <string name="screen_new_title">Nouvel écran</string>
+    <string name="screen_new_explanation">Il reçoit le vocabulaire de base dans la taille choisie. Ensuite, en mode édition, remplacez ou complétez ses cases.</string>
+    <string name="screen_edit_title">Modifier l\'écran</string>
+    <string name="screen_name">Nom de l\'écran</string>
+    <string name="screen_name_missing">Écrivez un nom.</string>
+    <string name="screen_create">Créer</string>
+    <string name="screen_save">Enregistrer</string>
+    <string name="screen_cancel">Annuler</string>
+    <string name="screen_delete">Supprimer</string>
+    <string name="screen_delete_confirm_title">Supprimer %1$s ?</string>
+    <string name="screen_delete_confirm_text">L\'écran et ses dossiers seront supprimés pour de bon, photos comprises. Pensez à faire une sauvegarde avant.</string>
+    <string name="screen_not_created">L\'écran n\'a pas pu être créé. Réessayez.</string>
+    <string name="screen_not_renamed">Le nom n\'a pas pu être changé. Réessayez.</string>
+    <string name="screen_not_deleted">L\'écran n\'a pas pu être supprimé. Réessayez.</string>
+    <string name="screen_not_moved">L\'écran n\'a pas pu être déplacé. Réessayez.</string>
+    <!-- Onglets de l'enfant, lus par TalkBack sur la rangée. -->
+    <string name="screen_tabs_description">Écrans</string>
+</resources>

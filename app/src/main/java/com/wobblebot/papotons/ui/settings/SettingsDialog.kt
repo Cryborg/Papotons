@@ -55,9 +55,10 @@ import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.Caregiver
 import com.wobblebot.papotons.domain.Profile
+import com.wobblebot.papotons.domain.Screen
 import com.wobblebot.papotons.ui.about.AboutDialog
-import com.wobblebot.papotons.ui.board.SettingFailure
 import com.wobblebot.papotons.ui.hideNavigationBar
+import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 
 private const val TAG = "SettingsDialog"
@@ -79,14 +80,14 @@ private val PROFILE_CARD_BUTTON_BESIDE_MIN_WIDTH = 300.dp
 /** Ce qu'il faut aux Réglages en plus de la page ouverte. */
 @Immutable
 data class SettingsContent(
-    /** La taille de l'écran de départ ouvert, `null` pour un écran qui n'est l'accueil d'aucune taille. */
-    val boardSize: BoardSize?,
-    val settingFailure: SettingFailure?,
+    /** Les écrans de l'utilisateur ouvert, dans l'ordre des onglets ; vide tant qu'aucune grille n'est affichée. */
+    val screens: ImmutableList<Screen>,
+    val screensState: ScreensUiState,
+    /** La taille présélectionnée d'un nouvel écran : celle de l'écran affiché. */
+    val newScreenSize: BoardSize,
     val profiles: ProfilesUiState,
     val caregivers: CaregiversUiState,
     val hasUnsavedChanges: Boolean,
-    /** Une grille est affichée : sa taille est connue (ou reconnue comme hors des tailles). */
-    val isBoardShown: Boolean,
     /** L'appli est épinglée en ce moment (l'option cochée ne fait que le demander). */
     val isAppPinned: Boolean,
 )
@@ -104,8 +105,8 @@ fun SettingsDialog(
     content: SettingsContent,
     profileActions: ProfileActions,
     caregiverActions: CaregiverActions,
+    screenActions: ScreenActions,
     onPageChosen: (SettingsPage) -> Unit,
-    onBoardSizeChosen: (BoardSize) -> Unit,
     onEditBoards: () -> Unit,
     onBackup: () -> Unit,
     onClose: () -> Unit,
@@ -167,7 +168,7 @@ fun SettingsDialog(
                             )
                             SettingsPage.Profiles -> ProfilesPage(content.profiles, profileActions)
                             SettingsPage.Caregivers -> CaregiversPage(content.caregivers, caregiverActions)
-                            SettingsPage.BoardSize -> BoardSizePage(content.boardSize, content.settingFailure, onBoardSizeChosen)
+                            SettingsPage.Screens -> ScreensPage(content.screens, content.screensState, content.newScreenSize, screenActions)
                         }
                     }
                 }
@@ -184,9 +185,9 @@ private fun pageTitle(page: SettingsPage, content: SettingsContent): String = wh
     SettingsPage.Home -> stringResource(R.string.settings_title)
     SettingsPage.Profiles -> stringResource(R.string.settings_profiles)
     SettingsPage.Caregivers -> stringResource(R.string.settings_caregivers)
-    SettingsPage.BoardSize -> content.profiles.openProfileName()
-        ?.let { stringResource(R.string.settings_board_size_of, it) }
-        ?: stringResource(R.string.settings_board_size)
+    SettingsPage.Screens -> content.profiles.openProfileName()
+        ?.let { stringResource(R.string.settings_screens_of, it) }
+        ?: stringResource(R.string.settings_screens)
 }
 
 /** Fermer à l'accueil, revenir en sous-page ; le titre est le titre de la page. */
@@ -237,14 +238,11 @@ private fun ColumnScope.SettingsHome(
         SettingsRow(
             icon = R.drawable.ic_grid_view,
             badgeColors = gridBadgeColors(),
-            title = stringResource(R.string.settings_board_size),
-            // Grille pas encore lue : rien, plutôt que « Taille non reconnue » à tort.
-            summary = when {
-                !content.isBoardShown -> null
-                content.boardSize != null -> stringResource(content.boardSize.title())
-                else -> stringResource(R.string.settings_board_size_unknown)
-            },
-            onClick = { onPageChosen(SettingsPage.BoardSize) },
+            title = stringResource(R.string.settings_screens),
+            // Grille pas encore lue : rien, plutôt qu'une liste vide à tort.
+            summary = content.screens.takeIf { it.isNotEmpty() }?.joinToString(separator = stringResource(R.string.names_separator)) { it.name },
+            summaryMaxLines = NAMES_SUMMARY_MAX_LINES,
+            onClick = { onPageChosen(SettingsPage.Screens) },
         )
         if (openProfile != null) {
             SettingsDivider()
@@ -370,18 +368,18 @@ private fun SettingsDialogPreview() {
     SettingsDialog(
         page = SettingsPage.Home,
         content = SettingsContent(
-            boardSize = BoardSize.STANDARD,
-            settingFailure = null,
+            screens = persistentListOf(Screen(1, "Accueil", BoardSize.STANDARD), Screen(1000, "Maison", BoardSize.LARGE_CELLS)),
+            screensState = ScreensUiState(),
+            newScreenSize = BoardSize.STANDARD,
             profiles = ProfilesUiState(persistentListOf(Profile(1, "Léo", isExitLocked = true), Profile(2, "Anna", isExitLocked = false)), openProfileId = 1),
             caregivers = CaregiversUiState(persistentListOf(Caregiver(1, "Marie", codeResetAtMs = null))),
             hasUnsavedChanges = true,
-            isBoardShown = true,
             isAppPinned = false,
         ),
         profileActions = ProfileActions(onChosen = {}, onCreate = {}, onRename = { _, _ -> }, onDelete = {}, onExitLockChanged = { _, _ -> }),
         caregiverActions = CaregiverActions(onSave = { _, _, _ -> }, onDelete = {}),
+        screenActions = ScreenActions(onCreate = { _, _ -> }, onRename = { _, _ -> }, onDelete = {}, onMove = { _, _ -> }),
         onPageChosen = {},
-        onBoardSizeChosen = {},
         onEditBoards = {},
         onBackup = {},
         onClose = {},

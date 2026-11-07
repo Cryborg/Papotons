@@ -22,8 +22,9 @@ import kotlinx.coroutines.flow.map
  * dans BoardDaoTest.
  *
  * Commodité de départ : une grille de [boards] sans utilisateur est rangée chez l'utilisateur 1 (créé
- * s'il n'y a aucun [profiles]), avec l'id d'origine de la migration 3 → 4. Les écritures, elles, ne
- * reçoivent aucune commodité.
+ * s'il n'y a aucun [profiles]), avec l'id d'origine de la migration 3 → 4 ; si aucune grille n'est un
+ * écran, chaque utilisateur reçoit son premier écran comme dans la migration 4 → 5. Les écritures, elles,
+ * ne reçoivent aucune commodité. L'index unique des rangs d'écran est imité.
  */
 class FakeBoardDao(
     boards: List<BoardEntity> = emptyList(),
@@ -39,8 +40,14 @@ class FakeBoardDao(
                 val isLinked = cells.any { it.linkedBoardId == board.id }
                 board.copy(profileId = FIRST_PROFILE_ID, coreBoardId = legacyCoreBoardId(board.id, isLinked))
             }
-        }
+        }.let { profiled -> if (profiled.any { it.screenPosition != null }) profiled else withFirstScreens(profiles, profiled, cells) }
     )
+
+    /** Comme l'index unique `(profile_id, screen_position)`. */
+    private fun checkScreenPositions(allBoards: List<BoardEntity>) {
+        val places = allBoards.mapNotNull { board -> board.screenPosition?.let { board.profileId to it } }
+        if (places.size != places.toSet().size) throw SQLiteConstraintException("UNIQUE constraint failed: boards.profile_id, boards.screen_position")
+    }
     val cells = MutableStateFlow(cells)
 
     /** Comme la clé étrangère `boards.profile_id` : une grille vise un utilisateur qui existe. */
@@ -67,11 +74,8 @@ class FakeBoardDao(
         return boards.value.size
     }
 
-    /** Levée par `boardExists` et `startBoardCopyOf` (base illisible en cours d'usage). */
+    /** Levée par `boardExists` et `firstScreenOf` (base illisible en cours d'usage). */
     var existsFailure: RuntimeException? = null
-
-    /** Levée par `setStartBoard` (disque plein). */
-    var startBoardWriteFailure: RuntimeException? = null
 
     override suspend fun boardExists(boardId: Long): Boolean {
         existsFailure?.let { throw it }
@@ -87,6 +91,7 @@ class FakeBoardDao(
         insertGate?.await()
         insertFailure?.let { throw it }
         checkProfiles(boards)
+        checkScreenPositions(this.boards.value + boards)
         insertCount++
         val firstCellId = this.cells.value.size + 1L
         this.boards.value += boards
@@ -122,6 +127,7 @@ class FakeBoardDao(
         val id = if (board.id != 0L) board.id else (boards.value.maxOfOrNull { it.id } ?: 0) + 1
         if (boards.value.any { it.id == id }) throw SQLiteConstraintException("UNIQUE constraint failed: boards.id")
         checkProfiles(listOf(board))
+        checkScreenPositions(boards.value + board)
         boards.value += board.copy(id = id)
         return id
     }
@@ -134,8 +140,10 @@ class FakeBoardDao(
         return before.count { it.id == cellId }
     }
 
-    override suspend fun renameBoard(boardId: Long, name: String) {
-        boards.value = boards.value.map { if (it.id == boardId) it.copy(name = name) else it }
+    override suspend fun renameBoard(boardId: Long, name: String): Int {
+        val before = boards.value
+        boards.value = before.map { if (it.id == boardId) it.copy(name = name) else it }
+        return before.count { it.id == boardId }
     }
 
     override suspend fun cell(cellId: Long): CellEntity? = cells.value.firstOrNull { it.id == cellId }
@@ -226,11 +234,6 @@ class FakeBoardDao(
 
     override suspend fun setExitLocked(profileId: Long, isLocked: Boolean): Int = updateProfile(profileId) { it.copy(isExitLocked = isLocked) }
 
-    override suspend fun setStartBoard(profileId: Long, boardId: Long): Int {
-        startBoardWriteFailure?.let { throw it }
-        return updateProfile(profileId) { it.copy(startBoardId = boardId) }
-    }
-
     private fun updateProfile(profileId: Long, change: (ProfileEntity) -> ProfileEntity): Int {
         val before = profiles.value
         profiles.value = before.map { if (it.id == profileId) change(it) else it }
@@ -255,15 +258,42 @@ class FakeBoardDao(
 
     override suspend fun smallestBoardIdOf(profileId: Long): Long? = boards.value.filter { it.profileId == profileId }.minOfOrNull { it.id }
 
-    override suspend fun isStartBoardOf(boardId: Long, profileId: Long): Boolean =
-        boards.value.any { it.id == boardId && it.profileId == profileId } && countLinksTo(boardId) == 0
+    override suspend fun isScreenOf(boardId: Long, profileId: Long): Boolean =
+        boards.value.any { it.id == boardId && it.profileId == profileId && it.screenPosition != null }
 
-    override suspend fun startBoardCopyOf(profileId: Long, coreBoardId: Long): Long? {
+    override suspend fun firstScreenOf(profileId: Long): Long? {
         existsFailure?.let { throw it }
-        return boards.value.filter { it.profileId == profileId && it.coreBoardId == coreBoardId && countLinksTo(it.id) == 0 }.minOfOrNull { it.id }
+        return screensOfNow(profileId).firstOrNull()?.id
     }
 
-    override suspend fun copiesOf(coreBoardIds: Set<Long>): List<Long> = boards.value.filter { it.coreBoardId in coreBoardIds }.map { it.id }
+    override suspend fun allScreenIds(): List<Long> = boards.value.filter { it.screenPosition != null }.map { it.id }
+
+    override suspend fun screensOf(profileId: Long): List<BoardEntity> = screensOfNow(profileId)
+
+    private fun screensOfNow(profileId: Long) = boards.value.filter { it.profileId == profileId && it.screenPosition != null }.sortedBy { it.screenPosition }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeScreensBesides(boardId: Long): Flow<List<BoardEntity>> = areReadsHeld.flatMapLatest { isHeld ->
+        if (isHeld) {
+            emptyFlow()
+        } else {
+            boards.map { all ->
+                val profileId = all.firstOrNull { it.id == boardId }?.profileId
+                all.filter { it.profileId == profileId && it.screenPosition != null }.sortedBy { it.screenPosition }
+            }
+        }
+    }
+
+    override suspend fun setScreenPosition(boardId: Long, position: Int) {
+        val changed = boards.value.map { if (it.id == boardId) it.copy(screenPosition = position) else it }
+        checkScreenPositions(changed)
+        boards.value = changed
+    }
+
+    override suspend fun renameScreen(profileId: Long, boardId: Long, name: String): Int {
+        if (boards.value.none { it.id == boardId && it.profileId == profileId && it.screenPosition != null }) return 0
+        return renameBoard(boardId, name)
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeCoreBoardId(boardId: Long): Flow<Long?> = areReadsHeld.flatMapLatest { isHeld ->
