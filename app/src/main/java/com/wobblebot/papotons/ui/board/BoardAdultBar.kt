@@ -2,6 +2,7 @@ package com.wobblebot.papotons.ui.board
 
 import androidx.compose.foundation.background
 import androidx.compose.ui.layout.Layout
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -91,8 +92,9 @@ fun BoardAdultBar(
         val loose = constraints.copy(minWidth = 0, minHeight = 0)
         val buttons = buttonsMeasurable.measure(loose)
         // Centrés sur la barre entière (ses marges sont inégales) : autant de place de chaque côté,
-        // celle des boutons et de leur marge au moins.
-        val sideWidth = buttons.width + buttonsEnd
+        // celle des boutons, de leur marge et d'un écart de cible au moins (le dernier écran ne touche
+        // jamais le bouton Bureau).
+        val sideWidth = buttons.width + buttonsEnd + TARGET_SPACING.roundToPx()
         val screensPlaceable = screensMeasurable.measure(loose.copy(maxWidth = (width - 2 * sideWidth).coerceAtLeast(0)))
         val screensX = (width - screensPlaceable.width) / 2
         val nameEnd = if (screensPlaceable.width > 0) screensX else width - sideWidth
@@ -100,7 +102,7 @@ fun BoardAdultBar(
         layout(width, height) {
             name.placeRelative(nameStart, (height - name.height) / 2)
             screensPlaceable.placeRelative(screensX, (height - screensPlaceable.height) / 2)
-            buttons.placeRelative(width - sideWidth, (height - buttons.height) / 2)
+            buttons.placeRelative(width - buttons.width - buttonsEnd, (height - buttons.height) / 2)
         }
     }
 }
@@ -135,7 +137,7 @@ private fun ProfileName(profileName: String?) {
 
 @Composable
 private fun AdultButtons(isLeaveGated: Boolean, onLeaveClick: () -> Unit, onSettingsClick: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(horizontalArrangement = Arrangement.spacedBy(TARGET_SPACING), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onLeaveClick) {
             Icon(
                 painter = painterResource(R.drawable.ic_exit_to_app),

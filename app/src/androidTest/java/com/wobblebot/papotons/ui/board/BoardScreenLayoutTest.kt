@@ -14,9 +14,14 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.getBoundsInRoot
@@ -80,6 +85,12 @@ private val WIDE_BAR_WIDTH = 800.dp
 private const val WIDTH_TOLERANCE_DP = 0.01f
 private val WIDE_BAR_HEIGHT = 900.dp
 private val PORTRAIT_PHONE_WIDTH = 360.dp
+
+/** Assez d'écrans aux noms longs pour remplir la rangée d'un téléphone. */
+private const val MANY_SCREENS = 4
+
+/** Un téléphone de 360 dp au zoom d'affichage maximal. */
+private val MAXIMUM_ZOOM_PHONE_WIDTH = 320.dp
 private val PORTRAIT_PHONE_HEIGHT = 740.dp
 // Un téléphone couché.
 private val LANDSCAPE_PHONE_WIDTH = 740.dp
@@ -443,13 +454,126 @@ class BoardScreenLayoutTest {
         val alert = composeRule.onNode(hasText(alertLabel) or hasContentDescription(alertLabel)).getBoundsInRoot()
         val settings = composeRule.onNodeWithContentDescription(context.getString(R.string.settings_open)).getBoundsInRoot()
 
-        // Chevauchés, l'appui sur « Effacer le dernier mot » effacerait toute la phrase.
-        assertTrue("delete ends at ${deleteLast.right}, clear starts at ${clear.left}", deleteLast.right <= clear.left)
-        val speak = composeRule.onNodeWithContentDescription(context.getString(R.string.message_speak)).getBoundsInRoot()
-        assertTrue("alert ends at ${alert.right}, speak starts at ${speak.left}", alert.right <= speak.left)
+        // Collés, un appui qui tremble sur « Effacer le dernier mot » viderait toute la phrase.
+        assertTrue("delete ends at ${deleteLast.right}, clear starts at ${clear.left}", clear.left - deleteLast.right >= TARGET_SPACING)
+        // Entre l'alerte et les boutons, la phrase, qu'on touche pour la dire, garde au moins une cible.
+        assertTrue(
+            "alert ends at ${alert.right}, delete starts at ${deleteLast.left}",
+            deleteLast.left - alert.right >= CHILD_BUTTON_MIN_WIDTH + TARGET_SPACING * 2,
+        )
         // La roue est sous la barre du haut, dans la barre des adultes.
         assertTrue("settings top ${settings.top} must be below the top bar (clear bottom ${clear.bottom})", settings.top >= clear.bottom)
         assertEquals(clear.width, deleteLast.width)
+    }
+
+    @Test
+    fun aPhoneAtMaximumZoomKeepsTheSentenceTouchableInAFolder() {
+        // Téléphone de 360 dp au zoom d'affichage maximal : environ 320 dp. Dossier, voix en panne, phrase longue.
+        val words = (0 until LONG_SENTENCE_WORD_COUNT).map { SentenceToken("mot$it", persistentListOf()) }
+        val state = homeState.copy(
+            board = checkNotNull(homeState.board).copy(canGoBack = true),
+            message = words.toImmutableList(),
+            speechStatus = SpeechStatus.Unavailable,
+        )
+        composeRule.setContent {
+            DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(DpSize(MAXIMUM_ZOOM_PHONE_WIDTH, PORTRAIT_PHONE_HEIGHT))) {
+                PapotonsTheme { BoardScreen(state = state, actions = noActions) }
+            }
+        }
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.board_back)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.board_home)).assertDoesNotExist()
+        val sentence = composeRule.onNodeWithContentDescription(words.joinToString(" ") { it.text }).getBoundsInRoot()
+        val clear = composeRule.onNodeWithContentDescription(context.getString(R.string.message_clear)).getBoundsInRoot()
+        assertTrue("sentence is ${sentence.width} wide", sentence.width >= CHILD_BUTTON_MIN_WIDTH)
+        assertTrue("clear ends at ${clear.right}", clear.right <= MAXIMUM_ZOOM_PHONE_WIDTH)
+    }
+
+    @Test
+    fun aPhoneWithoutZoomKeepsBothNavigationButtonsAndATouchableSentence() {
+        // La borne du seuil : 360 dp, dossier, voix en panne, phrase longue.
+        val words = (0 until LONG_SENTENCE_WORD_COUNT).map { SentenceToken("mot$it", persistentListOf()) }
+        val state = homeState.copy(
+            board = checkNotNull(homeState.board).copy(canGoBack = true),
+            message = words.toImmutableList(),
+            speechStatus = SpeechStatus.Unavailable,
+        )
+        composeRule.setContent {
+            DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(DpSize(PORTRAIT_PHONE_WIDTH, PORTRAIT_PHONE_HEIGHT))) {
+                PapotonsTheme { BoardScreen(state = state, actions = noActions) }
+            }
+        }
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.board_back)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.board_home)).assertIsDisplayed()
+        val sentence = composeRule.onNodeWithContentDescription(words.joinToString(" ") { it.text }).getBoundsInRoot()
+        assertTrue("sentence is ${sentence.width} wide", sentence.width >= CHILD_BUTTON_MIN_WIDTH)
+    }
+
+    @Test
+    fun touchingTheSentenceSaysItAndEachEraseButtonDoesItsOwnJob() {
+        var spoken = 0
+        var deleted = 0
+        var cleared = 0
+        val actions = noActions.copy(onSpeakMessage = { spoken++ }, onDeleteLastWord = { deleted++ }, onClearMessage = { cleared++ })
+        val state = homeState.copy(message = persistentListOf(SentenceToken("je", persistentListOf()), SentenceToken("veux", persistentListOf())))
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = state, actions = actions) } }
+
+        val speakLabel = context.getString(R.string.message_speak)
+        val sentence = composeRule.onNodeWithContentDescription("je veux")
+        // TalkBack annonce l'action « Dire la phrase » sur la carte.
+        sentence.assert(SemanticsMatcher("says the sentence") { it.config.getOrNull(SemanticsActions.OnClick)?.label == speakLabel })
+        sentence.performClick()
+        val deleteLast = composeRule.onNodeWithContentDescription(context.getString(R.string.message_delete_last)).assertIsEnabled()
+        deleteLast.performClick()
+        deleteLast.performClick()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.message_clear)).assertIsEnabled().performClick()
+
+        // Deux effacements pour un vidage : une inversion des deux boutons se verrait.
+        assertEquals(listOf(1, 2, 1), listOf(spoken, deleted, cleared))
+    }
+
+    @Test
+    fun theChildButtonsAreAnnouncedAsButtonsAndTheEraseButtonsWaitForAWord() {
+        val state = homeState.copy(board = checkNotNull(homeState.board).copy(canGoBack = true))
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = state, actions = noActions) } }
+        val isButton = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.board_back)).assert(isButton)
+        composeRule.onNodeWithContentDescription(context.getString(R.string.message_delete_last)).assert(isButton).assertIsNotEnabled()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.message_clear)).assertIsNotEnabled()
+    }
+
+    @Test
+    fun screenTabsAreSpacedAndWideEnough() {
+        // Un nom d'une lettre : la pastille garde la largeur d'une cible.
+        val screens = persistentListOf(Screen(1, "A", BoardSize.STANDARD), Screen(1000, "Maison", BoardSize.LARGE_CELLS))
+        val state = homeState.copy(board = checkNotNull(homeState.board).copy(screens = screens))
+        composeRule.setContent { PapotonsTheme { BoardScreen(state = state, actions = noActions) } }
+
+        val first = composeRule.onNodeWithText("A").getBoundsInRoot()
+        val house = composeRule.onNodeWithText("Maison").getBoundsInRoot()
+
+        assertTrue("tabs ${first.right} → ${house.left}", house.left - first.right >= TARGET_SPACING)
+        assertTrue("tab is ${first.width} wide", first.width >= CHILD_BUTTON_MIN_WIDTH)
+    }
+
+    @Test
+    fun manyScreenTabsKeepAwayFromTheLeaveButton() {
+        // Assez d'écrans aux noms longs pour que la rangée prenne toute sa place, sur un téléphone.
+        val screens = (0 until MANY_SCREENS).map { Screen(1000L + it, "Écran au nom très long $it", BoardSize.STANDARD) }.toImmutableList()
+        val state = homeState.copy(board = checkNotNull(homeState.board).copy(screens = screens))
+        composeRule.setContent {
+            DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(DpSize(PORTRAIT_PHONE_WIDTH, PORTRAIT_PHONE_HEIGHT))) {
+                PapotonsTheme { BoardScreen(state = state, actions = noActions) }
+            }
+        }
+
+        val row = composeRule.onNodeWithContentDescription(context.getString(R.string.screen_tabs_description)).getBoundsInRoot()
+        val leaveLabels = listOf(R.string.adult_bar_leave, R.string.adult_bar_leave_gated).map { context.getString(it) }
+        val leave = composeRule.onNode(hasContentDescription(leaveLabels[0]) or hasContentDescription(leaveLabels[1])).getBoundsInRoot()
+
+        assertTrue("tabs end at ${row.right}, leave starts at ${leave.left}", leave.left - row.right >= TARGET_SPACING)
     }
 
     @Test
@@ -469,7 +593,7 @@ class BoardScreenLayoutTest {
         // endroit ne doit ni effacer un mot ni vider la phrase.
         var state by mutableStateOf(homeState.copy(message = persistentListOf(SentenceToken("je", persistentListOf()))))
         composeRule.setContent { PapotonsTheme { BoardScreen(state = state, actions = noActions) } }
-        fun buttons() = listOf(R.string.message_speak, R.string.message_delete_last, R.string.message_clear)
+        fun buttons() = listOf(R.string.message_delete_last, R.string.message_clear)
             .map { composeRule.onNodeWithContentDescription(context.getString(it)).getBoundsInRoot() }
         val withoutAlert = buttons()
 
@@ -501,8 +625,8 @@ class BoardScreenLayoutTest {
         composeRule.onNodeWithContentDescription(context.getString(R.string.lost_boards_alert)).assertDoesNotExist()
         composeRule.onNodeWithContentDescription(context.getString(R.string.speech_language_missing)).assertDoesNotExist()
 
-        val speak = composeRule.onNodeWithContentDescription(context.getString(R.string.message_speak)).getBoundsInRoot()
-        assertTrue("muted alert ends at ${muted.right}, speak starts at ${speak.left}", muted.right <= speak.left)
+        val deleteLast = composeRule.onNodeWithContentDescription(context.getString(R.string.message_delete_last)).getBoundsInRoot()
+        assertTrue("muted alert ends at ${muted.right}, delete starts at ${deleteLast.left}", muted.right <= deleteLast.left)
         // La roue est sous la barre du haut, dans la barre des adultes.
         assertTrue("settings top ${settings.top} must be below the top bar (clear bottom ${clear.bottom})", settings.top >= clear.bottom)
     }
@@ -532,11 +656,10 @@ class BoardScreenLayoutTest {
         val lost = composeRule.onNodeWithContentDescription(context.getString(R.string.lost_boards_alert)).getBoundsInRoot()
         val settings = composeRule.onNodeWithContentDescription(context.getString(R.string.settings_open)).getBoundsInRoot()
 
-        assertTrue("delete ends at ${deleteLast.right}, clear starts at ${clear.left}", deleteLast.right <= clear.left)
-        val speak = composeRule.onNodeWithContentDescription(context.getString(R.string.message_speak)).getBoundsInRoot()
-        assertTrue("voice alert ends at ${speech.right}, muted starts at ${muted.left}", speech.right <= muted.left)
-        assertTrue("muted ends at ${muted.right}, lost boards starts at ${lost.left}", muted.right <= lost.left)
-        assertTrue("lost boards ends at ${lost.right}, speak starts at ${speak.left}", lost.right <= speak.left)
+        assertTrue("delete ends at ${deleteLast.right}, clear starts at ${clear.left}", clear.left - deleteLast.right >= TARGET_SPACING)
+        assertTrue("voice alert ends at ${speech.right}, muted starts at ${muted.left}", muted.left - speech.right >= TARGET_SPACING)
+        assertTrue("muted ends at ${muted.right}, lost boards starts at ${lost.left}", lost.left - muted.right >= TARGET_SPACING)
+        assertTrue("lost boards ends at ${lost.right}, delete starts at ${deleteLast.left}", lost.right <= deleteLast.left)
         // La roue est sous la barre du haut, dans la barre des adultes.
         assertTrue("settings top ${settings.top} must be below the top bar (clear bottom ${clear.bottom})", settings.top >= clear.bottom)
         // Densité forcée : arrondis au millième de dp près.

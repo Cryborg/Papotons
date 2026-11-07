@@ -13,13 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -34,8 +33,6 @@ import com.wobblebot.papotons.speech.SpeechStatus
  */
 private val TOP_BAR_HEIGHT = 104.dp
 private val BAR_HORIZONTAL_PADDING = 8.dp
-// 8 dp entre deux cibles voisines : un appui qui tremble ne doit pas toucher la voisine.
-private val TARGET_SPACING = 8.dp
 private val ALERT_ICON_SPACING = 8.dp
 private val ALERT_MAX_WIDTH = 200.dp
 private const val ALERT_MAX_LINES = 2
@@ -44,6 +41,13 @@ private const val ALERT_MAX_LINES = 2
  * (téléphone, écran partagé), et les boutons de la phrase finiraient l'un sur l'autre.
  */
 private val WRITTEN_ALERT_MIN_BAR_WIDTH = 720.dp
+
+/**
+ * En dessous (téléphone zoomé), un dossier ne montre que le retour, pas l'accueil : avec une alerte,
+ * la phrase, qu'on touche pour la dire, n'aurait bientôt plus la largeur d'une cible. Le test de
+ * disposition à la borne le vérifie.
+ */
+private val BOTH_NAVIGATION_BUTTONS_MIN_BAR_WIDTH = 360.dp
 
 /**
  * L'unique barre au-dessus de la grille : navigation, phrase en cours ([message]), alertes. Les
@@ -71,34 +75,41 @@ fun BoardTopBar(
             .padding(horizontal = BAR_HORIZONTAL_PADDING),
     ) {
         val isAlertWritten = maxWidth >= WRITTEN_ALERT_MIN_BAR_WIDTH
+        // Fixé par la largeur de la fenêtre, jamais par l'état : rien ne bouge sous le doigt. En pixels :
+        // en dp, l'arrondi de la marge ferait manquer la borne à certaines densités.
+        val hasHomeButton = with(LocalDensity.current) {
+            constraints.maxWidth + BAR_HORIZONTAL_PADDING.roundToPx() * 2 >= BOTH_NAVIGATION_BUTTONS_MIN_BAR_WIDTH.roundToPx()
+        }
         Row(
             modifier = Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.spacedBy(TARGET_SPACING),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (canGoBack) {
-                IconButton(onClick = onBack) {
-                    Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.board_back))
-                }
-                IconButton(onClick = onHome) {
-                    Icon(painterResource(R.drawable.ic_home), stringResource(R.string.board_home))
-                }
+                ChildIconButton(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.board_back), onBack)
+                if (hasHomeButton) ChildIconButton(painterResource(R.drawable.ic_home), stringResource(R.string.board_home), onHome)
             }
             // Les alertes entre la navigation et la phrase : qu'une alerte apparaisse ou disparaisse,
-            // seule la phrase change de largeur. Les boutons de la phrase ne bougent jamais sous le
-            // doigt, et ce qui glisse (la phrase, une alerte) est sans danger.
+            // seule la phrase change de largeur. Les boutons d'effacement ne bougent jamais sous le
+            // doigt, ni le bord droit de la phrase contre eux : c'est là que l'appui pour la dire est stable.
             for (alert in visibleAlerts(isAlertWritten, speechStatus, isMuted, hasLostBoards)) {
                 when (alert) {
                     TopBarAlert.Speech -> SpeechAlert(speechStatus, isAlertWritten, onSpeechAlertClick)
                     // Haut-parleur barré : un appui monte le son, c'est ce qu'il faut même si c'est la
                     // personne elle-même qui le touche.
-                    TopBarAlert.Muted -> IconButton(onClick = onMutedAlertClick) {
-                        Icon(painterResource(R.drawable.ic_volume_off), stringResource(R.string.volume_muted_alert), tint = MaterialTheme.colorScheme.error)
-                    }
+                    TopBarAlert.Muted -> ChildIconButton(
+                        painterResource(R.drawable.ic_volume_off),
+                        stringResource(R.string.volume_muted_alert),
+                        onMutedAlertClick,
+                        tint = MaterialTheme.colorScheme.error,
+                    )
                     // Icône propre (dossier barré) : elle ne se confond pas avec l'alerte de voix.
-                    TopBarAlert.LostBoards -> IconButton(onClick = onLostBoardsAlertClick) {
-                        Icon(painterResource(R.drawable.ic_folder_off), stringResource(R.string.lost_boards_alert), tint = MaterialTheme.colorScheme.error)
-                    }
+                    TopBarAlert.LostBoards -> ChildIconButton(
+                        painterResource(R.drawable.ic_folder_off),
+                        stringResource(R.string.lost_boards_alert),
+                        onLostBoardsAlertClick,
+                        tint = MaterialTheme.colorScheme.error,
+                    )
                 }
             }
             message()
@@ -111,7 +122,7 @@ private fun SpeechAlert(speechStatus: SpeechStatus, isWritten: Boolean, onClick:
     val alertLabel = stringResource(speechAlertLabel(speechStatus))
     if (isWritten) {
         // Plafonnée : agrandie (police à 200 %), elle prendrait sinon toute la place de la phrase.
-        TextButton(onClick = onClick, modifier = Modifier.widthIn(max = ALERT_MAX_WIDTH)) {
+        ChildButton(onClick = onClick, modifier = Modifier.widthIn(max = ALERT_MAX_WIDTH)) {
             Icon(
                 painter = painterResource(R.drawable.ic_warning),
                 contentDescription = null,
@@ -120,15 +131,15 @@ private fun SpeechAlert(speechStatus: SpeechStatus, isWritten: Boolean, onClick:
             Spacer(modifier = Modifier.width(ALERT_ICON_SPACING))
             Text(
                 text = alertLabel,
+                // Le style qu'imposait `TextButton` : plus compact, deux lignes tiennent dans la carte.
+                style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.error,
                 maxLines = ALERT_MAX_LINES,
                 overflow = TextOverflow.Ellipsis,
             )
         }
     } else {
-        IconButton(onClick = onClick) {
-            Icon(painterResource(R.drawable.ic_warning), alertLabel, tint = MaterialTheme.colorScheme.error)
-        }
+        ChildIconButton(painterResource(R.drawable.ic_warning), alertLabel, onClick, tint = MaterialTheme.colorScheme.error)
     }
 }
 

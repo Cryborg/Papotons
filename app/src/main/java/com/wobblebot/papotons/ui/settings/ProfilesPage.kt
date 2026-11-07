@@ -1,5 +1,6 @@
 package com.wobblebot.papotons.ui.settings
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.data.profile.MAX_PROFILES
 import com.wobblebot.papotons.domain.Profile
+import com.wobblebot.papotons.ui.board.TARGET_SPACING
 
 /** Les actions sur les utilisateurs, regroupées pour la signature des Réglages. */
 @Immutable
@@ -112,7 +114,7 @@ fun ProfilesPage(state: ProfilesUiState, actions: ProfileActions) {
  */
 @Composable
 private fun ProfileRow(profile: Profile, isOpen: Boolean, isEnabled: Boolean, onChosen: () -> Unit, onEdit: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+    Row(horizontalArrangement = Arrangement.spacedBy(TARGET_SPACING), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier

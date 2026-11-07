@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,12 +36,14 @@ import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.SentenceToken
 import kotlinx.collections.immutable.ImmutableList
 
-private val SENTENCE_VERTICAL_PADDING = 6.dp
 private val SENTENCE_CONTENT_PADDING = 12.dp
 private val WORD_VERTICAL_PADDING = 4.dp
 private val WORD_SPACING = 12.dp
 
-/** La phrase en cours et ses trois boutons, à la hauteur de la barre du haut qui la porte. */
+/**
+ * La phrase en cours et ses boutons d'effacement, à la hauteur de la barre du haut qui la porte.
+ * Toucher la phrase la dit : pas de bouton à part, qui prendrait une cible de plus contre ses voisins.
+ */
 @Composable
 fun MessageBar(
     words: ImmutableList<SentenceToken>,
@@ -59,15 +59,17 @@ fun MessageBar(
     val sentence = if (hasWords) words.joinToString(separator = " ") { it.text } else hint
     Row(
         modifier = modifier.fillMaxHeight(),
+        horizontalArrangement = Arrangement.spacedBy(TARGET_SPACING),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(
             onClick = onSpeak,
             enabled = hasWords,
             modifier = Modifier
+                // Sa largeur d'au moins une cible est tenue par le seuil de l'accueil dans `BoardTopBar`.
                 .weight(1f)
                 .fillMaxHeight()
-                .padding(vertical = SENTENCE_VERTICAL_PADDING)
+                .padding(top = CHILD_BAR_TOP_PADDING, bottom = CHILD_BAR_BOTTOM_PADDING)
                 // TalkBack lit toute la phrase, puis annonce l'action « Dire la phrase ».
                 .semantics {
                     contentDescription = sentence
@@ -91,15 +93,8 @@ fun MessageBar(
                 }
             }
         }
-        IconButton(onClick = onSpeak, enabled = hasWords) {
-            Icon(painterResource(R.drawable.ic_volume_up), speakLabel)
-        }
-        IconButton(onClick = onDeleteLastWord, enabled = hasWords) {
-            Icon(painterResource(R.drawable.ic_backspace), stringResource(R.string.message_delete_last))
-        }
-        IconButton(onClick = onClear, enabled = hasWords) {
-            Icon(painterResource(R.drawable.ic_clear), stringResource(R.string.message_clear))
-        }
+        ChildIconButton(painterResource(R.drawable.ic_backspace), stringResource(R.string.message_delete_last), onDeleteLastWord, enabled = hasWords)
+        ChildIconButton(painterResource(R.drawable.ic_clear), stringResource(R.string.message_clear), onClear, enabled = hasWords)
     }
 }
 

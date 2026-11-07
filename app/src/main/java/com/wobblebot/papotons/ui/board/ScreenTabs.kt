@@ -1,5 +1,6 @@
 package com.wobblebot.papotons.ui.board
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -35,22 +36,18 @@ import kotlinx.collections.immutable.ImmutableList
 private val TAB_MAX_WIDTH = 200.dp
 private val TAB_HORIZONTAL_PADDING = 16.dp
 
-/** Entre la pastille et le bord de la barre : la cible garde toute l'épaisseur de la barre, la pastille respire. */
-private val TAB_VERTICAL_INSET = 6.dp
-private val TAB_SPACING = 4.dp
-private val TAB_SHAPE = RoundedCornerShape(12.dp)
-
 /**
  * Les écrans de l'enfant, au centre de la barre du bas : en toucher un ouvre cet écran. Celui de
- * l'écran ouvert ([selectedId], même depuis un de ses dossiers) est plein. Chaque cible a toute
- * l'épaisseur de la barre ; la rangée défile quand ils ne tiennent pas, et ramène toujours l'écran
- * ouvert en vue (zoom, police agrandie) ; un nom long finit par des points de suspension.
+ * l'écran ouvert ([selectedId], même depuis un de ses dossiers) est plein, les autres ont un contour.
+ * Chaque pastille est sa cible entière, sur toute l'épaisseur de la barre, à [TARGET_SPACING] de la
+ * voisine ; la rangée défile quand ils ne tiennent pas, et ramène toujours l'écran ouvert en vue
+ * (zoom, police agrandie) ; un nom long finit par des points de suspension.
  */
 @Composable
 fun ScreenTabs(screens: ImmutableList<Screen>, selectedId: Long, onChosen: (Long) -> Unit, modifier: Modifier = Modifier) {
     val rowDescription = stringResource(R.string.screen_tabs_description)
     Row(
-        horizontalArrangement = Arrangement.spacedBy(TAB_SPACING),
+        horizontalArrangement = Arrangement.spacedBy(TARGET_SPACING),
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .fillMaxHeight()
@@ -69,26 +66,22 @@ private fun ScreenTab(name: String, isSelected: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val viewRequester = remember { BringIntoViewRequester() }
     LaunchedEffect(isSelected) { if (isSelected) viewRequester.bringIntoView() }
-    // La cible : toute l'épaisseur de la barre ; la pastille, dedans, dit lequel est ouvert.
-    Box(
-        contentAlignment = Alignment.Center,
+    // La pastille est la cible, ni plus ni moins : on voit où l'appui compte.
+    Surface(
+        shape = BoardCardShape,
+        color = if (isSelected) colors.primary else colors.surface,
+        contentColor = if (isSelected) colors.onPrimary else colors.onSurface,
+        border = if (isSelected) null else BorderStroke(BOARD_CARD_BORDER_WIDTH, colors.outline),
         modifier = Modifier
             .bringIntoViewRequester(viewRequester)
             .fillMaxHeight()
-            .widthIn(max = TAB_MAX_WIDTH)
-            .selectable(selected = isSelected, role = Role.Tab, onClick = onClick)
-            .padding(vertical = TAB_VERTICAL_INSET),
+            .widthIn(min = CHILD_BUTTON_MIN_WIDTH, max = TAB_MAX_WIDTH)
+            .clip(BoardCardShape)
+            .selectable(selected = isSelected, role = Role.Tab, onClick = onClick),
     ) {
-        Surface(
-            shape = TAB_SHAPE,
-            color = if (isSelected) colors.primary else colors.surface,
-            contentColor = if (isSelected) colors.onPrimary else colors.onSurface,
-            modifier = Modifier.fillMaxHeight(),
-        ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = TAB_HORIZONTAL_PADDING)) {
-                // Une ligne : la barre garde son épaisseur même à police agrandie.
-                Text(text = name, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = TAB_HORIZONTAL_PADDING)) {
+            // Une ligne : la barre garde son épaisseur même à police agrandie.
+            Text(text = name, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

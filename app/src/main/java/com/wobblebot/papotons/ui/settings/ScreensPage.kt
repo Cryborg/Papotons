@@ -1,5 +1,6 @@
 package com.wobblebot.papotons.ui.settings
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +31,7 @@ import com.wobblebot.papotons.R
 import com.wobblebot.papotons.data.board.MAX_SCREENS
 import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.Screen
+import com.wobblebot.papotons.ui.board.TARGET_SPACING
 import kotlinx.collections.immutable.ImmutableList
 
 /** Les actions sur les écrans, regroupées pour la signature des Réglages. */
@@ -124,6 +126,8 @@ fun ScreensPage(screens: ImmutableList<Screen>, state: ScreensUiState, newScreen
 @Composable
 private fun ScreenRow(screen: Screen, isFirst: Boolean, isLast: Boolean, isEnabled: Boolean, canMove: Boolean, onMove: (Int) -> Unit, onEdit: () -> Unit) {
     Row(
+        // Monter, descendre, modifier : trois cibles voisines, jamais collées.
+        horizontalArrangement = Arrangement.spacedBy(TARGET_SPACING),
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
