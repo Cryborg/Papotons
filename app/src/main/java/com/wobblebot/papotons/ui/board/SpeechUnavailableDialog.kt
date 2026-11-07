@@ -3,6 +3,8 @@ package com.wobblebot.papotons.ui.board
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
@@ -38,7 +40,8 @@ fun SpeechUnavailableDialog(
         properties = DialogProperties(dismissOnClickOutside = false),
         title = { Text(stringResource(speechAlertLabel(status))) },
         text = {
-            Column {
+            // À 200 % de police en paysage, la marche à suivre de secours serait rognée.
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(stringResource(body))
                 if (areSettingsUnreachable) {
                     Spacer(modifier = Modifier.height(SETTINGS_HINT_SPACING))
