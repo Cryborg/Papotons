@@ -35,9 +35,9 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 ## Idées
 
 - **IDEE-1** Grammaire française, suite de la page des formes d'un verbe (appui long, `docs/designs/IDEE-1.md`) :
-  - Conjugaison automatique selon le sujet déjà dans la phrase (« tu » puis « vouloir » donne « veux »). Tranché : en option dans les Réglages (MVP-9), désactivée par défaut, la page des formes reste toujours là.
-  - Appui long risqué pour les troubles moteurs (un appui qui traîne ouvre la page) : délai réglable ou geste désactivable dans les Réglages (MVP-9), repère sur les cases qui ont des formes (à voir au test fermé).
-  - Page des formes pour les grandes cases (MVP-8, 3 × 4) : la page fixe de 7 × 6 y est trop dense.
+  - Conjugaison automatique selon le sujet déjà dans la phrase (« tu » puis « vouloir » donne « veux »). Tranché : en option dans les Réglages, désactivée par défaut, la page des formes reste toujours là.
+  - Appui long risqué pour les troubles moteurs (un appui qui traîne ouvre la page) : délai réglable ou geste désactivable dans les Réglages, repère sur les cases qui ont des formes (à voir au test fermé).
+  - Page des formes pour les grandes cases (3 × 4) : la page fixe de 7 × 6 y est trop dense.
   - Accords : petit, petite, petits ; « suis allée » (le passé composé est au masculin).
   - Verbes pronominaux (« se laver ») et impersonnels (« pleuvoir »), absents de `tools/conjugaison/verbs.txt`.
   - Locution négative (« veux pas ») : le reste du libellé suit chaque forme, ce qui donne « ai voulu pas » au lieu de « n'ai pas voulu ». Refuser la page, ou placer la négation.
