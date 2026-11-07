@@ -94,15 +94,23 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
     }
 
     /**
-     * Vrai si le picto est déjà sur l'appareil, embarqué ou téléchargé : une restauration ne le
-     * réécrit pas (une archive ne remplace pas l'image de cases existantes). Un téléchargé est daté
-     * de maintenant, comme s'il venait d'être écrit (le ménage du lancement ne vise que les anciens).
+     * Vrai si le picto est déjà sur l'appareil et lisible, embarqué ou téléchargé : une restauration
+     * ne le réécrit pas (une archive ne remplace pas l'image de cases existantes). Un téléchargé
+     * abîmé ne compte pas : la copie de l'archive est la seule bonne qui reste, comme pour une photo.
+     * Un téléchargé gardé est daté de maintenant, comme s'il venait d'être écrit (le ménage du
+     * lancement ne vise que les anciens).
      */
     suspend fun isOnDevice(pictogramId: Long): Boolean {
         if (pictogramId in bundledIds.await()) return true
         return withContext(Dispatchers.IO) {
             val file = File(downloadedDirectory, "$pictogramId$EXTENSION")
-            file.isFile.also { isPresent -> if (isPresent) file.setLastModified(System.currentTimeMillis()) }
+            // Sans la mémoire pour le vérifier, il est gardé : la restauration ne bute pas dessus.
+            val isReadable = file.isFile && try {
+                decodeFile(file) != null
+            } catch (error: OutOfMemoryError) {
+                true
+            }
+            isReadable.also { if (it) file.setLastModified(System.currentTimeMillis()) }
         }
     }
 

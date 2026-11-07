@@ -339,6 +339,17 @@ class BoardBackupTest {
     }
 
     @Test
+    fun aDamagedPictogramOnTheDeviceIsRepairedByARestore() = runBlocking {
+        backup.export(Uri.fromFile(archive))
+        val saved = downloaded.readBytes()
+        downloaded.writeBytes(saved.copyOf(40))
+
+        backup.restore(backup.analyze(Uri.fromFile(archive)))
+
+        assertArrayEquals(saved, downloaded.readBytes())
+    }
+
+    @Test
     fun aPictogramAlreadyOnTheDeviceIsNeverOverwritten() = runBlocking {
         backup.export(Uri.fromFile(archive))
         val mine = image(Color.GREEN, 64)
