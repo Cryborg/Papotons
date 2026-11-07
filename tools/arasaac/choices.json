@@ -91,5 +91,18 @@
  "hurt": 2367,
  "calm": 31310,
  "surprised": 35529,
- "toilet": 5921
+ "toilet": 5921,
+ "house": 2317,
+ "school": 32446,
+ "park": 2859,
+ "shop": 9116,
+ "kitchen": 10752,
+ "bathroom": 6930,
+ "garden": 2434,
+ "swimming_pool": 30516,
+ "beach": 30518,
+ "restaurant": 32408,
+ "folder_places": 32598,
+ "bedroom": 33068,
+ "hospital": 6523
 }

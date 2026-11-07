@@ -92,3 +92,16 @@
 5|1|2|vocabulary_hurt|2367|NOUN|-
 5|1|3|vocabulary_calm|31310|DESCRIPTOR|-
 5|1|4|vocabulary_surprised|35529|DESCRIPTOR|-
+6|0|0|vocabulary_house|2317|NOUN|-
+6|0|1|vocabulary_school|32446|NOUN|-
+6|0|2|vocabulary_park|2859|NOUN|-
+6|0|3|vocabulary_shop|9116|NOUN|-
+6|0|5|vocabulary_kitchen|10752|NOUN|-
+6|1|0|vocabulary_bathroom|6930|NOUN|-
+6|1|1|vocabulary_garden|2434|NOUN|-
+6|1|2|vocabulary_swimming_pool|30516|NOUN|-
+6|1|3|vocabulary_beach|30518|NOUN|-
+6|1|5|vocabulary_restaurant|32408|NOUN|-
+1|5|7|vocabulary_board_places|32598|NOUN|6
+6|0|4|vocabulary_bedroom|33068|NOUN|-
+6|1|4|vocabulary_hospital|6523|NOUN|-

@@ -6,6 +6,7 @@
     <string name="vocabulary_board_games">Jeux</string>
     <string name="vocabulary_board_people">Personnes</string>
     <string name="vocabulary_board_feelings">Émotions</string>
+    <string name="vocabulary_board_places">Lieux</string>
     <string name="vocabulary_i">je</string>
     <string name="vocabulary_you">tu</string>
     <string name="vocabulary_he">il</string>
@@ -95,4 +96,16 @@
     <string name="vocabulary_hurt">mal</string>
     <string name="vocabulary_calm">calme</string>
     <string name="vocabulary_surprised">surpris</string>
+    <string name="vocabulary_house">maison</string>
+    <string name="vocabulary_school">école</string>
+    <string name="vocabulary_park">parc</string>
+    <string name="vocabulary_shop">magasin</string>
+    <string name="vocabulary_bedroom">chambre</string>
+    <string name="vocabulary_kitchen">cuisine</string>
+    <string name="vocabulary_bathroom">salle de bain</string>
+    <string name="vocabulary_garden">jardin</string>
+    <string name="vocabulary_swimming_pool">piscine</string>
+    <string name="vocabulary_beach">plage</string>
+    <string name="vocabulary_hospital">hôpital</string>
+    <string name="vocabulary_restaurant">restaurant</string>
 </resources>

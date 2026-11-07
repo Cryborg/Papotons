@@ -63,6 +63,7 @@ BOARDS = [
     ("games", "Jeux", "Games", 4, 6),
     ("people", "Personnes", "People", 4, 6),
     ("feelings", "Émotions", "Feelings", 4, 6),
+    ("places", "Lieux", "Places", 4, 6),
 ]
 BOARD_IDS = {key: index + 1 for index, (key, *_rest) in enumerate(BOARDS)}
 assert BOARD_IDS["home"] == 1, "l'accueil doit garder l'id 1 (HOME_BOARD_ID)"
@@ -102,13 +103,14 @@ HOME_COLUMNS = [
      ("please", "s'il te plaît", "please", SOCIAL, "s'il te plaît"), ("what", "quoi ?", "what?", QUESTION, "quoi"), ("where", "où ?", "where?", QUESTION, "où")],
 ]
 # Ligne 6 de l'accueil : libre dans chaque colonne, pour le vocabulaire ajouté plus tard.
-# Colonne 7 : dossiers, puis « toilettes » (indispensable) ; ligne 5 libre.
+# Colonne 7 : dossiers, « toilettes » (indispensable) en ligne 4, puis le dossier des lieux.
 HOME_FOLDERS = [
     ("folder_food", "Nourriture", "Food", NOUN, "nourriture", "food"),
     ("folder_games", "Jeux", "Games", NOUN, "jouet", "games"),
     ("folder_people", "Personnes", "People", PEOPLE, "personnes", "people"),
     ("folder_feelings", "Émotions", "Feelings", DESCRIPTOR, "émotions", "feelings"),
     ("toilet", "toilettes", "toilet", NOUN, "toilettes", None),
+    ("folder_places", "Lieux", "Places", NOUN, "lieu", "places"),
 ]
 FOLDER_WORDS = {
     "food": [
@@ -135,6 +137,12 @@ FOLDER_WORDS = {
         ("hungry", "faim", "hungry", NOUN, None), ("thirsty", "soif", "thirsty", NOUN, None), ("hurt", "mal", "hurt", NOUN, "douleur"),
         ("calm", "calme", "calm", DESCRIPTOR, None), ("surprised", "surpris", "surprised", DESCRIPTOR, None),
     ],
+    "places": [
+        ("house", "maison", "house", NOUN, None), ("school", "école", "school", NOUN, None), ("park", "parc", "park", NOUN, None),
+        ("shop", "magasin", "shop", NOUN, None), ("bedroom", "chambre", "bedroom", NOUN, None), ("kitchen", "cuisine", "kitchen", NOUN, None),
+        ("bathroom", "salle de bain", "bathroom", NOUN, None), ("garden", "jardin", "garden", NOUN, None), ("swimming_pool", "piscine", "swimming pool", NOUN, None),
+        ("beach", "plage", "beach", NOUN, None), ("hospital", "hôpital", "hospital", NOUN, None), ("restaurant", "restaurant", "restaurant", NOUN, None),
+    ],
 }
 FOLDER_COLUMNS = 6
 
@@ -147,6 +155,9 @@ OVERRIDES = {
     "mom": 31148,  # le premier choix était une maman ourse
     "sister": 37966,  # le premier choix était une religieuse
     "that": 7091,  # « celui-là » était peu parlant
+    "folder_places": 32598,  # le premier choix était une flèche et une croix
+    "hospital": 6523,  # le premier choix portait une étoile de David
+    "bedroom": 33068,  # le premier choix était une chambre d'hôtel numérotée
 }
 
 # « quoi ? » : une espace insécable garde le « ? » sur la ligne du mot, et l'appli compte les

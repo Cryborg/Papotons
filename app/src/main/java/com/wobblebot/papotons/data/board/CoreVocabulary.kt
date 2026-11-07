@@ -18,6 +18,7 @@ object CoreVocabulary {
     private const val GAMES_BOARD_ID = 3L
     private const val PEOPLE_BOARD_ID = 4L
     private const val FEELINGS_BOARD_ID = 5L
+    private const val PLACES_BOARD_ID = 6L
 
     fun build(label: (Int) -> String): VocabularySeed {
         fun cell(
@@ -44,6 +45,7 @@ object CoreVocabulary {
             BoardEntity(GAMES_BOARD_ID, label(R.string.vocabulary_board_games), 4, 6),
             BoardEntity(PEOPLE_BOARD_ID, label(R.string.vocabulary_board_people), 4, 6),
             BoardEntity(FEELINGS_BOARD_ID, label(R.string.vocabulary_board_feelings), 4, 6),
+            BoardEntity(PLACES_BOARD_ID, label(R.string.vocabulary_board_places), 4, 6),
         )
         val cells = listOf(
             cell(HOME_BOARD_ID, 0, 0, R.string.vocabulary_i, 6632, WordCategory.PEOPLE, null),
@@ -93,6 +95,7 @@ object CoreVocabulary {
             cell(HOME_BOARD_ID, 2, 7, R.string.vocabulary_board_people, 7116, WordCategory.PEOPLE, PEOPLE_BOARD_ID),
             cell(HOME_BOARD_ID, 3, 7, R.string.vocabulary_board_feelings, 12359, WordCategory.DESCRIPTOR, FEELINGS_BOARD_ID),
             cell(HOME_BOARD_ID, 4, 7, R.string.vocabulary_toilet, 5921, WordCategory.NOUN, null),
+            cell(HOME_BOARD_ID, 5, 7, R.string.vocabulary_board_places, 32598, WordCategory.NOUN, PLACES_BOARD_ID),
             cell(FOOD_BOARD_ID, 0, 0, R.string.vocabulary_apple, 13644, WordCategory.NOUN, null),
             cell(FOOD_BOARD_ID, 0, 1, R.string.vocabulary_banana, 2530, WordCategory.NOUN, null),
             cell(FOOD_BOARD_ID, 0, 2, R.string.vocabulary_bread, 2494, WordCategory.NOUN, null),
@@ -139,6 +142,18 @@ object CoreVocabulary {
             cell(FEELINGS_BOARD_ID, 1, 2, R.string.vocabulary_hurt, 2367, WordCategory.NOUN, null),
             cell(FEELINGS_BOARD_ID, 1, 3, R.string.vocabulary_calm, 31310, WordCategory.DESCRIPTOR, null),
             cell(FEELINGS_BOARD_ID, 1, 4, R.string.vocabulary_surprised, 35529, WordCategory.DESCRIPTOR, null),
+            cell(PLACES_BOARD_ID, 0, 0, R.string.vocabulary_house, 2317, WordCategory.NOUN, null),
+            cell(PLACES_BOARD_ID, 0, 1, R.string.vocabulary_school, 32446, WordCategory.NOUN, null),
+            cell(PLACES_BOARD_ID, 0, 2, R.string.vocabulary_park, 2859, WordCategory.NOUN, null),
+            cell(PLACES_BOARD_ID, 0, 3, R.string.vocabulary_shop, 9116, WordCategory.NOUN, null),
+            cell(PLACES_BOARD_ID, 0, 4, R.string.vocabulary_bedroom, 33068, WordCategory.NOUN, null),
+            cell(PLACES_BOARD_ID, 0, 5, R.string.vocabulary_kitchen, 10752, WordCategory.NOUN, null),
+            cell(PLACES_BOARD_ID, 1, 0, R.string.vocabulary_bathroom, 6930, WordCategory.NOUN, null),
+            cell(PLACES_BOARD_ID, 1, 1, R.string.vocabulary_garden, 2434, WordCategory.NOUN, null),
+            cell(PLACES_BOARD_ID, 1, 2, R.string.vocabulary_swimming_pool, 30516, WordCategory.NOUN, null),
+            cell(PLACES_BOARD_ID, 1, 3, R.string.vocabulary_beach, 30518, WordCategory.NOUN, null),
+            cell(PLACES_BOARD_ID, 1, 4, R.string.vocabulary_hospital, 6523, WordCategory.NOUN, null),
+            cell(PLACES_BOARD_ID, 1, 5, R.string.vocabulary_restaurant, 32408, WordCategory.NOUN, null),
         )
         return VocabularySeed(boards, cells)
     }

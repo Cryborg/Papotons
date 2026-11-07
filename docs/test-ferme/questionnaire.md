@@ -15,7 +15,7 @@
 6. Parmi `c'est`, `on`, `moi`, `là`, `mettre`, `ouvrir`, `qui ?`, lesquels ajouter à l'accueil, et où (ligne du bas, ou à la place d'un autre) ?
 7. Quels autres mots manquent, à l'accueil ou dans un dossier ?
 8. Un pictogramme a-t-il été mal compris ou vous paraît-il inadapté ? Lequel, et pourquoi ?
-9. Les dossiers (Nourriture, Jeux, Personnes, Émotions) : lesquels ont servi ? Lesquels manquent ?
+9. Les dossiers (Nourriture, Jeux, Personnes, Émotions, Lieux) : lesquels ont servi ? Lesquels manquent ?
 
 ## L'usage
 
