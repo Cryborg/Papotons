@@ -94,7 +94,10 @@ class InAppUpdateManager(activity: Activity) {
         runCatching {
             appUpdateManager.startUpdateFlowForResult(info, launcher, AppUpdateOptions.newBuilder(updateType).build())
         }.onSuccess { isStarted ->
-            if (!isStarted) refreshStatus()
+            if (!isStarted) {
+                Log.w(LOG_TAG, "Dialogue de mise à jour refusé par Play")
+                refreshStatus()
+            }
         }.onFailure { error ->
             Log.w(LOG_TAG, "Dialogue de mise à jour non ouvert", error)
             refreshStatus()
