@@ -7,6 +7,7 @@ import com.wobblebot.papotons.data.profile.ProfileEntity
 import com.wobblebot.papotons.data.board.BoardWithCells
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -22,6 +23,7 @@ import java.io.File
 
 private const val DATABASE_NAME = "corruption-test.db"
 private const val EMISSION_TIMEOUT_MS = 5_000L
+private const val FOLDER_ID = 3L
 
 /** La base de l'appli, ouverte comme l'appli l'ouvre ([buildDatabase]). Invariant 4. */
 @RunWith(AndroidJUnit4::class)
@@ -78,6 +80,61 @@ class DatabaseCorruptionTest {
             assertEquals(0, runBlocking { database.boardDao().countBoards() })
         } finally {
             database.close()
+        }
+    }
+
+    @Test
+    fun aBoardCorruptedInUseGivesWayToANewDatabaseThatStillTracksWrites() {
+        // Les cases 83 à 125 de la fixture sont perdues : la grille 3 (cases 73 à 96) les lit.
+        InstrumentationRegistry.getInstrumentation().context.assets.open("corrupted-databases/cells-page-half-zeroed.db").use { input ->
+            context.getDatabasePath(DATABASE_NAME).apply { parentFile?.mkdirs() }.outputStream().use(input::copyTo)
+        }
+        val opened = ClosableDatabases(context, DATABASE_NAME)
+        try {
+            runBlocking {
+                val emissions = Channel<BoardWithCells?>(Channel.UNLIMITED)
+                // Comme l'écran : la grille, son id d'origine et ses onglets, dans un même `combine`, plus
+                // une seconde lecture de la grille : deux requêtes peuvent buter ensemble sur la page abîmée.
+                val collector = launch(Dispatchers.Default) {
+                    combine(
+                        opened.databases.observe { it.observeBoard(FOLDER_ID) },
+                        opened.databases.observe { it.observeCoreBoardId(FOLDER_ID) },
+                        opened.databases.observe { it.observeScreensOfOwner(FOLDER_ID) },
+                        opened.databases.observe { it.observeBoard(FOLDER_ID) },
+                    ) { board, _, _, _ -> board }.collect { emissions.send(it) }
+                }
+
+                assertNull(withTimeout(EMISSION_TIMEOUT_MS) { emissions.receive() })
+                assertEquals(1, copies.listFiles().orEmpty().size)
+                assertEquals(1, opened.databases.replacements.value)
+
+                opened.databases.boardDao.insertProfile(ProfileEntity(id = 1, name = "Léo", startBoardId = null))
+                opened.databases.boardDao.insertAll(listOf(BoardEntity(id = FOLDER_ID, name = "folder", rowCount = 1, columnCount = 1, profileId = 1, screenPosition = 0)), emptyList())
+
+                // Les onglets peuvent réémettre avant la grille : la première grille lue compte.
+                val written = withTimeout(EMISSION_TIMEOUT_MS) {
+                    var board = emissions.receive()
+                    while (board == null) board = emissions.receive()
+                    board
+                }
+                assertEquals("folder", written.board.name)
+                // Sans WAL : la dernière connexion de l'instance perdue ne peut pas emporter le journal de la neuve.
+                val journalMode = opened.instances.last().openHelper.writableDatabase.query("PRAGMA journal_mode").use { cursor ->
+                    cursor.moveToFirst()
+                    cursor.getString(0)
+                }
+                assertEquals("truncate", journalMode)
+                collector.cancel()
+            }
+        } finally {
+            opened.close()
+        }
+        // Rouverte à froid : la base neuve est bien sur le disque, aucune corruption en retard ne l'a supprimée.
+        val reopened = buildDatabase(context, DATABASE_NAME)
+        try {
+            assertEquals(listOf("folder"), runBlocking { reopened.boardDao().allBoards() }.map { it.name })
+        } finally {
+            reopened.close()
         }
     }
 

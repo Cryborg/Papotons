@@ -38,9 +38,9 @@ private data class Rows(val profiles: Int, val boards: Int, val cells: Int)
  * @property copiedAtOpen une copie existe après cette première requête.
  * @property fullRead ce que lit l'export (`snapshot`), `null` s'il lève.
  * @property copied une copie existe après la lecture complète.
- * @property boardsAfterwards ce que rend `countBoards` ensuite, sur la même instance de Room :
- *   `null` quand la corruption a été vue en cours d'usage (`onCorruption` a fermé la connexion,
- *   Room ne la rouvre pas).
+ * @property boardsAfterwards ce que rend `countBoards` ensuite : 0 quand la base a été copiée puis
+ *   remplacée par une base neuve, vide (dans la même instance à l'ouverture, dans une instance neuve
+ *   de [PapotonsDatabases] en cours d'usage).
  * @property integrity ce que dit `integrity_check` de la base analysée : la copie, ou la base
  *   restée en place si rien n'a été copié.
  * @property intact lignes relues une à une par leur id dans la base analysée, identiques à la base saine.
@@ -59,7 +59,7 @@ private data class Observation(
 
 /**
  * TODO-8 : de vraies bases Papotons abîmées (`androidTest/assets/corrupted-databases/`), ouvertes
- * comme l'appli les ouvre ([buildDatabase]). Fixe, pour chaque panne, si la base est déclarée
+ * comme l'appli les ouvre ([PapotonsDatabases]). Fixe, pour chaque panne, si la base est déclarée
  * corrompue (donc copiée), à quel moment, ce qu'en dit `integrity_check` et ce qu'on en relit.
  * Constats et conséquences : `docs/designs/TODO-8.md`.
  */
@@ -112,7 +112,7 @@ class DatabaseCorruptionFixturesTest {
     fun boardsPageRandom() = check(
         "boards-page-random",
         Observation(
-            boardsAtOpen = 7, copiedAtOpen = false, fullRead = null, copied = true, boardsAfterwards = null,
+            boardsAtOpen = 7, copiedAtOpen = false, fullRead = null, copied = true, boardsAfterwards = 0,
             integrity = Integrity.ABORTS, intact = Rows(profiles = 2, boards = 0, cells = 224), altered = 0,
         ),
     )
@@ -122,7 +122,7 @@ class DatabaseCorruptionFixturesTest {
     fun cellsIndexPageRandom() = check(
         "cells-index-page-random",
         Observation(
-            boardsAtOpen = 7, copiedAtOpen = false, fullRead = null, copied = true, boardsAfterwards = null,
+            boardsAtOpen = 7, copiedAtOpen = false, fullRead = null, copied = true, boardsAfterwards = 0,
             integrity = Integrity.ABORTS, intact = ALL_ROWS, altered = 0,
         ),
     )
@@ -132,7 +132,7 @@ class DatabaseCorruptionFixturesTest {
     fun cellsPageHalfZeroed() = check(
         "cells-page-half-zeroed",
         Observation(
-            boardsAtOpen = 7, copiedAtOpen = false, fullRead = null, copied = true, boardsAfterwards = null,
+            boardsAtOpen = 7, copiedAtOpen = false, fullRead = null, copied = true, boardsAfterwards = 0,
             integrity = Integrity.LISTS_PROBLEMS, intact = Rows(profiles = 2, boards = 7, cells = 180), altered = 1,
         ),
     )
@@ -142,7 +142,7 @@ class DatabaseCorruptionFixturesTest {
     fun cellsPageRandomBytes() = check(
         "cells-page-random-bytes",
         Observation(
-            boardsAtOpen = 7, copiedAtOpen = false, fullRead = null, copied = true, boardsAfterwards = null,
+            boardsAtOpen = 7, copiedAtOpen = false, fullRead = null, copied = true, boardsAfterwards = 0,
             integrity = Integrity.LISTS_PROBLEMS, intact = Rows(profiles = 2, boards = 7, cells = 221), altered = 2,
         ),
     )
@@ -150,16 +150,17 @@ class DatabaseCorruptionFixturesTest {
     private fun check(fixture: String, expected: Observation) {
         copyFixture(fixture, context.getDatabasePath(DATABASE_NAME))
 
-        val database = buildDatabase(context, DATABASE_NAME)
+        val opened = ClosableDatabases(context, DATABASE_NAME)
+        val databases = opened.databases
         val observed = try {
-            val boardsAtOpen = countBoards(fixture, database)
+            val boardsAtOpen = countBoards(fixture, databases)
             val copiedAtOpen = copies.copyDirectories().isNotEmpty()
-            val fullRead = runCatching { runBlocking { database.boardDao().snapshot() } }
+            val fullRead = runCatching { runBlocking { databases.boardDao.snapshot() } }
                 .onFailure { Log.w(TAG, "$fixture: snapshot failed: $it") }.getOrNull()
                 ?.let { Rows(it.profiles.size, it.boards.size, it.cells.size) }
             val copied = copies.copyDirectories().isNotEmpty()
-            val boardsAfterwards = countBoards(fixture, database)
-            database.close()
+            val boardsAfterwards = countBoards(fixture, databases)
+            opened.close()
 
             val reference = rowsOf(File(analysis, "reference.db").also { copyFixture(HEALTHY, it) })
             val analysed = analysedCopy()
@@ -175,13 +176,13 @@ class DatabaseCorruptionFixturesTest {
                 altered = IDS.keys.sumOf { table -> rows.getValue(table).count { (id, row) -> reference.getValue(table)[id] != row } },
             )
         } finally {
-            database.close()
+            opened.close()
         }
         assertEquals(fixture, expected, observed)
     }
 
-    private fun countBoards(fixture: String, database: PapotonsDatabase): Int? =
-        runCatching { runBlocking { database.boardDao().countBoards() } }
+    private fun countBoards(fixture: String, databases: PapotonsDatabases): Int? =
+        runCatching { runBlocking { databases.boardDao.countBoards() } }
             .onFailure { Log.w(TAG, "$fixture: countBoards failed: $it") }.getOrNull()
 
     private fun copyFixture(fixture: String, target: File) {

@@ -5,6 +5,16 @@ import com.wobblebot.papotons.domain.CellContent
 import com.wobblebot.papotons.data.backup.BackupContent
 import android.content.Context
 import android.database.sqlite.SQLiteException
+import android.database.SQLException
+import com.wobblebot.papotons.domain.Board
+import com.wobblebot.papotons.domain.Profile
+import com.wobblebot.papotons.domain.Screen
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -188,6 +198,155 @@ class BoardRepositoryTest {
         nextLaunch.ensureHomeBoard()
 
         assertTrue(nextLaunch.observeLostBoards().first())
+    }
+
+    @Test
+    fun `a database replaced in use raises the alert even when already written again`() = runTest {
+        // L'ancienne instance vide, la neuve déjà remplie (un utilisateur créé entre-temps) : seul
+        // le remplacement dit la perte.
+        val written = FakeBoardDao().also { BoardRepository(it, FakePreferences(), context).ensureHomeBoard() }
+        val test = TestDatabases(FakeBoardDao(), written)
+        val repository = BoardRepository(test.databases, preferences, context)
+        repository.ensureHomeBoard()
+        assertFalse(repository.observeLostBoards().first())
+
+        test.replace()
+        repository.ensureHomeBoard()
+
+        assertTrue(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `a replacement during a pass is seen by the next one`() = runTest {
+        val dao = FakeBoardDao()
+        val test = TestDatabases(dao)
+        val repository = BoardRepository(test.databases, preferences, context)
+        repository.ensureHomeBoard()
+        // Grilles comptées dans l'ancienne base, remplacée juste après : ce passage n'alerte pas.
+        dao.onCountBoards = {
+            test.replace()
+            dao.onCountBoards = {}
+        }
+        repository.ensureHomeBoard()
+        assertFalse(repository.observeLostBoards().first())
+
+        repository.ensureHomeBoard()
+
+        assertTrue(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `an acknowledged replacement raises no alert again`() = runTest {
+        val test = TestDatabases(FakeBoardDao())
+        val repository = BoardRepository(test.databases, preferences, context)
+        repository.ensureHomeBoard()
+        test.replace()
+        repository.ensureHomeBoard()
+        assertTrue(repository.observeLostBoards().first())
+        repository.acknowledgeLostBoards()
+
+        // Après une restauration, ou un accueil introuvable : pas de fausse perte.
+        repository.ensureHomeBoard()
+
+        assertFalse(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `a replacement raises the alert even without the seeded marker`() = runTest {
+        // Le marqueur n'a jamais pu s'écrire, et la copie a échoué : seul le remplacement dit la perte.
+        val written = FakeBoardDao().also { BoardRepository(it, FakePreferences(), context).ensureHomeBoard() }
+        val test = TestDatabases(written)
+        val repository = BoardRepository(test.databases, preferences, context)
+        test.replace()
+
+        repository.ensureHomeBoard()
+
+        assertTrue(repository.observeLostBoards().first())
+    }
+
+    @Test
+    fun `a write that fails on a lost database comes back as a write failure`() = runTest {
+        val dao = FakeBoardDao()
+        val test = TestDatabases(dao)
+        val repository = BoardRepository(test.databases, preferences, context)
+        repository.ensureHomeBoard()
+        dao.insertFailure = SQLException("connection is closed")
+        test.lose()
+
+        val failure = runCatching { repository.createProfile("Inès") }.exceptionOrNull()
+
+        // Les ViewModels n'attrapent que `SQLiteException` pour un échec d'écriture.
+        assertTrue(failure is SQLiteException)
+    }
+
+    @Test
+    fun `a write failure on a healthy database is left as it is`() = runTest {
+        val dao = FakeBoardDao()
+        val repository = BoardRepository(dao, preferences, context)
+        repository.ensureHomeBoard()
+        dao.insertFailure = SQLException("statement is closed")
+
+        val failure = runCatching { repository.createProfile("Inès") }.exceptionOrNull()
+
+        // Un bug reste un bug (Android vitals), jamais un faux « mémoire pleine ».
+        assertTrue(failure is SQLException)
+        assertFalse(failure is SQLiteException)
+    }
+
+    @Test
+    fun `the observed flows move to the new database when theirs is lost`() = runTest {
+        val connectionClosed = CompletableDeferred<Unit>()
+        fun <T> failing(): Flow<T> = flow {
+            connectionClosed.await()
+            throw IllegalStateException("connection is closed")
+        }
+        val board = BoardEntity(id = HOME_BOARD_ID, name = "new home", rowCount = 1, columnCount = 1, profileId = FIRST_PROFILE_ID, screenPosition = 0)
+        val lost = mockk<BoardDao> {
+            every { observeBoard(any()) } returns failing()
+            every { observeCoreBoardId(any()) } returns failing()
+            every { observeScreensOfOwner(any()) } returns failing()
+            every { observeProfiles() } returns failing()
+        }
+        val new = mockk<BoardDao> {
+            every { observeBoard(any()) } returns flowOf(BoardWithCells(board, emptyList()))
+            every { observeCoreBoardId(any()) } returns flowOf(HOME_BOARD_ID)
+            every { observeScreensOfOwner(any()) } returns flowOf(listOf(board))
+            every { observeProfiles() } returns flowOf(listOf(ProfileEntity(id = FIRST_PROFILE_ID, name = "Moi", startBoardId = null)))
+        }
+        val test = TestDatabases(lost, new)
+        val repository = BoardRepository(test.databases, preferences, context)
+        val boards = mutableListOf<Board?>()
+        val coreBoardIds = mutableListOf<Long?>()
+        val screens = mutableListOf<List<Screen>>()
+        val profiles = mutableListOf<List<Profile>>()
+        val unconfined = UnconfinedTestDispatcher(testScheduler)
+        backgroundScope.launch(unconfined) { repository.observeBoard(HOME_BOARD_ID).toList(boards) }
+        backgroundScope.launch(unconfined) { repository.observeCoreBoardId(HOME_BOARD_ID).toList(coreBoardIds) }
+        backgroundScope.launch(unconfined) { repository.observeScreensOfOwner(HOME_BOARD_ID).toList(screens) }
+        backgroundScope.launch(unconfined) { repository.observeProfiles().toList(profiles) }
+
+        test.lose()
+        connectionClosed.complete(Unit)
+        test.replace()
+        runCurrent()
+
+        assertEquals(listOf("new home"), boards.map { it?.name })
+        assertEquals(listOf<Long?>(HOME_BOARD_ID), coreBoardIds)
+        assertEquals(listOf(listOf("new home")), screens.map { list -> list.map { it.name } })
+        assertEquals(listOf(listOf("Moi")), profiles.map { list -> list.map { it.name } })
+    }
+
+    @Test
+    fun `nothing is swept once the database was replaced in use`() = runTest {
+        // Ni copie ni alerte ici : seul le remplacement garde les photos des grilles perdues.
+        val test = TestDatabases(boardsWithImages())
+        val repository = BoardRepository(test.databases, FakePreferences(), context)
+        repository.ensureHomeBoard()
+        test.replace()
+
+        repository.sweepOrphanImages()
+
+        assertNothingSwept()
     }
 
     @Test

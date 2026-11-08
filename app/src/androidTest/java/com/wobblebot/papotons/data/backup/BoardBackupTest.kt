@@ -8,7 +8,9 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.wobblebot.papotons.data.CORRUPTED_DATABASES_DIRECTORY
+import com.wobblebot.papotons.data.OpenedDatabase
 import com.wobblebot.papotons.data.PapotonsDatabase
+import com.wobblebot.papotons.data.PapotonsDatabases
 import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.profile.ProfileEntity
 import com.wobblebot.papotons.data.board.BoardRepository
@@ -88,7 +90,8 @@ class BoardBackupTest {
     @Before
     fun setUp() = runBlocking {
         database = Room.inMemoryDatabaseBuilder(context, PapotonsDatabase::class.java).build()
-        repository = BoardRepository(database.boardDao(), createPreferences { preferencesFile }, context)
+        val dao = database.boardDao()
+        repository = BoardRepository(PapotonsDatabases { _, _ -> OpenedDatabase(dao, isLost = { false }, isReplaced = { false }) }, createPreferences { preferencesFile }, context)
         pictograms.loadBundled()
         backup = BoardBackup(context, repository, pictograms, CellPhotos(context))
         database.boardDao().insertProfile(ProfileEntity(id = 1, name = "Léo", startBoardId = null))

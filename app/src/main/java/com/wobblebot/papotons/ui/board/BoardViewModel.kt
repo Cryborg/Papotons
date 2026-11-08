@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.wobblebot.papotons.data.DATABASE_REPLACEMENT_TIMEOUT_MS
 import com.wobblebot.papotons.data.board.BoardRepository
 import com.wobblebot.papotons.data.conjugation.Conjugations
 import com.wobblebot.papotons.data.photo.PhotoStore
@@ -53,6 +54,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import java.io.IOException
@@ -246,6 +248,11 @@ class BoardViewModel @Inject constructor(
             // Un compteur, pas un événement : une restauration faite quand l'écran n'écoutait pas compte aussi.
             // Toutes les grilles remplacées : la pile et l'éditeur visent peut-être des grilles qui n'existent plus.
             repository.replacements.drop(1).collect { reopenFromStart() }
+        }
+        viewModelScope.launch {
+            // Base perdue en cours d'usage, remplacée par une neuve : même chose. L'alerte et le
+            // vocabulaire de base viennent de `ensureHomeBoard`.
+            repository.databaseReplacements.drop(1).collect { reopenFromStart() }
         }
         viewModelScope.launch {
             repository.profileSwitches.drop(1).collect { onProfileSwitched() }
@@ -793,21 +800,50 @@ class BoardViewModel @Inject constructor(
     private fun reopenHome(savedStack: List<Long>? = null) {
         if (homeOpening?.isActive == true) return
         homeOpening = viewModelScope.launch {
-            val homeBoardId = repository.ensureHomeBoard()
-            // L'enfant était peut-être sur un autre onglet : la pile se garde si elle part d'un écran à lui.
-            val profileId = repository.openProfileId.value
-            navigation.value = when {
-                savedStack.isNullOrEmpty() -> persistentListOf(homeBoardId)
-                savedStack.first() == homeBoardId -> savedStack.toPersistentList()
-                profileId != null && repository.isScreenOf(savedStack.first(), profileId) -> savedStack.toPersistentList()
-                else -> {
-                    Log.w(TAG, "Saved stack $savedStack does not start at a screen of profile $profileId, dropped")
-                    persistentListOf(homeBoardId)
+            val replacementsBefore = repository.databaseReplacements.value
+            navigation.value = try {
+                homeStack(savedStack)
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                // La base perdue en cours d'usage (au lancement, c'est souvent cette lecture-ci qui le
+                // voit) : une fois, sur la base neuve, plutôt qu'un plantage. Le collecteur des
+                // remplacements peut l'avoir manqué, abonné après lui.
+                if (!repository.isDatabaseLostSince(replacementsBefore)) throw exception
+                // Base jamais remplacée (fichier resté là) : l'erreur remonte, un plantage plutôt
+                // qu'un chargement sans fin.
+                if (withTimeoutOrNull(DATABASE_REPLACEMENT_TIMEOUT_MS) { repository.awaitDatabaseReplacement(replacementsBefore) } == null) {
+                    Log.e(TAG, "Home board opening failed on a lost database, never replaced", exception)
+                    throw exception
+                }
+                Log.w(TAG, "Home board opening failed on a lost database, retried on the new one", exception)
+                // La pile sauvée vise l'ancienne base : on repart de l'accueil de la neuve.
+                try {
+                    homeStack(savedStack = null)
+                } catch (retryFailure: Exception) {
+                    retryFailure.addSuppressed(exception)
+                    throw retryFailure
                 }
             }
             // Juste après l'ouverture de l'accueil, donc après la détection d'une perte. À part :
             // pendant le ménage, une relance de l'ouverture (accueil introuvable) doit rester possible.
             viewModelScope.launch { repository.sweepOrphanImages() }
+        }
+    }
+
+    /** L'accueil, ou [savedStack] si elle part d'un écran de l'utilisateur ouvert. */
+    private suspend fun homeStack(savedStack: List<Long>?): PersistentList<Long> {
+        val homeBoardId = repository.ensureHomeBoard()
+        // L'enfant était peut-être sur un autre onglet : la pile se garde si elle part d'un écran à lui.
+        val profileId = repository.openProfileId.value
+        return when {
+            savedStack.isNullOrEmpty() -> persistentListOf(homeBoardId)
+            savedStack.first() == homeBoardId -> savedStack.toPersistentList()
+            profileId != null && repository.isScreenOf(savedStack.first(), profileId) -> savedStack.toPersistentList()
+            else -> {
+                Log.w(TAG, "Saved stack $savedStack does not start at a screen of profile $profileId, dropped")
+                persistentListOf(homeBoardId)
+            }
         }
     }
 

@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.data.CorruptedDatabaseCopies
+import com.wobblebot.papotons.data.PapotonsDatabases
 import com.wobblebot.papotons.data.backup.BackupContent
 import com.wobblebot.papotons.data.photo.CELL_PHOTOS_DIRECTORY
 import com.wobblebot.papotons.data.photo.CELL_PHOTO_NAME
@@ -40,6 +41,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -92,10 +94,25 @@ private val CURRENT_PROFILE_ID = longPreferencesKey("current_profile_id")
 
 @Singleton
 class BoardRepository @Inject constructor(
-    private val boardDao: BoardDao,
+    private val databases: PapotonsDatabases,
     private val preferences: DataStore<Preferences>,
     @ApplicationContext private val context: Context,
 ) {
+    /** Celui de l'instance courante : une base perdue en cours d'usage est remplacée par une neuve. */
+    private val boardDao: BoardDao get() = databases.boardDao
+
+    /** Monte à chaque base perdue en cours d'usage puis remplacée : l'écran repart du premier écran, comme après [replacements]. */
+    val databaseReplacements: StateFlow<Int> = databases.replacements
+
+    /** Un échec vu depuis que [databaseReplacements] valait [replacementsBefore] vient d'une base perdue. */
+    fun isDatabaseLostSince(replacementsBefore: Int): Boolean = databases.isLostSince(replacementsBefore)
+
+    /** Rend une fois la base perdue remplacée par une neuve. */
+    suspend fun awaitDatabaseReplacement(replacementsBefore: Int) = databases.awaitReplacement(replacementsBefore)
+
+    /** Le compte de [databaseReplacements] au début du dernier [ensureHomeBoard] qui a pu lever l'alerte. */
+    private val databaseReplacementsSeen = AtomicInteger(databases.replacements.value)
+
     /** Une perte constatée dont l'écriture a échoué : connue de ce processus seulement. */
     private val unsavedLostBoards = MutableStateFlow(false)
 
@@ -137,7 +154,8 @@ class BoardRepository @Inject constructor(
      * Insère le vocabulaire de base dans une base vide, puis rend l'id de la grille à ouvrir : le
      * premier écran de l'utilisateur ouvert (le dernier, sinon le plus petit qui a des grilles). Une
      * base vide qui avait déjà été remplie (corrompue, effacée) reçoit aussi le vocabulaire de base,
-     * pour qu'on puisse parler, et lève l'alerte de [observeLostBoards]. Un utilisateur sans écran
+     * pour qu'on puisse parler, et lève l'alerte de [observeLostBoards], comme une base remplacée en
+     * cours d'usage depuis le passage précédent, même déjà réécrite. Un utilisateur sans écran
      * ouvre sa plus petite grille : ni plantage en boucle ni chargement sans fin, et rien
      * n'est effacé (invariant 4).
      */
@@ -145,9 +163,15 @@ class BoardRepository @Inject constructor(
         // L'alerte AVANT la réinsertion : un arrêt entre les deux ne doit pas la faire oublier.
         // `countBoards` d'abord : première requête, c'est elle qui ouvre la base, et une base
         // corrompue est copiée à ce moment-là, avant qu'on ne cherche les copies.
+        // Le compte du DÉBUT de ce passage : un remplacement pendant lui (grilles comptées dans
+        // l'ancienne base, vocabulaire réinséré dans la neuve) sera vu par le suivant. Retenu
+        // seulement une fois l'alerte levée : une lecture qui échoue avant ne le fait pas oublier.
+        val databaseReplacementCount = databases.replacements.value
+        val isDatabaseReplaced = databaseReplacementsSeen.get() != databaseReplacementCount
         val isDatabaseEmpty = boardDao.countBoards() == 0
-        if (isDatabaseEmpty) wasFoundEmpty = true
-        raiseLostBoardsIfNeeded(isDatabaseEmpty)
+        if (isDatabaseEmpty || isDatabaseReplaced) wasFoundEmpty = true
+        raiseLostBoardsIfNeeded(isDatabaseEmpty, isDatabaseReplaced)
+        databaseReplacementsSeen.set(databaseReplacementCount)
         val seed = homeVocabulary()
         val isSeeded = boardDao.seedIfEmpty(seed, context.getString(R.string.profile_default_name))
         if (isSeeded) {
@@ -204,7 +228,7 @@ class BoardRepository @Inject constructor(
         null
     }
 
-    fun observeProfiles(): Flow<List<Profile>> = boardDao.observeProfiles().map { profiles -> profiles.map { Profile(it.id, it.name, it.isExitLocked) } }
+    fun observeProfiles(): Flow<List<Profile>> = databases.observe { it.observeProfiles() }.map { profiles -> profiles.map { Profile(it.id, it.name, it.isExitLocked) } }
 
     /** Un nouvel utilisateur avec un vocabulaire de base neuf, en taille standard ; il ne devient pas l'utilisateur ouvert. */
     suspend fun createProfile(name: String): Long {
@@ -258,7 +282,7 @@ class BoardRepository @Inject constructor(
     }
 
     /** Les écrans de l'utilisateur à qui appartient [boardId], dans l'ordre des onglets. */
-    fun observeScreensOfOwner(boardId: Long): Flow<List<Screen>> = boardDao.observeScreensOfOwner(boardId).map { screens ->
+    fun observeScreensOfOwner(boardId: Long): Flow<List<Screen>> = databases.observe { it.observeScreensOfOwner(boardId) }.map { screens ->
         screens.map { Screen(it.id, it.name, BoardSize.withHome(it.coreBoardId)) }
     }
 
@@ -301,7 +325,7 @@ class BoardRepository @Inject constructor(
     }
 
     /** `null` pour une grille de l'adulte : c'est par lui que l'écran connaît la taille de ses cases. */
-    fun observeCoreBoardId(boardId: Long): Flow<Long?> = boardDao.observeCoreBoardId(boardId)
+    fun observeCoreBoardId(boardId: Long): Flow<Long?> = databases.observe { it.observeCoreBoardId(boardId) }
 
     /**
      * Vrai tant qu'une perte des grilles constatée par [ensureHomeBoard] (au lancement, ou quand
@@ -374,6 +398,7 @@ class BoardRepository @Inject constructor(
      * pastille, une édition refusée coûterait le travail).
      */
     private suspend fun <T> write(block: suspend () -> T): T {
+        val databaseReplacementCount = databases.replacements.value
         copies().markEdited()
         writeCount.incrementAndGet()
         try {
@@ -385,6 +410,14 @@ class BoardRepository @Inject constructor(
         }
         try {
             return block()
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: RuntimeException) {
+            // Une instance perdue en cours d'usage lève « connection is closed » (une `SQLException`)
+            // ou « already-closed object », que les appelants, qui attendent une `SQLiteException`
+            // pour un échec d'écriture, n'attraperaient pas. Hors perte, un bug remonte tel quel.
+            if (exception is SQLiteException || !databases.isLostSince(databaseReplacementCount)) throw exception
+            throw SQLiteException("Write failed on a lost database: ${exception.message}", exception)
         } finally {
             // Aussi après : un export dont l'instantané a été lu pendant cette écriture ne se dit pas à jour.
             writeCount.incrementAndGet()
@@ -469,15 +502,16 @@ class BoardRepository @Inject constructor(
      * alerte (une fausse alerte sur une installation neuve inquiéterait pour rien), et n'empêche
      * jamais d'ouvrir une grille.
      */
-    private suspend fun raiseLostBoardsIfNeeded(isDatabaseEmpty: Boolean) {
+    private suspend fun raiseLostBoardsIfNeeded(isDatabaseEmpty: Boolean, isDatabaseReplaced: Boolean) {
         val hasCorruptedCopies = copies().hasCopies()
-        var isLossFound = false
+        // Une base remplacée en cours d'usage est perdue, quoi que disent le marqueur et les copies.
+        var isLossFound = isDatabaseReplaced
         try {
             preferences.edit { settings ->
                 val wasSeeded = settings[CORE_VOCABULARY_SEEDED] == true
-                isLossFound = (isDatabaseEmpty && wasSeeded) || (!wasSeeded && hasCorruptedCopies)
+                isLossFound = isDatabaseReplaced || (isDatabaseEmpty && wasSeeded) || (!wasSeeded && hasCorruptedCopies)
                 if (isLossFound) {
-                    Log.e(TAG, "Boards lost (database empty: $isDatabaseEmpty, corrupted copies: $hasCorruptedCopies)")
+                    Log.e(TAG, "Boards lost (database empty: $isDatabaseEmpty, replaced: $isDatabaseReplaced, corrupted copies: $hasCorruptedCopies)")
                     settings[BOARDS_LOST_AT] = System.currentTimeMillis()
                 }
             }
@@ -534,6 +568,8 @@ class BoardRepository @Inject constructor(
             !hasOpenedHome -> "home board not opened yet"
             referenced.boardCount == 0 -> "no board"
             wasFoundEmpty -> "database found empty"
+            // Remplacée après l'ouverture de l'accueil, pendant la lecture des références par exemple.
+            databases.replacements.value != 0 -> "database replaced in use"
             // Couvert aujourd'hui par la base trouvée vide ou par les copies ; gardé : une perte
             // connue de ce processus seul ne doit jamais dépendre de ces deux-là.
             unsavedLostBoards.value -> "lost boards (unsaved)"
@@ -587,5 +623,5 @@ class BoardRepository @Inject constructor(
     }
 
     /** `null` quand la grille n'existe pas. */
-    fun observeBoard(boardId: Long): Flow<Board?> = boardDao.observeBoard(boardId).map { it?.toDomain() }
+    fun observeBoard(boardId: Long): Flow<Board?> = databases.observe { it.observeBoard(boardId) }.map { it?.toDomain() }
 }

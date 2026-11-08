@@ -1,7 +1,6 @@
 package com.wobblebot.papotons.data
 
 import android.content.Context
-import com.wobblebot.papotons.data.board.BoardDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -14,8 +13,5 @@ import javax.inject.Singleton
 object DatabaseModule {
     @Provides
     @Singleton
-    fun database(@ApplicationContext context: Context): PapotonsDatabase = buildDatabase(context, PapotonsDatabase.NAME)
-
-    @Provides
-    fun boardDao(database: PapotonsDatabase): BoardDao = database.boardDao()
+    fun databases(@ApplicationContext context: Context): PapotonsDatabases = PapotonsDatabases(context, PapotonsDatabase.NAME)
 }

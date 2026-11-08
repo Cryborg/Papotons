@@ -8,6 +8,7 @@ import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import java.io.File
 import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "CorruptionCopying"
 
@@ -21,11 +22,29 @@ private val COMPANION_SUFFIXES = listOf("", "-wal", "-shm", "-journal")
  * ouverture. Ne sert que tant que Room passe par un `SupportSQLiteOpenHelper` : un `SQLiteDriver`
  * l'ignorerait, et les drivers n'ont pas d'`onCorruption`. `allowDataLossOnRecovery` doit rester
  * faux : vrai, le helper supprimerait la base sans passer par `onCorruption`, donc sans copie.
+ *
+ * Une corruption vue en cours d'usage (base ouverte) perd l'instance de Room : sa seule connexion
+ * est fermée, Room ne la rouvre jamais. [isLost] le dit dès l'entrée, [isReplaced] puis
+ * [onReplaced] une fois la copie tentée et les fichiers supprimés : c'est [PapotonsDatabases] qui
+ * ouvre alors une instance neuve. Vue par `SQLiteDatabase.open` (base pas encore ouverte), Android
+ * rouvre lui-même une base neuve dans la même instance, qui reste bonne. Vue par une requête de
+ * Room pendant l'ouverture (`checkIdentity`), la base est ouverte : l'instance est remplacée, alors
+ * que son helper rouvre aussi le fichier neuf ; deux instances visent ce même fichier, l'ancienne
+ * n'est plus appelée.
  */
 class CorruptionCopyingOpenHelperFactory(
     private val context: Context,
+    private val onReplaced: () -> Unit = {},
     private val delegate: SupportSQLiteOpenHelper.Factory = FrameworkSQLiteOpenHelperFactory(),
 ) : SupportSQLiteOpenHelper.Factory {
+    private val lost = AtomicBoolean(false)
+
+    val isLost: Boolean get() = lost.get()
+
+    @Volatile
+    var isReplaced = false
+        private set
+
     override fun create(configuration: SupportSQLiteOpenHelper.Configuration): SupportSQLiteOpenHelper =
         delegate.create(
             SupportSQLiteOpenHelper.Configuration(
@@ -58,15 +77,49 @@ class CorruptionCopyingOpenHelperFactory(
         override fun onOpen(db: SupportSQLiteDatabase) = roomCallback.onOpen(db)
 
         override fun onCorruption(db: SupportSQLiteDatabase) {
+            // Plusieurs connexions lisent en parallèle (WAL) : deux requêtes peuvent buter sur la
+            // même page, et une requête en vol arriver après la fermeture. Seule la première copie
+            // et supprime : une suivante, une fois l'instance neuve ouverte au même chemin,
+            // supprimerait SON fichier.
+            // `isOpen` AVANT `lost` : le premier pose `lost` avant que la base ne se ferme, donc qui la
+            // voit fermée voit aussi `lost`. Lu dans l'autre ordre, un appel suspendu entre les deux
+            // passerait pour une corruption à l'ouverture et supprimerait le fichier.
+            val isInUse = db.isOpen
+            // Avant tout : les flux de cette instance qui échouent pendant la copie sont ceux d'une base perdue.
+            if (lost.get() || (isInUse && !lost.compareAndSet(false, true))) {
+                Log.w(TAG, "Corruption seen again on a database already lost, ignored")
+                return
+            }
+            val path = db.path
             // Supprimée quoi qu'il arrive à la copie : gardée, la base ferait planter chaque ouverture.
             try {
-                val path = db.path
                 if (path == null) Log.e(TAG, "Corrupted database without path, nothing copied") else keepCopy(path)
             } catch (exception: RuntimeException) {
                 Log.e(TAG, "Corrupted database copy failed unexpectedly", exception)
             } finally {
-                roomCallback.onCorruption(db)
+                try {
+                    roomCallback.onCorruption(db)
+                } finally {
+                    if (isInUse) markReplaced(path)
+                }
             }
+        }
+
+        /**
+         * Seulement les fichiers partis, journal compris : une instance neuve rouvrirait sinon la
+         * base abîmée (ou rejouerait son `-wal`). Le drapeau AVANT le compteur : un flux qui suit le
+         * compteur doit trouver l'instance neuve, jamais l'ancienne.
+         */
+        private fun markReplaced(path: String?) {
+            val remaining = path?.let { COMPANION_SUFFIXES.map { suffix -> File(path + suffix) }.filter(File::exists) }.orEmpty()
+            if (remaining.isNotEmpty()) {
+                Log.e(TAG, "Corrupted database files still there after deletion, instance left lost: $remaining")
+                return
+            }
+            Log.e(TAG, "Database lost in use, replaced by a new empty one")
+            // Côte à côte : entre les deux, une instance neuve peut s'ouvrir sans que le compteur l'ait dit.
+            isReplaced = true
+            onReplaced()
         }
     }
 

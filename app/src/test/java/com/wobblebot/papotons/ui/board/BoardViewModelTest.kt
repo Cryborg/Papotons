@@ -2,6 +2,7 @@ package com.wobblebot.papotons.ui.board
 
 import com.wobblebot.papotons.data.backup.BackupContent
 import android.content.Context
+import android.database.sqlite.SQLiteDatabaseCorruptException
 import android.database.sqlite.SQLiteException
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.lifecycle.SavedStateHandle
@@ -9,6 +10,7 @@ import androidx.lifecycle.ViewModelStore
 import com.wobblebot.papotons.data.FakePreferences
 import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.board.BoardRepository
+import com.wobblebot.papotons.data.board.TestDatabases
 import com.wobblebot.papotons.data.board.CellEntity
 import com.wobblebot.papotons.data.board.FakeBoardDao
 import com.wobblebot.papotons.data.pictogram.PictogramResult
@@ -39,6 +41,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -1752,6 +1755,70 @@ class BoardViewModelTest {
         assertFalse(viewModel.state().board?.canGoBack == true)
         assertNull(viewModel.state().editor)
         assertTrue(viewModel.state().isEditing)
+    }
+
+    @Test
+    fun `a database lost in use brings the stack back home on a new database, with the alert`() = runTest(dispatcher) {
+        val test = TestDatabases(FakeBoardDao(boards, cells), FakeBoardDao())
+        val repository = BoardRepository(test.databases, preferences, context).also { it.fileDispatcher = dispatcher }
+        val viewModel = BoardViewModel(repository, speaker, volume, arasaac, pictogramStore, photos, conjugations, SavedStateHandle()).also { it.elapsedRealtimeMs = { nowMs } }
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        viewModel.tap("A")
+        viewModel.tap("B")
+        viewModel.onStartEditing()
+        viewModel.tap("rouge")
+        assertNotNull(viewModel.state().editor)
+        assertFalse(viewModel.state().hasLostBoards)
+
+        test.replace()
+
+        // La base neuve, vide, a reçu le vocabulaire de base : son accueil, pas celui de l'ancienne.
+        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
+        assertNotEquals("home", viewModel.state().board?.name)
+        assertFalse(viewModel.state().board?.canGoBack == true)
+        assertNull(viewModel.state().editor)
+        assertTrue(viewModel.state().hasLostBoards)
+    }
+
+    @Test
+    fun `a home opening that fails on a lost database is retried on the new one`() = runTest(dispatcher) {
+        preferences.updateData { it.toMutablePreferences().apply { set(CORE_VOCABULARY_SEEDED, true) } }
+        val lost = FakeBoardDao(boards, cells)
+        val test = TestDatabases(lost, FakeBoardDao())
+        // Au lancement, c'est la lecture de l'accueil qui voit la corruption : copiée, remplacée, puis l'erreur.
+        lost.onCountBoards = {
+            test.replace()
+            throw SQLiteDatabaseCorruptException("database disk image is malformed")
+        }
+        val repository = BoardRepository(test.databases, preferences, context).also { it.fileDispatcher = dispatcher }
+
+        val viewModel = BoardViewModel(repository, speaker, volume, arasaac, pictogramStore, photos, conjugations, SavedStateHandle()).also { it.elapsedRealtimeMs = { nowMs } }
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
+        assertTrue(viewModel.state().hasLostBoards)
+    }
+
+    @Test
+    fun `a home opening that fails while the database is being copied waits for the new one`() = runTest(dispatcher) {
+        preferences.updateData { it.toMutablePreferences().apply { set(CORE_VOCABULARY_SEEDED, true) } }
+        val lost = FakeBoardDao(boards, cells)
+        val test = TestDatabases(lost, FakeBoardDao())
+        // L'erreur arrive pendant la copie : perdue, pas encore remplacée.
+        lost.onCountBoards = {
+            test.lose()
+            throw SQLiteDatabaseCorruptException("database disk image is malformed")
+        }
+        val repository = BoardRepository(test.databases, preferences, context).also { it.fileDispatcher = dispatcher }
+        val viewModel = BoardViewModel(repository, speaker, volume, arasaac, pictogramStore, photos, conjugations, SavedStateHandle()).also { it.elapsedRealtimeMs = { nowMs } }
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        assertNull(viewModel.state().board)
+
+        test.replace()
+
+        assertEquals(HOME_BOARD_ID, viewModel.state().board?.id)
+        assertNotEquals("home", viewModel.state().board?.name)
+        assertTrue(viewModel.state().hasLostBoards)
     }
 
     @Test

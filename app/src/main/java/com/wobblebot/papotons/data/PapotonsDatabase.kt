@@ -33,12 +33,19 @@ abstract class PapotonsDatabase : RoomDatabase() {
 }
 
 /**
- * La seule façon d'ouvrir la base, partagée par l'appli et ses tests instrumentés : la copie de
- * secours d'une base corrompue ([CorruptionCopyingOpenHelperFactory]) ne peut pas être oubliée.
+ * La seule façon d'ouvrir la base, partagée par l'appli ([PapotonsDatabases]) et ses tests
+ * instrumentés : la copie de secours d'une base corrompue ([CorruptionCopyingOpenHelperFactory])
+ * ne peut pas être oubliée.
  */
-fun buildDatabase(context: Context, name: String): PapotonsDatabase =
+fun buildDatabase(
+    context: Context,
+    name: String,
+    factory: CorruptionCopyingOpenHelperFactory = CorruptionCopyingOpenHelperFactory(context),
+    journalMode: RoomDatabase.JournalMode = RoomDatabase.JournalMode.AUTOMATIC,
+): PapotonsDatabase =
     Room.databaseBuilder(context, PapotonsDatabase::class.java, name)
-        .openHelperFactory(CorruptionCopyingOpenHelperFactory(context))
+        .openHelperFactory(factory)
+        .setJournalMode(journalMode)
         .addMigrations(migration3To4(context), Migration4To5)
         .build()
 
