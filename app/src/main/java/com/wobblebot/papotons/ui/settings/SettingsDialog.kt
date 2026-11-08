@@ -4,6 +4,7 @@ import android.os.Build
 import android.util.Log
 import android.view.Window
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -41,7 +42,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -335,11 +338,18 @@ private fun UpdateRow(status: UpdateStatus, onStartUpdate: () -> Unit, onInstall
         }
         UpdateStatus.Downloading -> {
             SettingsDivider()
-            PageExplanation(stringResource(R.string.update_downloading), Modifier.padding(vertical = ROW_VERTICAL_PADDING))
+            // Annoncée : la ligne touchée a disparu au retour de la fenêtre de Play.
+            PageExplanation(
+                stringResource(R.string.update_downloading),
+                Modifier.padding(vertical = ROW_VERTICAL_PADDING).semantics { liveRegion = LiveRegionMode.Polite },
+            )
         }
         UpdateStatus.ReadyToInstall -> {
             SettingsDivider()
-            SettingsRow(R.drawable.ic_arrow_downward, appBadgeColors(), stringResource(R.string.update_ready_row), stringResource(R.string.update_ready_row_summary), onInstallUpdate)
+            // Annoncée : le téléchargement finit pendant que l'adulte est ailleurs dans les Réglages.
+            Box(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
+                SettingsRow(R.drawable.ic_arrow_downward, appBadgeColors(), stringResource(R.string.update_ready_row), stringResource(R.string.update_ready_row_summary), onInstallUpdate)
+            }
         }
     }
 }
