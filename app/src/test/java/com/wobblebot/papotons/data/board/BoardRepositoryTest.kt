@@ -26,6 +26,7 @@ import com.wobblebot.papotons.data.createPreferences
 import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.HOME_BOARD_ID
 import com.wobblebot.papotons.domain.WordCategory
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.first
@@ -277,6 +278,39 @@ class BoardRepositoryTest {
 
         // Les ViewModels n'attrapent que `SQLiteException` pour un échec d'écriture.
         assertTrue(failure is SQLiteException)
+    }
+
+    @Test
+    fun `a snapshot read on a lost database comes back as a database failure`() = runTest {
+        var failure: RuntimeException? = null
+        val dao = mockk<BoardDao> {
+            coEvery { snapshot() } answers {
+                failure?.let { throw it }
+                DatabaseSnapshot(emptyList(), emptyList(), emptyList())
+            }
+        }
+        val test = TestDatabases(dao)
+        val repository = BoardRepository(test.databases, preferences, context)
+        repository.snapshot()
+        failure = IllegalStateException("connection is closed")
+        test.lose()
+
+        val result = runCatching { repository.snapshot() }.exceptionOrNull()
+
+        // La sauvegarde n'attrape que `SQLiteException` pour un échec de la base.
+        assertTrue(result is SQLiteException)
+    }
+
+    @Test
+    fun `a snapshot failure on a healthy database is left as it is`() = runTest {
+        val dao = mockk<BoardDao> {
+            coEvery { snapshot() } throws IllegalStateException("statement is closed")
+        }
+        val repository = BoardRepository(dao, preferences, context)
+
+        val result = runCatching { repository.snapshot() }.exceptionOrNull()
+
+        assertTrue(result is IllegalStateException)
     }
 
     @Test
