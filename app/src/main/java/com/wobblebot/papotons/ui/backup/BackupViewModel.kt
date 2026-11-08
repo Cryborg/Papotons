@@ -34,7 +34,7 @@ private const val TAG = "BackupViewModel"
 private const val STOP_TIMEOUT_MS = 5_000L
 
 /** Ce que la modale de sauvegarde dit après un travail. */
-enum class BackupMessage { Saved, SavedWithoutSomeImages, SaveFailed, SaveTooLarge, Restored, RestoreFailed, NotPapotons, Unreadable, TooLarge, Invalid, NoDocumentApp }
+enum class BackupMessage { Saved, SavedWithoutSomeImages, SaveFailed, SaveTooLarge, Restored, Recovered, NothingRecovered, RestoreFailed, NotPapotons, Unreadable, TooLarge, Invalid, NoDocumentApp }
 
 @Immutable
 data class BackupUiState(
@@ -42,8 +42,15 @@ data class BackupUiState(
     /** Un export, une lecture ou une restauration tourne : boutons grisés. */
     val isWorking: Boolean = false,
     val message: BackupMessage? = null,
-    /** Une sauvegarde lue et valide, en attente de confirmation. */
+    /** Une sauvegarde lue et valide, ou une copie abîmée relue, en attente de confirmation. */
     val pendingRestore: PendingRestore? = null,
+    /**
+     * Plusieurs copies abîmées relues : l'adulte choisit laquelle récupérer. Gardées pendant la
+     * confirmation de l'une d'elles : l'annuler ramène au choix sans tout relire. Vide sinon.
+     */
+    val recoveryChoices: ImmutableList<PendingRestore> = persistentListOf(),
+    /** Une copie de base abîmée existe : le bouton de récupération se montre. */
+    val hasCorruptedCopies: Boolean = false,
     /** Vrai aussi quand on ne sait pas : la pastille se trompe du bon côté. */
     val hasUnsavedChanges: Boolean = true,
     /** Les utilisateurs actuels, que la restauration remplacerait : la confirmation les nomme. */
@@ -84,6 +91,20 @@ class BackupViewModel @Inject constructor(
     /** Un message arrivé modale fermée (fin d'édition pendant un travail) reste jusqu'à la prochaine ouverture. */
     fun onOpen() {
         dialog.update { it.copy(isDialogOpen = true) }
+        refreshCorruptedCopies()
+    }
+
+    init {
+        // Dès la création : à la première ouverture, le bouton est déjà là (pas de saut sous TalkBack).
+        refreshCorruptedCopies()
+    }
+
+    /** Relu à chaque ouverture : une copie peut naître pendant la session (corruption en cours d'usage). */
+    private fun refreshCorruptedCopies() {
+        viewModelScope.launch {
+            val hasCopies = store.hasCorruptedCopies()
+            dialog.update { it.copy(hasCorruptedCopies = hasCopies) }
+        }
     }
 
     fun onClose() {
@@ -139,10 +160,36 @@ class BackupViewModel @Inject constructor(
         return true
     }
 
+    /** Relit les copies abîmées : rien, une seule à confirmer, ou plusieurs à choisir. */
+    fun onRecoverRequested() {
+        // Deux appuis avant que le bouton ne se grise : une seule lecture.
+        if (dialog.value.isWorking) return
+        analysis = work(success = null, failure = BackupMessage.RestoreFailed, isRestoring = true) {
+            val found = store.analyzeCorruptedCopies()
+            dialog.update {
+                when (found.size) {
+                    0 -> it.copy(message = BackupMessage.NothingRecovered)
+                    1 -> it.copy(pendingRestore = found.single())
+                    else -> it.copy(recoveryChoices = found.toImmutableList())
+                }
+            }
+        }
+    }
+
+    fun onRecoveryChosen(choice: PendingRestore) {
+        if (dialog.value.recoveryChoices.none { it === choice }) return
+        dialog.update { it.copy(pendingRestore = choice) }
+    }
+
+    fun onCancelRecoveryChoice() {
+        dialog.update { it.copy(recoveryChoices = persistentListOf()) }
+    }
+
     fun onConfirmRestore() {
         val pending = dialog.value.pendingRestore ?: return
-        dialog.update { it.copy(pendingRestore = null) }
-        work(success = BackupMessage.Restored, failure = BackupMessage.RestoreFailed, isRestoring = true) { store.restore(pending) }
+        dialog.update { it.copy(pendingRestore = null, recoveryChoices = persistentListOf()) }
+        val success = if (pending.recovery == null) BackupMessage.Restored else BackupMessage.Recovered
+        work(success = success, failure = BackupMessage.RestoreFailed, isRestoring = true) { store.restore(pending) }
     }
 
     fun onCancelRestore() {
@@ -158,7 +205,7 @@ class BackupViewModel @Inject constructor(
         analysis?.cancel()
         analysis = null
         val hadPending = dialog.value.pendingRestore != null
-        dialog.update { it.copy(isDialogOpen = false, pendingRestore = null) }
+        dialog.update { it.copy(isDialogOpen = false, pendingRestore = null, recoveryChoices = persistentListOf()) }
         if (hadPending || wasAnalyzing) viewModelScope.launch { store.discard() }
     }
 

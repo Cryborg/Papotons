@@ -19,10 +19,10 @@ import org.json.JSONObject
 const val BACKUP_FORMAT_VERSION = 3
 
 /** Le format d'avant les utilisateurs : toutes ses grilles deviennent celles d'un seul. */
-private const val SINGLE_PROFILE_FORMAT_VERSION = 1
+internal const val SINGLE_PROFILE_FORMAT_VERSION = 1
 
 /** Le format d'avant les écrans : l'écran de départ de chaque utilisateur devient son premier écran. */
-private const val BEFORE_SCREENS_FORMAT_VERSION = 2
+internal const val BEFORE_SCREENS_FORMAT_VERSION = 2
 
 const val MANIFEST_PATH = "manifest.json"
 private const val OPEN_BOARD_FORMAT = "open-board-0.1"

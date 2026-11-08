@@ -10,6 +10,7 @@ import com.wobblebot.papotons.data.backup.BackupContent
 import com.wobblebot.papotons.data.backup.BackupRefusedException
 import com.wobblebot.papotons.data.backup.BackupStore
 import com.wobblebot.papotons.data.backup.PendingRestore
+import com.wobblebot.papotons.data.backup.RecoveryReport
 import com.wobblebot.papotons.data.backup.RefusalReason
 import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.profile.ProfileEntity
@@ -83,6 +84,29 @@ class FakeBackupStore : BackupStore {
     override suspend fun deleteEmptyDocument(document: Uri) {
         documentsOfferedForDeletion += document
     }
+
+    var hasCopies = false
+    var recoverable: List<PendingRestore> = emptyList()
+    var recoveryFailure: Exception? = null
+    var recoveryGate: CompletableDeferred<Unit>? = null
+
+    override suspend fun hasCorruptedCopies(): Boolean = hasCopies
+
+    var onRecoveryRead: () -> Unit = {}
+
+    override suspend fun analyzeCorruptedCopies(): List<PendingRestore> {
+        onRecoveryRead()
+        recoveryGate?.await()
+        recoveryFailure?.let { throw it }
+        return recoverable
+    }
+
+    /** Une copie relue, d'utilisateur [name] : deux se distinguent à leur nom. */
+    fun recovered(name: String) = PendingRestore(
+        fileName = null,
+        content = pending.content.copy(profiles = listOf(ProfileEntity(1, name, null))),
+        recovery = RecoveryReport(copyName = "000001-$name", copiedAtMs = 1_000L, announcedCellCount = 2, leftOutRowCount = 1),
+    )
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -474,5 +498,167 @@ class BackupViewModelTest {
         viewModel.onSaveRequested("%1\$s")
         nowMs += PHOTO_REQUEST_TIMEOUT_MS + 1
         assertFalse(viewModel.onSaveDocument(document))
+    }
+
+    @Test
+    fun `the recovery button shows only while a damaged copy exists`() = runTest(dispatcher) {
+        val viewModel = viewModel()
+        viewModel.onOpen()
+        assertFalse(viewModel.uiState.value.hasCorruptedCopies)
+
+        store.hasCopies = true
+        viewModel.onClose()
+        viewModel.onOpen()
+
+        assertTrue(viewModel.uiState.value.hasCorruptedCopies)
+
+        // Supprimées entre deux ouvertures (données effacées, par exemple) : le bouton s'en va.
+        store.hasCopies = false
+        viewModel.onClose()
+        viewModel.onOpen()
+        assertFalse(viewModel.uiState.value.hasCorruptedCopies)
+    }
+
+    @Test
+    fun `the recovery button is known before the first opening`() = runTest(dispatcher) {
+        store.hasCopies = true
+
+        val viewModel = viewModel()
+
+        assertTrue(viewModel.uiState.value.hasCorruptedCopies)
+    }
+
+    @Test
+    fun `copies with nothing readable say so`() = runTest(dispatcher) {
+        val viewModel = viewModel()
+        viewModel.onOpen()
+
+        viewModel.onRecoverRequested()
+
+        assertEquals(BackupMessage.NothingRecovered, viewModel.uiState.value.message)
+        assertNull(viewModel.uiState.value.pendingRestore)
+        assertTrue(viewModel.uiState.value.recoveryChoices.isEmpty())
+        assertFalse(viewModel.uiState.value.isWorking)
+    }
+
+    @Test
+    fun `a single readable copy goes straight to the confirmation, then says to read the boards again`() = runTest(dispatcher) {
+        val copy = store.recovered("Léo")
+        store.recoverable = listOf(copy)
+        val viewModel = viewModel()
+        viewModel.onOpen()
+
+        viewModel.onRecoverRequested()
+
+        assertSame(copy, viewModel.uiState.value.pendingRestore)
+        assertTrue(viewModel.uiState.value.recoveryChoices.isEmpty())
+        viewModel.onConfirmRestore()
+        assertEquals(listOf(copy), store.restored)
+        assertEquals(BackupMessage.Recovered, viewModel.uiState.value.message)
+    }
+
+    @Test
+    fun `several readable copies are offered, and the chosen one is confirmed`() = runTest(dispatcher) {
+        val newer = store.recovered("Léo")
+        val older = store.recovered("Marie")
+        store.recoverable = listOf(newer, older)
+        val viewModel = viewModel()
+        viewModel.onOpen()
+
+        viewModel.onRecoverRequested()
+        assertEquals(listOf(newer, older), viewModel.uiState.value.recoveryChoices)
+        assertNull(viewModel.uiState.value.pendingRestore)
+
+        viewModel.onRecoveryChosen(older)
+
+        assertSame(older, viewModel.uiState.value.pendingRestore)
+        viewModel.onConfirmRestore()
+        assertEquals(listOf(older), store.restored)
+        assertTrue(viewModel.uiState.value.recoveryChoices.isEmpty())
+    }
+
+    @Test
+    fun `cancelling the confirmation of a chosen copy brings the choice back`() = runTest(dispatcher) {
+        val copies = listOf(store.recovered("Léo"), store.recovered("Marie"))
+        store.recoverable = copies
+        val viewModel = viewModel()
+        viewModel.onOpen()
+        viewModel.onRecoverRequested()
+        viewModel.onRecoveryChosen(copies[1])
+
+        viewModel.onCancelRestore()
+
+        assertNull(viewModel.uiState.value.pendingRestore)
+        assertEquals(copies, viewModel.uiState.value.recoveryChoices)
+        assertTrue(store.restored.isEmpty())
+    }
+
+    @Test
+    fun `a second tap while the copies are read starts no second reading`() = runTest(dispatcher) {
+        var readings = 0
+        store.recoveryGate = CompletableDeferred()
+        store.onRecoveryRead = { readings++ }
+        val viewModel = viewModel()
+        viewModel.onOpen()
+
+        viewModel.onRecoverRequested()
+        viewModel.onRecoverRequested()
+        store.recoveryGate?.complete(Unit)
+
+        assertEquals(1, readings)
+    }
+
+    @Test
+    fun `a choice no longer offered confirms nothing`() = runTest(dispatcher) {
+        store.recoverable = listOf(store.recovered("Léo"), store.recovered("Marie"))
+        val viewModel = viewModel()
+        viewModel.onOpen()
+        viewModel.onRecoverRequested()
+        viewModel.onCancelRecoveryChoice()
+
+        // Un second appui sur une ligne de la modale qui se ferme.
+        viewModel.onRecoveryChosen(store.recoverable.first())
+
+        assertNull(viewModel.uiState.value.pendingRestore)
+        assertTrue(viewModel.uiState.value.recoveryChoices.isEmpty())
+    }
+
+    @Test
+    fun `the end of the edit forgets the copies offered`() = runTest(dispatcher) {
+        store.recoverable = listOf(store.recovered("Léo"), store.recovered("Marie"))
+        val viewModel = viewModel()
+        viewModel.onOpen()
+        viewModel.onRecoverRequested()
+
+        viewModel.onEditingEnded()
+
+        assertTrue(viewModel.uiState.value.recoveryChoices.isEmpty())
+    }
+
+    @Test
+    fun `a reading of the copies still running when the edit ends never brings its choice back`() = runTest(dispatcher) {
+        store.recoverable = listOf(store.recovered("Léo"), store.recovered("Marie"))
+        store.recoveryGate = CompletableDeferred()
+        val viewModel = viewModel()
+        viewModel.onOpen()
+        viewModel.onRecoverRequested()
+
+        viewModel.onEditingEnded()
+        store.recoveryGate?.complete(Unit)
+
+        assertTrue(viewModel.uiState.value.recoveryChoices.isEmpty())
+        assertFalse(viewModel.uiState.value.isWorking)
+    }
+
+    @Test
+    fun `copies that could not be read say the boards did not change`() = runTest(dispatcher) {
+        store.recoveryFailure = IOException("No copy could be read")
+        val viewModel = viewModel()
+        viewModel.onOpen()
+
+        viewModel.onRecoverRequested()
+
+        assertEquals(BackupMessage.RestoreFailed, viewModel.uiState.value.message)
+        assertFalse(viewModel.uiState.value.isWorking)
     }
 }

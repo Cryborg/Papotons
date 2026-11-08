@@ -336,7 +336,7 @@ class BoardProfilesTest {
             boards = content.boards.map { it.copy(profileId = 5) },
         )
 
-        repository.replaceAll(renumbered)
+        repository.replaceAll(renumbered, isSaved = true)
 
         assertEquals(HOME_BOARD_ID, repository.ensureHomeBoard())
         assertEquals(5L, repository.openProfileId.value)
@@ -351,7 +351,7 @@ class BoardProfilesTest {
         repository.ensureHomeBoard()
         val (content, _) = repository.snapshot()
 
-        repository.replaceAll(content)
+        repository.replaceAll(content, isSaved = true)
 
         assertEquals(dao.homeOf(anna), repository.ensureHomeBoard())
         assertEquals(anna, repository.openProfileId.value)

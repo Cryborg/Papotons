@@ -9,6 +9,7 @@
     <string name="backup_explanation">Une sauvegarde contient les grilles de tous les utilisateurs. C\'est un fichier que vous rangez où vous voulez : Drive, carte mémoire, envoi par mail. Elle permet de retrouver les grilles après une perte, ou de les passer sur une autre tablette. Papotons n\'envoie rien de lui-même.</string>
     <string name="backup_save">Enregistrer une sauvegarde</string>
     <string name="backup_restore">Restaurer une sauvegarde</string>
+    <string name="backup_recover">Récupérer les grilles abîmées</string>
     <string name="backup_close">Fermer</string>
     <string name="backup_working">Un instant…</string>
     <string name="backup_file_name">papotons-%1$s.obz</string>
@@ -19,6 +20,8 @@
     <string name="backup_save_failed">La sauvegarde a échoué. Réessayez ; si cela continue, l\'appareil manque peut-être de place, ou l\'emplacement choisi refuse le fichier.</string>
     <string name="backup_no_document_app">Aucune application de cet appareil ne permet de choisir un fichier.</string>
     <string name="backup_restored">Les grilles ont été restaurées.</string>
+    <string name="backup_recovered">Les grilles retrouvées ont été remises. Relisez chaque grille : des cases peuvent manquer ou être fausses.</string>
+    <string name="backup_nothing_recovered">Rien n\'a pu être relu dans les copies abîmées. Elles sont jointes aux sauvegardes que vous enregistrez, si la place le permet, pour qu\'un expert puisse les examiner.</string>
     <string name="backup_restore_failed">La restauration a échoué. Les grilles n\'ont pas changé.</string>
     <string name="backup_refused_not_papotons">Ce fichier n\'est pas une sauvegarde de Papotons.</string>
     <string name="backup_refused_unreadable">Ce fichier est abîmé ou illisible.</string>
@@ -43,5 +46,32 @@
     <string name="restore_confirm">Restaurer</string>
     <string name="restore_cancel">Annuler</string>
 
-    <string name="lost_boards_dialog_restore">Restaurer une sauvegarde</string>
+    <string name="lost_boards_dialog_restore">Ouvrir la Sauvegarde</string>
+
+    <!-- Récupération des grilles d'une copie de base abîmée -->
+    <string name="recovery_choice_title">Quelle copie récupérer ?</string>
+    <string name="recovery_choice_explanation">Papotons a gardé plusieurs copies de ses grilles abîmées. Choisissez celle à récupérer : la date dit quand la copie a été faite.</string>
+    <!-- %1$s : la date et l'heure de la copie. -->
+    <string name="recovery_copy_date">Copie du %1$s</string>
+    <string name="recovery_copy_undated">Copie de date inconnue</string>
+    <!-- %1$s : les utilisateurs ; %2$s : « 7 grilles » ; %3$s : « 180 cases sur 224 » ou « 180 cases ». -->
+    <string name="recovery_copy_content">%1$s : %2$s et %3$s</string>
+    <plurals name="recovery_cells_of_announced">
+        <item quantity="one">%1$d case sur %2$d</item>
+        <item quantity="many">%1$d cases sur %2$d</item>
+        <item quantity="other">%1$d cases sur %2$d</item>
+    </plurals>
+    <string name="recovery_confirm_title">Récupérer ces grilles ?</string>
+    <!-- %1$s : « 7 grilles » ; %2$s : « 180 cases sur 224 » ou « 180 cases ». -->
+    <string name="recovery_confirm_content">Papotons a pu y relire %1$s et %2$s.</string>
+    <plurals name="recovery_confirm_left_out">
+        <item quantity="one">%1$d élément illisible ou incohérent a été laissé de côté.</item>
+        <item quantity="many">%1$d éléments illisibles ou incohérents ont été laissés de côté.</item>
+        <item quantity="other">%1$d éléments illisibles ou incohérents ont été laissés de côté.</item>
+    </plurals>
+    <!-- %1$s : les utilisateurs actuels ; %2$s : ceux de la copie (noms séparés par des virgules). -->
+    <string name="recovery_confirm_warning">Les grilles actuelles (%1$s) seront remplacées par celles retrouvées (%2$s). Des cases peuvent manquer ou être fausses : relisez chaque grille après.</string>
+    <string name="recovery_confirm">Récupérer</string>
+    <!-- Le nom d'une grille récupérée dont le nom était illisible. -->
+    <string name="recovery_board_default_name">Grille retrouvée</string>
 </resources>

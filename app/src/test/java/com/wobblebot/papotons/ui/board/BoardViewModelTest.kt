@@ -1749,7 +1749,7 @@ class BoardViewModelTest {
         viewModel.tap("rouge")
         assertNotNull(viewModel.state().editor)
 
-        repository.replaceAll(BackupContent(dao.profiles.value, listOf(dao.boards.value[0].copy(name = "restored")), listOf(cells[0])))
+        repository.replaceAll(BackupContent(dao.profiles.value, listOf(dao.boards.value[0].copy(name = "restored")), listOf(cells[0])), isSaved = true)
 
         assertEquals("restored", viewModel.state().board?.name)
         assertFalse(viewModel.state().board?.canGoBack == true)
@@ -1969,7 +1969,7 @@ class BoardViewModelTest {
         viewModel.onCellLongClick(viewModel.cell("ai"))
         assertNotNull(viewModel.state().verbForms)
 
-        repository.replaceAll(BackupContent(dao.profiles.value, listOf(dao.boards.value[0].copy(name = "restored")), listOf(cells[0])))
+        repository.replaceAll(BackupContent(dao.profiles.value, listOf(dao.boards.value[0].copy(name = "restored")), listOf(cells[0])), isSaved = true)
 
         assertEquals("restored", viewModel.state().board?.name)
         assertNull(viewModel.state().verbForms)

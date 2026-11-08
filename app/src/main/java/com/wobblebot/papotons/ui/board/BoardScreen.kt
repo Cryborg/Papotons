@@ -56,6 +56,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.wobblebot.papotons.R
+import com.wobblebot.papotons.data.backup.PendingRestore
 import com.wobblebot.papotons.domain.BoardSize
 import com.wobblebot.papotons.domain.Cell
 import com.wobblebot.papotons.domain.SentenceToken
@@ -64,6 +65,7 @@ import com.wobblebot.papotons.speech.SpeechStatus
 import com.wobblebot.papotons.ui.backup.BackupDialog
 import com.wobblebot.papotons.ui.backup.BackupUiState
 import com.wobblebot.papotons.ui.backup.BackupViewModel
+import com.wobblebot.papotons.ui.backup.RecoveryChoiceDialog
 import com.wobblebot.papotons.ui.backup.RestoreConfirmDialog
 import com.wobblebot.papotons.ui.edit.CellEditorDialog
 import com.wobblebot.papotons.ui.edit.AdultGateDialog
@@ -390,6 +392,9 @@ fun BoardRoute(
                 backupViewModel.onDocumentRequestFailed()
             }
         },
+        onRecover = backupViewModel::onRecoverRequested,
+        onChooseRecovery = backupViewModel::onRecoveryChosen,
+        onCancelRecoveryChoice = backupViewModel::onCancelRecoveryChoice,
         onConfirmRestore = backupViewModel::onConfirmRestore,
         onCancelRestore = backupViewModel::onCancelRestore,
         onClose = backupViewModel::onClose,
@@ -424,6 +429,9 @@ private fun BackupDialogs(
     state: BackupUiState,
     onSave: () -> Unit,
     onRestore: () -> Unit,
+    onRecover: () -> Unit,
+    onChooseRecovery: (PendingRestore) -> Unit,
+    onCancelRecoveryChoice: () -> Unit,
     onConfirmRestore: () -> Unit,
     onCancelRestore: () -> Unit,
     onClose: () -> Unit,
@@ -433,6 +441,7 @@ private fun BackupDialogs(
     if (pending != null) {
         RestoreConfirmDialog(
             fileName = pending.fileName,
+            recovery = pending.recovery,
             currentProfileNames = state.currentProfileNames,
             restoredProfileNames = remember(pending) { pending.profileNames.toImmutableList() },
             boardCount = pending.boardCount,
@@ -440,8 +449,10 @@ private fun BackupDialogs(
             onConfirm = onConfirmRestore,
             onCancel = onCancelRestore,
         )
+    } else if (state.recoveryChoices.isNotEmpty()) {
+        RecoveryChoiceDialog(choices = state.recoveryChoices, onChoose = onChooseRecovery, onCancel = onCancelRecoveryChoice)
     } else if (state.isDialogOpen) {
-        BackupDialog(state = state, onSave = onSave, onRestore = onRestore, onClose = onClose)
+        BackupDialog(state = state, onSave = onSave, onRestore = onRestore, onRecover = onRecover, onClose = onClose)
     }
 }
 

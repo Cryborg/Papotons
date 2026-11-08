@@ -174,6 +174,24 @@ def main() -> None:
     # Fichier coupé au milieu d'une page, comme une copie interrompue.
     variants["file-cut-in-half"] = bytearray(healthy[: len(healthy) // 2 + PAGE_SIZE // 3])
 
+    # La dernière feuille des cases et la page de `sqlite_sequence` remplies d'octets aléatoires : ni
+    # `max(id)` ni la séquence ne disent jusqu'où lire. Tirée après les autres : elles ne changent pas.
+    broken = bytearray(healthy)
+    overwrite_page(broken, cell_leaves[-1], 0, generator.randbytes(PAGE_SIZE))
+    overwrite_page(broken, pages["sqlite_sequence"], 0, generator.randbytes(PAGE_SIZE))
+    variants["cells-last-page-and-sequence-random"] = broken
+
+    # La clé (rowid) de la première case de la feuille la plus à gauche réécrite de 1 en 127 : rien ne
+    # lève, mais `min(id)` répond 127 et une recherche par id se perd dans la feuille.
+    broken = bytearray(healthy)
+    leaf = (cell_leaves[0] - 1) * PAGE_SIZE
+    first_cell = leaf + struct.unpack(">H", broken[leaf + 8:leaf + 10])[0]
+    payload_size_length = next(i for i in range(9) if broken[first_cell + i] < 0x80) + 1
+    if broken[first_cell + payload_size_length] != 1:
+        raise SystemExit("the first cell of the leftmost leaf is not the cell 1")
+    broken[first_cell + payload_size_length] = 0x7F
+    variants["cells-first-key-garbled"] = broken
+
     for name, content in variants.items():
         path = OUTPUT / f"{name}.db"
         path.write_bytes(bytes(content))

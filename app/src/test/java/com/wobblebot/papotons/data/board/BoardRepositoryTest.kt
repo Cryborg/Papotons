@@ -712,7 +712,7 @@ class BoardRepositoryTest {
         dao.insertFailure = IllegalStateException("disk full")
 
         try {
-            repository.replaceAll(BackupContent(dao.profiles.value, dao.boards.value, emptyList()))
+            repository.replaceAll(BackupContent(dao.profiles.value, dao.boards.value, emptyList()), isSaved = true)
             fail("The insert should fail")
         } catch (exception: IllegalStateException) {
             // Échec après le drapeau : un faux « non sauvegardé » ne coûte rien.
@@ -760,12 +760,34 @@ class BoardRepositoryTest {
             listOf(CellEntity(id = 77, boardId = 9, row = 0, column = 0, label = "x", linkedBoardId = null, pictogramId = null, category = null)),
         )
 
-        repository.replaceAll(restored)
+        repository.replaceAll(restored, isSaved = true)
 
         assertEquals(listOf("restored", "nine"), dao.boards.value.map { it.name })
         assertEquals(listOf("x"), dao.cells.value.map { it.label })
         assertFalse(repository.observeLostBoards().first())
         assertFalse(repository.observeUnsavedChanges().first())
+        assertEquals(1, repository.replacements.value)
+    }
+
+    @Test
+    fun `boards recovered from a damaged copy are not marked saved`() = runTest {
+        val preferences = FakePreferences()
+        preferences.edit { it[BOARDS_LOST_AT] = 1L }
+        val dao = homeOnly()
+        val repository = BoardRepository(dao, preferences, context)
+        repository.markSaved(repository.snapshot().second)
+        val recovered = BackupContent(
+            listOf(ProfileEntity(FIRST_PROFILE_ID, "Léo", startBoardId = null)),
+            listOf(BoardEntity(id = 9, name = "nine", rowCount = 1, columnCount = 1, profileId = FIRST_PROFILE_ID, screenPosition = 0)),
+            emptyList(),
+        )
+
+        repository.replaceAll(recovered, isSaved = false)
+
+        assertEquals(listOf("nine"), dao.boards.value.map { it.name })
+        // Rien ne les porte hors de l'appareil : la pastille le dit, même si tout était sauvegardé avant.
+        assertTrue(repository.observeUnsavedChanges().first())
+        assertFalse(repository.observeLostBoards().first())
         assertEquals(1, repository.replacements.value)
     }
 
@@ -778,7 +800,7 @@ class BoardRepositoryTest {
         val repository = BoardRepository(dao, FakePreferences(), context)
 
         try {
-            repository.replaceAll(BackupContent(dao.profiles.value, listOf(BoardEntity(id = HOME_BOARD_ID, name = "restored", rowCount = 1, columnCount = 1, profileId = FIRST_PROFILE_ID)), emptyList()))
+            repository.replaceAll(BackupContent(dao.profiles.value, listOf(BoardEntity(id = HOME_BOARD_ID, name = "restored", rowCount = 1, columnCount = 1, profileId = FIRST_PROFILE_ID)), emptyList()), isSaved = true)
             fail("The restore should fail")
         } catch (exception: IOException) {
             // Le marqueur d'abord : rien n'est écrit sans lui.

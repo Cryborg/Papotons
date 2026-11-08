@@ -466,13 +466,15 @@ class BoardRepository @Inject constructor(
     /**
      * Remplace tous les utilisateurs et leurs grilles par [content] (déjà validé), en une transaction :
      * un échec laisse la base d'avant. Puis l'alerte de perte est acquittée et l'écran repart de
-     * premier écran (d'un autre utilisateur si l'ouvert n'existe plus).
+     * premier écran (d'un autre utilisateur si l'ouvert n'existe plus). [isSaved] : [content] vient
+     * d'une sauvegarde, les grilles sont donc sauvegardées ; récupérées d'une copie abîmée, rien ne
+     * les porte hors de l'appareil.
      */
-    suspend fun replaceAll(content: BackupContent) {
+    suspend fun replaceAll(content: BackupContent, isSaved: Boolean) {
         write { boardDao.replaceAll(content.profiles, content.boards, content.cells.map { it.copy(id = 0) }) }
-        Log.i(TAG, "Boards replaced: ${content.profiles.size} profiles, ${content.boards.size} boards, ${content.cells.size} cells")
+        Log.i(TAG, "Boards replaced: ${content.profiles.size} profiles, ${content.boards.size} boards, ${content.cells.size} cells, saved: $isSaved")
         acknowledgeLostBoards()
-        markSaved(writeCount.get())
+        if (isSaved) markSaved(writeCount.get())
         replacementCount.update { it + 1 }
     }
 

@@ -4,11 +4,13 @@ import android.content.ContentResolver
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.util.Log
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.data.CorruptedDatabaseCopies
+import com.wobblebot.papotons.data.PapotonsDatabase
 import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.board.CellEntity
 import com.wobblebot.papotons.data.board.BoardRepository
@@ -21,6 +23,9 @@ import com.wobblebot.papotons.data.pictogram.PictogramImages
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -41,6 +46,9 @@ import javax.inject.Singleton
 
 private const val TAG = "BoardBackup"
 private const val RESTORE_FILE = "restore.obz"
+
+/** Où une copie abîmée est recopiée pour être relue : hors de la sauvegarde Android, vidé après. */
+private const val RECOVERY_DIRECTORY = "recovery"
 private const val TRUNCATING_WRITE_MODE = "wt"
 private const val WRITE_MODE = "w"
 
@@ -57,8 +65,18 @@ private const val WRITABLE_ARCHIVE_BYTES = MAX_ARCHIVE_BYTES - MAX_ENTRIES * ENT
 private const val CORRUPTED_COPIES_PREFIX = "papotons/corrupted-databases"
 private const val UNREFERENCED_IMAGES_PREFIX = "papotons/unreferenced-images"
 
-/** Une sauvegarde lue, validée, prête à remplacer les grilles. */
-data class PendingRestore(val fileName: String?, val content: BackupContent) {
+/**
+ * Le bilan d'une récupération, de la copie [copyName] : [copiedAtMs] quand la copie a été faite (date de son dossier, 0 :
+ * inconnue) ; [announcedCellCount] les cases que la copie annonçait, `null` si on ne le sait pas ;
+ * [leftOutRowCount] les lignes relues mais écartées (illisibles, incohérentes, ou au-delà des plafonds).
+ */
+data class RecoveryReport(val copyName: String, val copiedAtMs: Long, val announcedCellCount: Int?, val leftOutRowCount: Int)
+
+/**
+ * Une sauvegarde lue, ou une copie abîmée relue ([recovery] non nul), validée, prête à remplacer les
+ * grilles.
+ */
+data class PendingRestore(val fileName: String?, val content: BackupContent, val recovery: RecoveryReport? = null) {
     val profileNames: List<String> get() = content.profiles.map { it.name }
     val boardCount: Int get() = content.boards.size
     val cellCount: Int get() = content.cells.size
@@ -89,6 +107,16 @@ interface BackupStore {
     /** Oublie la sauvegarde lue et pas restaurée. */
     suspend fun discard()
 
+    /** Une copie de base abîmée existe : on peut tenter d'en récupérer les grilles. */
+    suspend fun hasCorruptedCopies(): Boolean
+
+    /**
+     * Relit chaque copie de base abîmée, la plus récente d'abord, sans rien écrire dans les grilles :
+     * celles dont il reste quelque chose. Vide si aucune n'a rien de lisible ; [IOException] si aucune
+     * ne revient et qu'au moins une n'a pas pu être relue (stockage, mémoire, refus de [validate]).
+     */
+    suspend fun analyzeCorruptedCopies(): List<PendingRestore>
+
     /**
      * Un document revenu trop tard : supprimé s'il est vide (créé pour rien). S'il a un contenu, ou
      * qu'on ne sait pas le lire, c'est peut-être la sauvegarde que l'adulte voulait remplacer : il reste.
@@ -112,6 +140,7 @@ class BoardBackup @Inject constructor(
     private val restoreFile = File(context.noBackupFilesDir, RESTORE_FILE)
     private val photosDirectory = File(context.filesDir, CELL_PHOTOS_DIRECTORY)
     private val downloadedDirectory = File(context.filesDir, DOWNLOADED_PICTOGRAMS_DIRECTORY)
+    private val recoveryDirectory = File(context.noBackupFilesDir, RECOVERY_DIRECTORY)
 
     /** Une lecture, une restauration ou un oubli à la fois : jamais `restore.obz` effacé pendant qu'on le lit. */
     private val restoreFileLock = Mutex()
@@ -449,6 +478,18 @@ class BoardBackup @Inject constructor(
     }
 
     private suspend fun restoreLocked(pending: PendingRestore) {
+        // Récupérée d'une copie : ses cases ne visent que des images de l'appareil, que le ménage du
+        // lancement n'efface pas tant qu'une copie existe. Rien à remettre, rien à lire d'une archive.
+        if (pending.recovery == null) restoreImages(pending) else Log.i(TAG, "Recovering copy ${pending.recovery.copyName}")
+        // Hors du `catch` du manque de mémoire : après la transaction, ce ne serait plus « rien n'a changé ».
+        try {
+            repository.replaceAll(pending.content, isSaved = pending.recovery == null)
+        } finally {
+            discardFile()
+        }
+    }
+
+    private suspend fun restoreImages(pending: PendingRestore) {
         try {
             // Les images d'abord : une transaction réussie ne vise jamais une image absente. Un échec
             // ici arrête tout avant la base ; les images écrites en trop partent au ménage du lancement.
@@ -491,12 +532,80 @@ class BoardBackup @Inject constructor(
             discardFile()
             throw throwable
         }
-        // Hors du `catch` du manque de mémoire : après la transaction, ce ne serait plus « rien n'a changé ».
-        try {
-            repository.replaceAll(pending.content)
-        } finally {
-            discardFile()
+    }
+
+    // Les dossiers seulement, comme l'analyse : un fichier égaré ne montre pas un bouton qui ne trouverait rien.
+    override suspend fun hasCorruptedCopies(): Boolean = withContext(Dispatchers.IO) { CorruptedDatabaseCopies(context.filesDir).copyDirectories().isNotEmpty() }
+
+    override suspend fun analyzeCorruptedCopies(): List<PendingRestore> = withContext(Dispatchers.IO) {
+        // Le même verrou que la restauration : jamais une récupération confirmée pendant qu'on relit.
+        restoreFileLock.withLock {
+            val copies = CorruptedDatabaseCopies(context.filesDir).copyDirectories().sortedByDescending { it.name }
+            var failures = 0
+            val found = copies.mapNotNull { copy ->
+                // Une lecture abandonnée (fin d'édition) rend le verrou : une restauration attendrait sinon.
+                currentCoroutineContext().ensureActive()
+                try {
+                    analyzeCopy(copy)
+                } catch (exception: IOException) {
+                    // Le stockage qui a abîmé la base peut abîmer sa copie : les autres se tentent quand même.
+                    Log.e(TAG, "Copy ${copy.name} could not be read: ${exception.javaClass.simpleName} (${exception.cause?.javaClass?.simpleName})")
+                    failures++
+                    null
+                } catch (error: OutOfMemoryError) {
+                    // Une copie énorme sur une tablette modeste : elle reste pour un expert, les autres se tentent.
+                    Log.e(TAG, "Copy ${copy.name} too large to read")
+                    failures++
+                    null
+                }
+            }
+            // Une copie au moins pas relue (stockage, mémoire, bug) et rien d'autre : un échec, pas « rien de lisible ».
+            if (found.isEmpty() && failures > 0) throw IOException("$failures of ${copies.size} copies could not be read")
+            if (failures > 0) Log.e(TAG, "$failures of ${copies.size} copies could not be read, ${found.size} offered")
+            found
         }
+    }
+
+    /**
+     * Quand la copie a été faite : la date de sa base, que la copie pose, et qu'une restauration de la
+     * sauvegarde Android rend. Le dossier change de date à chaque fichier recréé dedans : seulement en repli.
+     */
+    private fun copiedAtMs(copy: File): Long = File(copy, PapotonsDatabase.NAME).lastModified().takeIf { it > 0 } ?: copy.lastModified()
+
+    private suspend fun analyzeCopy(copy: File): PendingRestore? {
+        val startedAtMs = SystemClock.elapsedRealtime()
+        val job = currentCoroutineContext().job
+        val tables = readCorruptedCopy(copy, PapotonsDatabase.NAME, recoveryDirectory) { job.ensureActive() } ?: return null
+        val recovered = recoverContent(
+            tables,
+            isPictogramOnDevice = pictograms::isOnDevice,
+            isPhotoOnDevice = { photoFile(it) != null },
+            defaultProfileName = context.getString(R.string.profile_default_name),
+            defaultBoardName = context.getString(R.string.recovery_board_default_name),
+        )
+        val durationMs = SystemClock.elapsedRealtime() - startedAtMs
+        if (recovered == null) {
+            Log.w(TAG, "Copy ${copy.name}: nothing recoverable (${durationMs} ms)")
+            return null
+        }
+        val content = recovered.content
+        try {
+            validate(content)
+        } catch (exception: BackupRefusedException) {
+            // Les règles de la récupération devaient tout écarter avant : un bug, compté comme une copie pas relue.
+            Log.e(TAG, "Copy ${copy.name}: recovered content refused (${exception.reason}): ${exception.message}")
+            throw IOException("Recovered content refused", exception)
+        }
+        Log.i(
+            TAG,
+            "Copy ${copy.name}: ${content.profiles.size} profiles, ${content.boards.size} boards, ${content.cells.size} cells recovered, " +
+                "left out ${recovered.leftOut}, without some part ${recovered.degraded} (${durationMs} ms)",
+        )
+        return PendingRestore(
+            fileName = null,
+            content = content,
+            recovery = RecoveryReport(copy.name, copiedAtMs(copy), tables.announcedCellCount, recovered.leftOut.values.sum()),
+        )
     }
 
     override suspend fun discard(): Unit = withContext(Dispatchers.IO) { restoreFileLock.withLock { discardFile() } }

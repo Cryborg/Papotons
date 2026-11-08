@@ -35,6 +35,7 @@ fun BackupDialog(
     state: BackupUiState,
     onSave: () -> Unit,
     onRestore: () -> Unit,
+    onRecover: () -> Unit,
     onClose: () -> Unit,
 ) {
     AlertDialog(
@@ -58,6 +59,11 @@ fun BackupDialog(
                 }
                 OutlinedButton(onClick = onRestore, enabled = !state.isWorking, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.backup_restore))
+                }
+                if (state.hasCorruptedCopies) {
+                    OutlinedButton(onClick = onRecover, enabled = !state.isWorking, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.backup_recover))
+                    }
                 }
                 if (state.isWorking) {
                     // Annoncé : les boutons grisés perdent le focus de TalkBack, le travail en cours se dit.
@@ -96,6 +102,8 @@ private val BackupMessage.text: Int
         BackupMessage.SaveFailed -> R.string.backup_save_failed
         BackupMessage.SaveTooLarge -> R.string.backup_save_too_large
         BackupMessage.Restored -> R.string.backup_restored
+        BackupMessage.Recovered -> R.string.backup_recovered
+        BackupMessage.NothingRecovered -> R.string.backup_nothing_recovered
         BackupMessage.RestoreFailed -> R.string.backup_restore_failed
         BackupMessage.NotPapotons -> R.string.backup_refused_not_papotons
         BackupMessage.Unreadable -> R.string.backup_refused_unreadable
@@ -107,5 +115,11 @@ private val BackupMessage.text: Int
 @Preview
 @Composable
 private fun BackupDialogPreview() {
-    BackupDialog(state = BackupUiState(isDialogOpen = true, message = BackupMessage.Saved), onSave = {}, onRestore = {}, onClose = {})
+    BackupDialog(
+        state = BackupUiState(isDialogOpen = true, message = BackupMessage.Saved, hasCorruptedCopies = true),
+        onSave = {},
+        onRestore = {},
+        onRecover = {},
+        onClose = {},
+    )
 }
