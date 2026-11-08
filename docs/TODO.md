@@ -35,7 +35,6 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 ## Dette ouverte
 
 - **TODO-8** Récupérer dans l'appli les grilles d'une copie de base corrompue (`files/corrupted-databases/`) : copie recopiée à part et relue ligne par ligne par id, chaque ligne validée (grille retrouvée, position libre dans la grille, picto et photo présents, libellé lisible), lecture des schémas 1 à 5, choix de la copie, bilan montré à l'adulte (« 180 cases sur 224 »), puis la restauration commune (confirmation, transaction). Pas d'`integrity_check` comme contrôle : mesuré sur six pannes réelles (fixtures de `DatabaseCorruptionFixturesTest`), aucune copie ne le passe, alors que quatre se relisent presque entières ; et une ligne relue peut être brouillée sans erreur. Constats et plan : `docs/designs/TODO-8.md`. Aujourd'hui les copies, et les images que plus aucune case ne vise, partent dans la sauvegarde `.obz` pour qu'un expert les récupère (M).
-- **TODO-16** Appliquer la décision du 2026-11-08 sur la mise à jour Play : retirer les propositions automatiques de `InAppUpdateManager.kt` (flux FLEXIBLE au lancement et toutes les 30 minutes, IMMEDIATE à chaque retour, `:69-80` et `:125-127`) et la boîte « mise à jour prête » de `MainActivity.kt:115-127` ; ajouter la ligne « Mise à jour prête » dans la section Appli des Réglages, qui lance la mise à jour depuis là (M).
 
 
 ## Feuille de route (MVP)

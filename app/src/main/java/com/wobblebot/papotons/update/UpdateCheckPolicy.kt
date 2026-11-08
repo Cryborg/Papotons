@@ -1,63 +1,64 @@
 package com.wobblebot.papotons.update
 
-/** Le régime d'une mise à jour proposée depuis l'appli. */
+import com.google.android.play.core.install.model.InstallStatus
+import com.google.android.play.core.install.model.UpdateAvailability
+
+/** Le régime d'une mise à jour lancée depuis les Réglages. */
 internal enum class UpdateKind {
-    /** Téléchargement en fond pendant qu'on s'en sert, installation au feu vert de l'utilisateur. */
+    /** Téléchargement en fond pendant qu'on s'en sert, installation au feu vert de l'adulte. */
     Flexible,
 
-    /** Bloquant : plein écran Play jusqu'à l'installation. */
+    /** Plein écran Play jusqu'à l'installation : seulement quand Play refuse le régime FLEXIBLE. */
     Immediate
 }
 
+/** Ce que la ligne de mise à jour des Réglages montre. */
+enum class UpdateStatus {
+    /** Rien à proposer, ou appli installée hors du Play Store : la ligne n'existe pas. */
+    None,
+
+    /** Une version plus récente attend que l'adulte lance son téléchargement. */
+    Available,
+
+    /** Le téléchargement accepté est en cours. */
+    Downloading,
+
+    /** Téléchargée : il ne manque que le feu vert de l'adulte, qui redémarre l'appli. */
+    ReadyToInstall
+}
+
+private val INSTALL_UNDERWAY = setOf(InstallStatus.PENDING, InstallStatus.DOWNLOADING, InstallStatus.INSTALLING)
+
 /**
- * Quand redemander à Play s'il existe une version plus récente, et quoi proposer.
- * Pur, pour se tester sans Play.
+ * Une IMMEDIATE lancée puis laissée en plan se dit DEVELOPER_TRIGGERED : elle se relance depuis
+ * les Réglages comme une version disponible.
+ */
+private val UPDATE_OFFERABLE = setOf(UpdateAvailability.UPDATE_AVAILABLE, UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS)
+
+/**
+ * Ce que montrer de la mise à jour, et comment la lancer. Pur, pour se tester sans Play.
+ *
+ * Rien ne s'ouvre jamais tout seul : l'enfant ne lit pas, et une boîte posée sur sa grille lui
+ * retire la parole tant qu'un adulte ne l'a pas fermée (décision du 2026-11-08).
  */
 internal object UpdateCheckPolicy {
 
-    /**
-     * Écart minimal entre deux demandes. Assez court pour qu'une appli laissée en fond des
-     * jours entiers voie passer une version au retour, assez long pour qu'une recréation
-     * d'activité ou le retour du dialogue Play lui-même ne redemandent rien.
-     */
-    const val RECHECK_INTERVAL_MS = 30L * 60L * 1_000L
-
-    /**
-     * Priorité Play (0 à 5) à partir de laquelle la mise à jour devient bloquante. Elle
-     * se pose À LA PUBLICATION, par l'API Play Developer (`inAppUpdatePriority`), et c'est
-     * l'ancienne version installée qui la lit : seul moyen de forcer un utilisateur déjà en
-     * retard. Par défaut une release a la priorité 0, donc personne n'est forcé.
-     */
-    const val IMMEDIATE_MIN_PRIORITY = 4
-
-    /** `lastCheckAtMs` et `nowMs` sur la même horloge MONOTONE (`elapsedRealtime`). */
-    fun isCheckDue(lastCheckAtMs: Long?, nowMs: Long): Boolean =
-        lastCheckAtMs == null || nowMs - lastCheckAtMs >= RECHECK_INTERVAL_MS
-
-    /**
-     * Une version refusée ne se repropose pas : seule une PLUS récente rouvre la question.
-     * Sinon chaque retour dans l'appli rejouerait la proposition écartée.
-     */
-    fun mayPropose(availableVersionCode: Int, declinedVersionCode: Int?): Boolean =
-        declinedVersionCode == null || availableVersionCode > declinedVersionCode
-
-    fun isImmediate(updatePriority: Int): Boolean = updatePriority >= IMMEDIATE_MIN_PRIORITY
-
-    /**
-     * Le régime à proposer, ou `null` pour ne rien proposer. Une mise à jour bloquante
-     * passe outre un refus : on ne la force que quand on ne peut pas laisser tourner
-     * l'ancienne version.
-     */
-    fun chooseUpdateKind(
-        updatePriority: Int,
-        isImmediateAllowed: Boolean,
+    fun status(
+        updateAvailability: Int,
+        installStatus: Int,
         isFlexibleAllowed: Boolean,
-        availableVersionCode: Int,
-        declinedVersionCode: Int?
-    ): UpdateKind? = when {
-        isImmediate(updatePriority) && isImmediateAllowed -> UpdateKind.Immediate
-        !mayPropose(availableVersionCode, declinedVersionCode) -> null
+        isImmediateAllowed: Boolean,
+    ): UpdateStatus = when {
+        installStatus == InstallStatus.DOWNLOADED -> UpdateStatus.ReadyToInstall
+        // Un téléchargement accepté peut encore se dire UPDATE_AVAILABLE.
+        installStatus in INSTALL_UNDERWAY -> UpdateStatus.Downloading
+        updateAvailability in UPDATE_OFFERABLE && chooseUpdateKind(isFlexibleAllowed, isImmediateAllowed) != null -> UpdateStatus.Available
+        else -> UpdateStatus.None
+    }
+
+    fun chooseUpdateKind(isFlexibleAllowed: Boolean, isImmediateAllowed: Boolean): UpdateKind? = when {
         isFlexibleAllowed -> UpdateKind.Flexible
+        isImmediateAllowed -> UpdateKind.Immediate
         else -> null
     }
 }

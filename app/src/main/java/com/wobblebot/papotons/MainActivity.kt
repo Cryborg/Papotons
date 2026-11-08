@@ -31,12 +31,11 @@ import com.wobblebot.papotons.ui.hideNavigationBar
 import com.wobblebot.papotons.ui.splash.StudioSplashScreen
 import com.wobblebot.papotons.ui.theme.PapotonsTheme
 import com.wobblebot.papotons.update.InAppUpdateManager
-import com.wobblebot.papotons.update.UpdateReadyDialog
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 /**
- * L'activité unique : splash du studio, bord à bord, mise à jour depuis l'appli.
+ * L'activité unique : splash du studio, bord à bord, mise à jour proposée dans les Réglages.
  * Les écrans sont des composables ; ce fichier ne fait que brancher les briques.
  */
 @AndroidEntryPoint
@@ -51,7 +50,7 @@ class MainActivity : ComponentActivity() {
 
     private val updateResultLauncher: ActivityResultLauncher<IntentSenderRequest> =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
-            inAppUpdateManager.onUpdateFlowResult(result.resultCode)
+            inAppUpdateManager.onUpdateFlowResult()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,20 +71,15 @@ class MainActivity : ComponentActivity() {
                     LocalPhotoImages provides cellPhotos::image,
                     LocalPhotoLoader provides cellPhotos::ensureLoaded,
                 ) {
-                    PapotonsApp(inAppUpdateManager)
+                    PapotonsApp(inAppUpdateManager, onStartUpdate = { inAppUpdateManager.startUpdate(updateResultLauncher) })
                 }
             }
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        inAppUpdateManager.checkForUpdate(updateResultLauncher)
-    }
-
     override fun onResume() {
         super.onResume()
-        inAppUpdateManager.resumeUpdateIfNeeded(updateResultLauncher)
+        inAppUpdateManager.refreshStatus()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -103,28 +97,25 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun PapotonsApp(inAppUpdateManager: InAppUpdateManager) {
+private fun PapotonsApp(inAppUpdateManager: InAppUpdateManager, onStartUpdate: () -> Unit) {
     // rememberSaveable : une rotation ou un changement de langue ne rejoue pas le carton du studio.
     var isSplashFinished by rememberSaveable { mutableStateOf(false) }
-    val isUpdateReady by inAppUpdateManager.isReadyToInstall.collectAsStateWithLifecycle()
-    // « Plus tard » vaut pour la session : le flux reste vrai et la boîte reviendrait à chaque retour.
-    var isUpdatePostponed by rememberSaveable { mutableStateOf(false) }
+    // La mise à jour ne se montre que dans les Réglages, jamais devant la grille de l'enfant.
+    val updateStatus by inAppUpdateManager.status.collectAsStateWithLifecycle()
     val boardViewModel: BoardViewModel = hiltViewModel()
     val boardState by boardViewModel.uiState.collectAsStateWithLifecycle()
-    // Le redémarrage de l'installation ne doit jamais couper une phrase ni une modification en cours.
-    val isBusy = boardState.isBusy
 
     Box {
-        BoardRoute(viewModel = boardViewModel, state = boardState)
+        BoardRoute(
+            viewModel = boardViewModel,
+            state = boardState,
+            updateStatus = updateStatus,
+            onStartUpdate = onStartUpdate,
+            onInstallUpdate = inAppUpdateManager::completeUpdate,
+        )
         // Dernier enfant de la Box : dessiné au-dessus, il reçoit les taps en premier.
         if (!isSplashFinished) {
             StudioSplashScreen(onFinished = { isSplashFinished = true })
-        }
-        if (isSplashFinished && isUpdateReady && !isUpdatePostponed && !isBusy) {
-            UpdateReadyDialog(
-                onInstall = inAppUpdateManager::completeUpdate,
-                onLater = { isUpdatePostponed = true }
-            )
         }
     }
 }

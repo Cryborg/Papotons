@@ -1,5 +1,6 @@
 package com.wobblebot.papotons.ui.board
 
+import com.wobblebot.papotons.update.UpdateStatus
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.pm.PackageManager
@@ -121,6 +122,9 @@ private enum class GatedAction { OpenSettings, AcknowledgeLostBoards, RestoreBac
 fun BoardRoute(
     viewModel: BoardViewModel,
     state: BoardUiState,
+    updateStatus: UpdateStatus,
+    onStartUpdate: () -> Unit,
+    onInstallUpdate: () -> Unit,
     backupViewModel: BackupViewModel = hiltViewModel(),
     profilesViewModel: ProfilesViewModel = hiltViewModel(),
     caregiversViewModel: CaregiversViewModel = hiltViewModel(),
@@ -261,6 +265,7 @@ fun BoardRoute(
                 hasUnsavedChanges = backupState.hasUnsavedChanges,
                 // Relu seulement Réglages ouverts.
                 isAppPinned = rememberIsPinned(),
+                updateStatus = updateStatus,
             ),
             profileActions = profileActions,
             caregiverActions = caregiverActions,
@@ -272,6 +277,8 @@ fun BoardRoute(
                 viewModel.onStartEditing()
                 backupViewModel.onOpen()
             },
+            onStartUpdate = onStartUpdate,
+            onInstallUpdate = onInstallUpdate,
             onClose = viewModel::onCloseSettings,
         )
     }

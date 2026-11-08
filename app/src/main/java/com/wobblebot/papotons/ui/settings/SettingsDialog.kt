@@ -58,6 +58,8 @@ import com.wobblebot.papotons.domain.Profile
 import com.wobblebot.papotons.domain.Screen
 import com.wobblebot.papotons.ui.about.AboutDialog
 import com.wobblebot.papotons.ui.hideNavigationBar
+import com.wobblebot.papotons.update.UpdateReadyDialog
+import com.wobblebot.papotons.update.UpdateStatus
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 
@@ -90,6 +92,7 @@ data class SettingsContent(
     val hasUnsavedChanges: Boolean,
     /** L'appli est épinglée en ce moment (l'option cochée ne fait que le demander). */
     val isAppPinned: Boolean,
+    val updateStatus: UpdateStatus,
 )
 
 /**
@@ -109,9 +112,12 @@ fun SettingsDialog(
     onPageChosen: (SettingsPage) -> Unit,
     onEditBoards: () -> Unit,
     onBackup: () -> Unit,
+    onStartUpdate: () -> Unit,
+    onInstallUpdate: () -> Unit,
     onClose: () -> Unit,
 ) {
     var isAboutOpen by remember { mutableStateOf(false) }
+    var isUpdateConfirmOpen by remember { mutableStateOf(false) }
     val title = stringResource(R.string.settings_title)
     val back = { if (page == SettingsPage.Home) onClose() else onPageChosen(SettingsPage.Home) }
     Dialog(
@@ -164,6 +170,8 @@ fun SettingsDialog(
                                 onEditBoards = onEditBoards,
                                 onExitLockChanged = profileActions.onExitLockChanged,
                                 onBackup = onBackup,
+                                onStartUpdate = onStartUpdate,
+                                onInstallUpdate = { isUpdateConfirmOpen = true },
                                 onAbout = { isAboutOpen = true },
                             )
                             SettingsPage.Profiles -> ProfilesPage(content.profiles, profileActions)
@@ -177,6 +185,9 @@ fun SettingsDialog(
     }
     if (isAboutOpen) {
         AboutDialog(onClose = { isAboutOpen = false })
+    }
+    if (isUpdateConfirmOpen) {
+        UpdateReadyDialog(onInstall = onInstallUpdate, onLater = { isUpdateConfirmOpen = false })
     }
 }
 
@@ -227,6 +238,8 @@ private fun ColumnScope.SettingsHome(
     onEditBoards: () -> Unit,
     onExitLockChanged: (profileId: Long, isLocked: Boolean) -> Unit,
     onBackup: () -> Unit,
+    onStartUpdate: () -> Unit,
+    onInstallUpdate: () -> Unit,
     onAbout: () -> Unit,
 ) {
     val openProfile = content.profiles.openProfile()
@@ -296,6 +309,7 @@ private fun ColumnScope.SettingsHome(
             summary = stringResource(if (content.hasUnsavedChanges) R.string.settings_backup_unsaved else R.string.settings_backup_saved),
             onClick = onBackup,
         )
+        UpdateRow(content.updateStatus, onStartUpdate, onInstallUpdate)
         SettingsDivider()
         SettingsRow(
             icon = R.drawable.ic_info,
@@ -304,6 +318,29 @@ private fun ColumnScope.SettingsHome(
             summary = stringResource(R.string.settings_about_summary, AppVersion.current.versionName),
             onClick = onAbout,
         )
+    }
+}
+
+/**
+ * La mise à jour Play, seul endroit où elle se montre : derrière le contrôle, jamais devant la grille.
+ * Absente quand il n'y a rien à proposer (ou hors du Play Store).
+ */
+@Composable
+private fun UpdateRow(status: UpdateStatus, onStartUpdate: () -> Unit, onInstallUpdate: () -> Unit) {
+    when (status) {
+        UpdateStatus.None -> Unit
+        UpdateStatus.Available -> {
+            SettingsDivider()
+            SettingsRow(R.drawable.ic_arrow_downward, appBadgeColors(), stringResource(R.string.update_available), stringResource(R.string.update_available_summary), onStartUpdate)
+        }
+        UpdateStatus.Downloading -> {
+            SettingsDivider()
+            PageExplanation(stringResource(R.string.update_downloading), Modifier.padding(vertical = ROW_VERTICAL_PADDING))
+        }
+        UpdateStatus.ReadyToInstall -> {
+            SettingsDivider()
+            SettingsRow(R.drawable.ic_arrow_downward, appBadgeColors(), stringResource(R.string.update_ready_row), stringResource(R.string.update_ready_row_summary), onInstallUpdate)
+        }
     }
 }
 
@@ -375,6 +412,7 @@ private fun SettingsDialogPreview() {
             caregivers = CaregiversUiState(persistentListOf(Caregiver(1, "Marie", codeResetAtMs = null))),
             hasUnsavedChanges = true,
             isAppPinned = false,
+            updateStatus = UpdateStatus.ReadyToInstall,
         ),
         profileActions = ProfileActions(onChosen = {}, onCreate = {}, onRename = { _, _ -> }, onDelete = {}, onExitLockChanged = { _, _ -> }),
         caregiverActions = CaregiverActions(onSave = { _, _, _ -> }, onDelete = {}),
@@ -382,6 +420,8 @@ private fun SettingsDialogPreview() {
         onPageChosen = {},
         onEditBoards = {},
         onBackup = {},
+        onStartUpdate = {},
+        onInstallUpdate = {},
         onClose = {},
     )
 }

@@ -5,4 +5,10 @@
     <string name="update_ready_body">Elle est déjà téléchargée. L\'installer redémarre l\'appli.</string>
     <string name="update_ready_install">Installer maintenant</string>
     <string name="update_ready_later">Plus tard</string>
+    <!-- Ligne des Réglages (section Appli) : seul endroit où la mise à jour se propose, jamais devant la grille. -->
+    <string name="update_available">Nouvelle version disponible</string>
+    <string name="update_available_summary">Toucher pour la télécharger. Papotons reste utilisable pendant le téléchargement.</string>
+    <string name="update_downloading">Téléchargement de la nouvelle version en cours…</string>
+    <string name="update_ready_row">Mise à jour prête</string>
+    <string name="update_ready_row_summary">Toucher pour l\'installer. Papotons redémarre.</string>
 </resources>

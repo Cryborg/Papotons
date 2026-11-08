@@ -1,94 +1,68 @@
 package com.wobblebot.papotons.update
 
+import com.google.android.play.core.install.model.InstallStatus
+import com.google.android.play.core.install.model.UpdateAvailability
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UpdateCheckPolicyTest {
-    private val interval = UpdateCheckPolicy.RECHECK_INTERVAL_MS
-    private val immediatePriority = UpdateCheckPolicy.IMMEDIATE_MIN_PRIORITY
 
-    @Test
-    fun `the first launch always checks`() {
-        assertTrue(UpdateCheckPolicy.isCheckDue(lastCheckAtMs = null, nowMs = 0L))
-    }
-
-    @Test
-    fun `a quick return does not check again`() {
-        assertFalse(UpdateCheckPolicy.isCheckDue(lastCheckAtMs = 1_000L, nowMs = 1_000L + interval - 1))
-    }
-
-    @Test
-    fun `a return after a long absence checks again`() {
-        assertTrue(UpdateCheckPolicy.isCheckDue(lastCheckAtMs = 1_000L, nowMs = 1_000L + interval))
-    }
-
-    @Test
-    fun `any version is proposed when none was declined`() {
-        assertTrue(UpdateCheckPolicy.mayPropose(availableVersionCode = 9, declinedVersionCode = null))
-    }
-
-    @Test
-    fun `a declined version is not proposed again`() {
-        assertFalse(UpdateCheckPolicy.mayPropose(availableVersionCode = 9, declinedVersionCode = 9))
-    }
-
-    @Test
-    fun `a version newer than the declined one is proposed`() {
-        assertTrue(UpdateCheckPolicy.mayPropose(availableVersionCode = 10, declinedVersionCode = 9))
-    }
-
-    @Test
-    fun `an ordinary release is flexible`() {
-        assertEquals(UpdateKind.Flexible, choose(updatePriority = 0))
-    }
-
-    @Test
-    fun `a release under the priority threshold stays flexible`() {
-        assertEquals(UpdateKind.Flexible, choose(updatePriority = immediatePriority - 1))
-    }
-
-    @Test
-    fun `a high priority release is immediate`() {
-        assertEquals(UpdateKind.Immediate, choose(updatePriority = immediatePriority))
-    }
-
-    @Test
-    fun `an immediate update ignores a previous refusal`() {
-        assertEquals(
-            UpdateKind.Immediate,
-            choose(updatePriority = immediatePriority, availableVersionCode = 9, declinedVersionCode = 9)
-        )
-    }
-
-    @Test
-    fun `a high priority release falls back to flexible when immediate is not allowed`() {
-        assertEquals(UpdateKind.Flexible, choose(updatePriority = immediatePriority, isImmediateAllowed = false))
-    }
-
-    @Test
-    fun `a declined flexible release is not proposed again`() {
-        assertNull(choose(updatePriority = 0, availableVersionCode = 9, declinedVersionCode = 9))
-    }
-
-    @Test
-    fun `nothing is proposed when no update type is allowed`() {
-        assertNull(choose(updatePriority = 0, isFlexibleAllowed = false))
-    }
-
-    private fun choose(
-        updatePriority: Int,
-        isImmediateAllowed: Boolean = true,
+    private fun status(
+        availability: Int = UpdateAvailability.UPDATE_AVAILABLE,
+        installStatus: Int = InstallStatus.UNKNOWN,
         isFlexibleAllowed: Boolean = true,
-        availableVersionCode: Int = 9,
-        declinedVersionCode: Int? = null
-    ): UpdateKind? = UpdateCheckPolicy.chooseUpdateKind(
-        updatePriority = updatePriority,
-        isImmediateAllowed = isImmediateAllowed,
-        isFlexibleAllowed = isFlexibleAllowed,
-        availableVersionCode = availableVersionCode,
-        declinedVersionCode = declinedVersionCode
-    )
+        isImmediateAllowed: Boolean = true,
+    ) = UpdateCheckPolicy.status(availability, installStatus, isFlexibleAllowed, isImmediateAllowed)
+
+    @Test
+    fun `a newer version is offered, never started`() {
+        assertEquals(UpdateStatus.Available, status())
+    }
+
+    @Test
+    fun `an up to date app shows nothing`() {
+        assertEquals(UpdateStatus.None, status(availability = UpdateAvailability.UPDATE_NOT_AVAILABLE))
+    }
+
+    @Test
+    fun `an unknown answer shows nothing`() {
+        assertEquals(UpdateStatus.None, status(availability = UpdateAvailability.UNKNOWN))
+    }
+
+    @Test
+    fun `a version Play lets neither way shows nothing`() {
+        assertEquals(UpdateStatus.None, status(isFlexibleAllowed = false, isImmediateAllowed = false))
+    }
+
+    @Test
+    fun `an accepted download still said available is downloading`() {
+        assertEquals(UpdateStatus.Downloading, status(installStatus = InstallStatus.DOWNLOADING))
+        assertEquals(UpdateStatus.Downloading, status(installStatus = InstallStatus.PENDING))
+    }
+
+    @Test
+    fun `a downloaded version waits for the adult`() {
+        assertEquals(UpdateStatus.ReadyToInstall, status(installStatus = InstallStatus.DOWNLOADED))
+    }
+
+    @Test
+    fun `an immediate update left halfway is offered again`() {
+        assertEquals(UpdateStatus.Available, status(availability = UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS))
+    }
+
+    @Test
+    fun `flexible is preferred whatever the priority`() {
+        assertEquals(UpdateKind.Flexible, UpdateCheckPolicy.chooseUpdateKind(isFlexibleAllowed = true, isImmediateAllowed = true))
+    }
+
+    @Test
+    fun `immediate only when flexible is refused`() {
+        assertEquals(UpdateKind.Immediate, UpdateCheckPolicy.chooseUpdateKind(isFlexibleAllowed = false, isImmediateAllowed = true))
+    }
+
+    @Test
+    fun `nothing when Play allows no flow`() {
+        assertNull(UpdateCheckPolicy.chooseUpdateKind(isFlexibleAllowed = false, isImmediateAllowed = false))
+    }
 }

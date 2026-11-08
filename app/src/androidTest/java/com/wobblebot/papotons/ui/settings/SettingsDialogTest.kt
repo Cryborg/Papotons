@@ -1,5 +1,6 @@
 package com.wobblebot.papotons.ui.settings
 
+import com.wobblebot.papotons.update.UpdateStatus
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -74,6 +75,7 @@ class SettingsDialogTest {
                         caregivers = CaregiversUiState(caregivers),
                         hasUnsavedChanges = false,
                         isAppPinned = isAppPinned,
+                        updateStatus = UpdateStatus.None,
                     ),
                     profileActions = ProfileActions(
                         onChosen = {},
@@ -87,6 +89,8 @@ class SettingsDialogTest {
                     onPageChosen = { page = it },
                     onEditBoards = {},
                     onBackup = {},
+                    onStartUpdate = {},
+                    onInstallUpdate = {},
                     onClose = { closedCount++ },
                 )
             }
