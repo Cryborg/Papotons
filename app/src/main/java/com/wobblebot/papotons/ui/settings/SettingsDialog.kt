@@ -4,7 +4,6 @@ import android.os.Build
 import android.util.Log
 import android.view.Window
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -330,6 +329,14 @@ private fun ColumnScope.SettingsHome(
  */
 @Composable
 private fun UpdateRow(status: UpdateStatus, onStartUpdate: () -> Unit, onInstallUpdate: () -> Unit) {
+    // Annoncée à chaque changement : la ligne touchée disparaît au retour de la fenêtre de Play, et le
+    // téléchargement finit pendant que l'adulte est ailleurs. Le conteneur existe toujours, même vide :
+    // TalkBack n'annonce que les changements d'un nœud déjà là.
+    Column(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) { UpdateRowContent(status, onStartUpdate, onInstallUpdate) }
+}
+
+@Composable
+private fun UpdateRowContent(status: UpdateStatus, onStartUpdate: () -> Unit, onInstallUpdate: () -> Unit) {
     when (status) {
         UpdateStatus.None -> Unit
         UpdateStatus.Available -> {
@@ -338,18 +345,11 @@ private fun UpdateRow(status: UpdateStatus, onStartUpdate: () -> Unit, onInstall
         }
         UpdateStatus.Downloading -> {
             SettingsDivider()
-            // Annoncée : la ligne touchée a disparu au retour de la fenêtre de Play.
-            PageExplanation(
-                stringResource(R.string.update_downloading),
-                Modifier.padding(vertical = ROW_VERTICAL_PADDING).semantics { liveRegion = LiveRegionMode.Polite },
-            )
+            PageExplanation(stringResource(R.string.update_downloading), Modifier.padding(vertical = ROW_VERTICAL_PADDING))
         }
         UpdateStatus.ReadyToInstall -> {
             SettingsDivider()
-            // Annoncée : le téléchargement finit pendant que l'adulte est ailleurs dans les Réglages.
-            Box(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
-                SettingsRow(R.drawable.ic_arrow_downward, appBadgeColors(), stringResource(R.string.update_ready_row), stringResource(R.string.update_ready_row_summary), onInstallUpdate)
-            }
+            SettingsRow(R.drawable.ic_arrow_downward, appBadgeColors(), stringResource(R.string.update_ready_row), stringResource(R.string.update_ready_row_summary), onInstallUpdate)
         }
     }
 }
