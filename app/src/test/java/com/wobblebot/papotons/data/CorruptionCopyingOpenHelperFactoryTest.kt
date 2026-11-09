@@ -244,6 +244,18 @@ class CorruptionCopyingOpenHelperFactoryTest {
     }
 
     @Test
+    fun `a log file copied without its database is not kept as a copy`() {
+        databaseFile.writeBytes(byteArrayOf(1, 1, 1))
+        File(databaseFile.path + "-wal").writeBytes(byteArrayOf(2))
+        // La base illisible : sa copie échoue, seul le `-wal` passerait.
+        databaseFile.setReadable(false)
+
+        corrupt()
+
+        assertEquals(emptyList<File>(), copies.listFiles().orEmpty().toList())
+    }
+
+    @Test
     fun `two corruptions in a row keep two distinct copies`() {
         databaseFile.writeBytes(byteArrayOf(5))
 
