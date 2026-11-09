@@ -34,7 +34,7 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 
 ## Dette ouverte
 
-- **TODO-17** (relecture du 2026-11-08) Un export peut effacer la sauvegarde qu'il remplaçait : après `openForWriting` (le document est déjà tronqué), un picto (`pictograms.open(id) ?: throw FileNotFoundException`) ou une photo (`File(photosDirectory, name).inputStream()`) disparu depuis la mesure lève, et `cleanUpAfterFailure` ne peut plus rendre l'ancien contenu (`BoardBackup.kt`, boucles d'écriture de `export`). Arrive si l'adulte remplace la photo d'une case pendant un long export. Correctif : ouvrir les flux des images avant d'ouvrir le document, ou compter une image disparue comme abîmée (`damaged++`, entrée sautée) au lieu de lever. À prouver par un test instrumenté (`BoardBackupTest`) : pas de chantier de nuit.
+- **TODO-17** (relecture du 2026-11-08) Un export peut effacer la sauvegarde qu'il remplaçait : après `openForWriting` (le document est déjà tronqué), un picto (`pictograms.open(id) ?: throw FileNotFoundException`) ou une photo (`File(photosDirectory, name).inputStream()`) disparu depuis la mesure lève, et `cleanUpAfterFailure` ne peut plus rendre l'ancien contenu (`BoardBackup.kt`, boucles d'écriture de `export`). Arrive si l'adulte remplace la photo d'une case pendant un long export. Correctif : ouvrir les flux des images avant d'ouvrir le document, ou compter une image disparue comme abîmée (`damaged++`, entrée sautée) au lieu de lever. À prouver par un test instrumenté (`BoardBackupTest`) : pas de chantier de nuit. [pas pour le chantier le 2026-11-09 : test instrumenté, sauvegarde et export]
 
 ## Feuille de route (MVP)
 
