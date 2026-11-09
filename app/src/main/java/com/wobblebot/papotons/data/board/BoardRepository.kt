@@ -413,11 +413,7 @@ class BoardRepository @Inject constructor(
         } catch (exception: CancellationException) {
             throw exception
         } catch (exception: RuntimeException) {
-            // Une instance perdue en cours d'usage lève « connection is closed » (une `SQLException`)
-            // ou « already-closed object », que les appelants, qui attendent une `SQLiteException`
-            // pour un échec d'écriture, n'attraperaient pas. Hors perte, un bug remonte tel quel.
-            if (exception is SQLiteException || !databases.isLostSince(databaseReplacementCount)) throw exception
-            throw SQLiteException("Write failed on a lost database: ${exception.message}", exception)
+            throw failureOnLostDatabase(exception, databaseReplacementCount)
         } finally {
             // Aussi après : un export dont l'instantané a été lu pendant cette écriture ne se dit pas à jour.
             writeCount.incrementAndGet()
@@ -444,10 +440,30 @@ class BoardRepository @Inject constructor(
 
     /** Tous les utilisateurs, grilles et cases, et le compte d'écritures au moment de les lire (pour [markSaved]). */
     suspend fun snapshot(): Pair<BackupContent, Long> {
+        val databaseReplacementCount = databases.replacements.value
         val count = writeCount.get()
-        val (profiles, boards, cells) = boardDao.snapshot()
+        val (profiles, boards, cells) = try {
+            boardDao.snapshot()
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (exception: RuntimeException) {
+            // Une sauvegarde lancée pendant la perte : « La sauvegarde a échoué », pas un plantage.
+            throw failureOnLostDatabase(exception, databaseReplacementCount)
+        }
         return BackupContent(profiles, boards, cells) to count
     }
+
+    /**
+     * Une instance perdue en cours d'usage lève « connection is closed » (une `SQLException`) ou
+     * « already-closed object », que les appelants, qui attendent une `SQLiteException` pour un échec
+     * de la base, n'attraperaient pas. Hors perte, un bug remonte tel quel.
+     */
+    private fun failureOnLostDatabase(exception: RuntimeException, replacementsBefore: Int): RuntimeException =
+        if (exception is SQLiteException || !databases.isLostSince(replacementsBefore)) {
+            exception
+        } else {
+            SQLiteException("Database access failed on a lost database: ${exception.message}", exception)
+        }
 
     /** Après un export réussi : sauvegardé, sauf si une écriture a eu lieu depuis l'instantané. */
     suspend fun markSaved(writeCountAtSnapshot: Long) {

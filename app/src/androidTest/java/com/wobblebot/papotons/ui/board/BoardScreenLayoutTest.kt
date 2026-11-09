@@ -1,6 +1,13 @@
 package com.wobblebot.papotons.ui.board
 
+import android.app.Activity
+import android.os.Build
 import android.view.View
+import androidx.activity.compose.LocalActivity
+import androidx.core.view.WindowCompat
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.ui.platform.LocalView
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
@@ -72,6 +79,9 @@ private const val WIDE_CELL_ROWS = 7
 private const val WIDE_CELL_COLUMNS = 2
 // Cases plus de deux fois plus larges que hautes, comme l'accueil sur une tablette en paysage.
 private const val FLAT_CELL_ROWS = 12
+// Un grand téléphone en portrait, fixé : sur un écran plus bas, douze rangées laissent au libellé moins
+// que sa taille minimale.
+private val TALL_PHONE_SIZE = DpSize(412.dp, 914.dp)
 // Le réglage de police par défaut d'une tablette Samsung.
 private const val TABLET_FONT_SCALE = 1.15f
 // Plus de mots qu'il n'en tient dans la phrase, même sur tablette.
@@ -241,9 +251,10 @@ class BoardScreenLayoutTest {
         }
         val state = homeState.copy(board = DisplayedBoard(id = 1, name = "Accueil", grid = layoutGrid(FLAT_CELL_ROWS, WIDE_CELL_COLUMNS, cells), canGoBack = false))
         composeRule.setContent {
-            val density = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(density.density, TABLET_FONT_SCALE)) {
-                PapotonsTheme { BoardScreen(state = state, actions = noActions) }
+            DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(TALL_PHONE_SIZE)) {
+                CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, TABLET_FONT_SCALE)) {
+                    PapotonsTheme { BoardScreen(state = state, actions = noActions) }
+                }
             }
         }
 
@@ -737,10 +748,23 @@ class BoardScreenLayoutTest {
     @Test
     fun theNavigationBarComingBackMovesNoCell() {
         lateinit var view: View
+        lateinit var activity: Activity
+        var statusBarTop = 0
+        var navigationBarBottom = 0
         var isInMultiWindow by mutableStateOf(false)
         composeRule.setContent {
             view = LocalView.current
+            activity = checkNotNull(LocalActivity.current)
+            statusBarTop = WindowInsets.statusBars.getTop(LocalDensity.current)
+            navigationBarBottom = WindowInsets.navigationBars.getBottom(LocalDensity.current)
             PapotonsTheme { BoardScreen(state = homeState, actions = noActions, isInMultiWindow = isInMultiWindow) }
+        }
+        // Bord à bord comme l'appli : avant Android 15, l'activité du test ne l'est pas, et la barre d'état
+        // des encarts injectés plus bas arriverait en plus de la barre de navigation.
+        composeRule.runOnUiThread { WindowCompat.setDecorFitsSystemWindows(activity.window, false) }
+        // Android renvoie ses encarts plus tard, hors de ce que suit le test : ils écraseraient ceux injectés.
+        composeRule.waitUntil {
+            statusBarTop == checkNotNull(ViewCompat.getRootWindowInsets(view)).getInsets(WindowInsetsCompat.Type.statusBars()).top
         }
         val original = cellBounds("Manger")
         val settings = composeRule.onNodeWithContentDescription(context.getString(R.string.settings_open)).getBoundsInRoot()
@@ -758,8 +782,11 @@ class BoardScreenLayoutTest {
         isInMultiWindow = true
         composeRule.waitForIdle()
         val reservedSettings = composeRule.onNodeWithContentDescription(context.getString(R.string.settings_open)).getBoundsInRoot()
-        // Exactement la barre injectée : preuve qu'elle est bien arrivée jusqu'à l'écran.
-        val navigationBarHeight = with(composeRule.density) { NAVIGATION_BAR_HEIGHT_PX.toDp() }
+        // Exactement la barre injectée : preuve qu'elle est bien arrivée jusqu'à l'écran. Avant Android 11,
+        // la compatibilité la borne à la vraie barre, déjà là : c'est elle qui arrive.
+        val arrivedBar = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) NAVIGATION_BAR_HEIGHT_PX else navigationBarBottom
+        assertTrue("no navigation bar", arrivedBar > 0)
+        val navigationBarHeight = with(composeRule.density) { arrivedBar.toDp() }
         assertEquals(navigationBarHeight.value, (settings.bottom - reservedSettings.bottom).value, INSET_TOLERANCE_DP)
     }
 

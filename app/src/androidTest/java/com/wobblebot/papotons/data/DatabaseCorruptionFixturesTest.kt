@@ -3,6 +3,7 @@ package com.wobblebot.papotons.data
 import android.database.DatabaseErrorHandler
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteException
+import android.os.Build
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -137,13 +138,18 @@ class DatabaseCorruptionFixturesTest {
         ),
     )
 
-    /** La case 181 perdue ; les 166 et 201 relues sans erreur, libellé, picto, catégorie ou photo brouillés. */
+    /**
+     * La case 181 perdue ; les 166 et 201 relues sans erreur, libellé, picto, catégorie ou photo brouillés.
+     * Le SQLite 3.18 d'Android 8 abandonne l'`integrity_check` que le 3.50 de l'API 37 mène au bout (seules mesures
+     * faites) ; l'appli ne s'en sert pas.
+     */
     @Test
     fun cellsPageRandomBytes() = check(
         "cells-page-random-bytes",
         Observation(
             boardsAtOpen = 7, copiedAtOpen = false, fullRead = null, copied = true, boardsAfterwards = 0,
-            integrity = Integrity.LISTS_PROBLEMS, intact = Rows(profiles = 2, boards = 7, cells = 221), altered = 2,
+            integrity = if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.O) Integrity.ABORTS else Integrity.LISTS_PROBLEMS,
+            intact = Rows(profiles = 2, boards = 7, cells = 221), altered = 2,
         ),
     )
 

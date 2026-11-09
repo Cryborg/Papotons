@@ -90,9 +90,18 @@ class InAppUpdateManager(activity: Activity) {
             UpdateKind.Immediate -> AppUpdateType.IMMEDIATE
         }
         offeredUpdate = null
+        // Dialogue pas ouvert : sans nouvelle réponse de Play, la ligne resterait affichée et sourde.
         runCatching {
             appUpdateManager.startUpdateFlowForResult(info, launcher, AppUpdateOptions.newBuilder(updateType).build())
-        }.onFailure { error -> Log.w(LOG_TAG, "Dialogue de mise à jour non ouvert", error) }
+        }.onSuccess { isStarted ->
+            if (!isStarted) {
+                Log.w(LOG_TAG, "Dialogue de mise à jour refusé par Play")
+                refreshStatus()
+            }
+        }.onFailure { error ->
+            Log.w(LOG_TAG, "Dialogue de mise à jour non ouvert", error)
+            refreshStatus()
+        }
     }
 
     /** Retour du dialogue Play : une réponse de Play ne sert qu'une fois, on en redemande une. */

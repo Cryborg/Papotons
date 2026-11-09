@@ -41,7 +41,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -327,6 +329,14 @@ private fun ColumnScope.SettingsHome(
  */
 @Composable
 private fun UpdateRow(status: UpdateStatus, onStartUpdate: () -> Unit, onInstallUpdate: () -> Unit) {
+    // Annoncée à chaque changement : la ligne touchée disparaît au retour de la fenêtre de Play, et le
+    // téléchargement finit pendant que l'adulte est ailleurs. Le conteneur existe toujours, même vide :
+    // TalkBack n'annonce que les changements d'un nœud déjà là.
+    Column(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) { UpdateRowContent(status, onStartUpdate, onInstallUpdate) }
+}
+
+@Composable
+private fun UpdateRowContent(status: UpdateStatus, onStartUpdate: () -> Unit, onInstallUpdate: () -> Unit) {
     when (status) {
         UpdateStatus.None -> Unit
         UpdateStatus.Available -> {

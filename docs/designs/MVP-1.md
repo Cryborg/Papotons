@@ -25,7 +25,7 @@ Au lancement, après le carton du studio, l'écran d'accueil provisoire est remp
   - Un mot touché en `Unavailable`, un `ON_START` ou « Réessayer » relancent le moteur.
   - Une voix qui exige le réseau ou dont les données manquent est remplacée par une voix locale de la langue, sinon `LanguageMissing` (invariant 2).
   - `LanguageMissing` et `Unavailable` affichent dans la barre du haut une alerte (icône + texte propre à chaque panne) qui ouvre une modale « Réessayer / Réglages de la voix ».
-- **Mise à jour Play** : `isComposingMessage` de `MainActivity` est branché : la boîte « mise à jour prête » ne s'ouvre pas tant que la barre de message n'est pas vide.
+- **Mise à jour Play** : depuis le 2026-11-08 (TODO-16), elle ne se propose plus que dans les Réglages (section Appli), jamais devant la grille de l'enfant ; `isComposingMessage` a disparu de `MainActivity`.
 - **Premier lancement** : des grilles de démonstration (`DemoBoards` : un accueil avec quelques mots, un emplacement libre et deux dossiers) sont insérées une fois, en une transaction, dans la langue de l'appareil. Rien n'est observé avant la fin de cette insertion ; une base qui a perdu son accueil ouvre sa plus petite grille (ni plantage en boucle ni chargement sans fin).
 
 ### Données (Room 2.8.5, base `papotons.db`, version 1)

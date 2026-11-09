@@ -27,8 +27,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -73,6 +75,8 @@ fun MessageBar(
                 // TalkBack lit toute la phrase, puis annonce l'action « Dire la phrase ».
                 .semantics {
                     contentDescription = sentence
+                    // `Surface(onClick)` ne donne aucun rôle : sans lui, TalkBack ne dit pas « bouton ».
+                    role = Role.Button
                     onClick(label = speakLabel, action = null)
                 },
             shape = BoardCardShape,

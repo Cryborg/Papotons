@@ -66,8 +66,8 @@ private const val CORRUPTED_COPIES_PREFIX = "papotons/corrupted-databases"
 private const val UNREFERENCED_IMAGES_PREFIX = "papotons/unreferenced-images"
 
 /**
- * Le bilan d'une récupération, de la copie [copyName] : [copiedAtMs] quand la copie a été faite (date de son dossier, 0 :
- * inconnue) ; [announcedCellCount] les cases que la copie annonçait, `null` si on ne le sait pas ;
+ * Le bilan d'une récupération, de la copie [copyName] : [copiedAtMs] quand la copie a été faite (date de sa base,
+ * celle de son dossier en repli, 0 : inconnue) ; [announcedCellCount] les cases que la copie annonçait, `null` si on ne le sait pas ;
  * [leftOutRowCount] les lignes relues mais écartées (illisibles, incohérentes, ou au-delà des plafonds).
  */
 data class RecoveryReport(val copyName: String, val copiedAtMs: Long, val announcedCellCount: Int?, val leftOutRowCount: Int)
