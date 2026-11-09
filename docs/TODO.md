@@ -35,7 +35,6 @@ Ce qui a été tranché, avec la raison et la date. Une revue ou une routine ne 
 ## Dette ouverte
 
 - **TODO-17** (relecture du 2026-11-08) Un export peut effacer la sauvegarde qu'il remplaçait : après `openForWriting` (le document est déjà tronqué), un picto (`pictograms.open(id) ?: throw FileNotFoundException`) ou une photo (`File(photosDirectory, name).inputStream()`) disparu depuis la mesure lève, et `cleanUpAfterFailure` ne peut plus rendre l'ancien contenu (`BoardBackup.kt`, boucles d'écriture de `export`). Arrive si l'adulte remplace la photo d'une case pendant un long export. Correctif : ouvrir les flux des images avant d'ouvrir le document, ou compter une image disparue comme abîmée (`damaged++`, entrée sautée) au lieu de lever. À prouver par un test instrumenté (`BoardBackupTest`) : pas de chantier de nuit.
-- **TODO-18** (relecture du 2026-11-08) Une copie abîmée récupérée peut rendre plus de `MAX_SCREENS` onglets à un utilisateur : rien ne plafonne les écrans dans `CorruptedCopyRecovery.kt` (attribution de `screenPosition`), et `validate` ne le vérifie pas. Un `screen_position` brouillé sur des grilles-dossiers en fait des onglets, puis `ScreensPage` refuse tout ajout. Aucune perte ni case déplacée. Correctif : au-delà de `MAX_SCREENS` écrans par utilisateur, laisser `screenPosition = null` aux suivants et les compter dans `leftOut`, avec un test dans `CorruptedCopyRecoveryTest`. [chantier]
 
 ## Feuille de route (MVP)
 

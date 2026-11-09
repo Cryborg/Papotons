@@ -3,6 +3,7 @@ package com.wobblebot.papotons.data.backup
 import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.board.CellEntity
 import com.wobblebot.papotons.data.board.FIRST_USER_BOARD_ID
+import com.wobblebot.papotons.data.board.MAX_SCREENS
 import com.wobblebot.papotons.data.board.MAX_SCREEN_POSITION
 import com.wobblebot.papotons.data.profile.FIRST_PROFILE_ID
 import com.wobblebot.papotons.data.profile.MAX_PROFILES
@@ -442,6 +443,22 @@ class CorruptedCopyRecoveryTest {
         )!!.content.boards
 
         assertEquals(listOf(MAX_SCREEN_POSITION, null), boards.map { it.screenPosition })
+    }
+
+    @Test
+    fun `beyond the screen limit the last ranks become plain boards, and are counted`() = runTest {
+        // Une case brouillée en rang d'écran sur chaque grille-dossier : plus d'onglets que l'interface n'en permet.
+        val screenCount = MAX_SCREENS + 2
+        val boards = (1L..screenCount).map { board(it, rows = 1, columns = 1, screenPosition = screenCount - it) }
+
+        val recovered = recover(tables(profiles = listOf(profile(1)), boards = boards))!!
+
+        val positions = recovered.content.boards.map { it.screenPosition }
+        assertEquals(MAX_SCREENS, positions.count { it != null })
+        // Les deux plus grands rangs, ceux des grilles 1 et 2, sont ceux qui tombent.
+        assertEquals(listOf<Int?>(null, null), positions.take(2))
+        assertEquals(mapOf("over the screen limit" to 2), recovered.leftOut)
+        validate(recovered.content)
     }
 
     @Test
