@@ -97,7 +97,8 @@ fun BoardAdultBar(
         val sideWidth = buttons.width + buttonsEnd + TARGET_SPACING.roundToPx()
         val screensPlaceable = screensMeasurable.measure(loose.copy(maxWidth = (width - 2 * sideWidth).coerceAtLeast(0)))
         val screensX = (width - screensPlaceable.width) / 2
-        val nameEnd = if (screensPlaceable.width > 0) screensX else width - sideWidth
+        // Le même écart de cible que les boutons : le prénom coupé ne touche pas le premier onglet.
+        val nameEnd = if (screensPlaceable.width > 0) screensX - TARGET_SPACING.roundToPx() else width - sideWidth
         val name = nameMeasurable.measure(loose.copy(maxWidth = (nameEnd - nameStart).coerceAtLeast(0)))
         layout(width, height) {
             name.placeRelative(nameStart, (height - name.height) / 2)
