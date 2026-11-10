@@ -58,6 +58,21 @@ class CorruptionCopyingOpenHelperFactoryTest {
         return checkNotNull(configuration).callback
     }
 
+    @Test
+    fun `the helper never deletes the database without a copy, whatever Room asks`() {
+        factory.create(
+            SupportSQLiteOpenHelper.Configuration(
+                context = context,
+                name = databaseFile.name,
+                callback = roomCallback,
+                useNoBackupDirectory = false,
+                allowDataLossOnRecovery = true,
+            )
+        )
+
+        assertFalse(checkNotNull(configuration).allowDataLossOnRecovery)
+    }
+
     /** [isInUse] faux : vue par `SQLiteDatabase.open`, avant que la base ne soit ouverte. */
     private fun corruptedDatabase(isInUse: Boolean) = mockk<SupportSQLiteDatabase> {
         every { path } returns databaseFile.path

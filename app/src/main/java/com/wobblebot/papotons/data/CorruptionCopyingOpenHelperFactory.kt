@@ -20,7 +20,7 @@ private val COMPANION_SUFFIXES = listOf("", "-wal", "-shm", "-journal")
  * l'utilisateur. Cette fabrique en garde d'abord une copie dans `files/corrupted-databases/`
  * (invariant 4), puis laisse la suppression se faire : sans elle, l'appli planterait à chaque
  * ouverture. Ne sert que tant que Room passe par un `SupportSQLiteOpenHelper` : un `SQLiteDriver`
- * l'ignorerait, et les drivers n'ont pas d'`onCorruption`. `allowDataLossOnRecovery` doit rester
+ * l'ignorerait, et les drivers n'ont pas d'`onCorruption`. `allowDataLossOnRecovery` est forcé à
  * faux : vrai, le helper supprimerait la base sans passer par `onCorruption`, donc sans copie.
  *
  * Une corruption vue en cours d'usage (base ouverte) perd l'instance de Room : sa seule connexion
@@ -52,7 +52,7 @@ class CorruptionCopyingOpenHelperFactory(
                 name = configuration.name,
                 callback = CorruptionCopyingCallback(configuration.callback),
                 useNoBackupDirectory = configuration.useNoBackupDirectory,
-                allowDataLossOnRecovery = configuration.allowDataLossOnRecovery,
+                allowDataLossOnRecovery = false,
             )
         )
 
