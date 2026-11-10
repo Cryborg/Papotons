@@ -109,7 +109,11 @@ class InAppUpdateManager(activity: Activity) {
 
     /** Installe la mise à jour téléchargée : l'appli redémarre. */
     fun completeUpdate() {
-        appUpdateManager.completeUpdate()
+        appUpdateManager.completeUpdate().addOnFailureListener { error ->
+            // Sans quoi « Installer » ne ferait plus rien, sans trace : le statut relu dit où on en est.
+            Log.w(LOG_TAG, "Installation refusée par Play : ${error.javaClass.simpleName}")
+            refreshStatus()
+        }
     }
 
     fun unregister() {
