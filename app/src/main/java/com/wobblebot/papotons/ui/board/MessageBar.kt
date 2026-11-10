@@ -77,8 +77,8 @@ fun MessageBar(
                     contentDescription = sentence
                     // `Surface(onClick)` ne donne aucun rôle : sans lui, TalkBack ne dit pas « bouton ».
                     role = Role.Button
-                    // L'action porte elle-même la parole : posée avant le `clickable` de la Surface, une
-                    // action vide l'emporterait et TalkBack ou le contacteur ne diraient rien.
+                    // L'action porte elle-même la parole, sans dépendre de sa fusion avec le `clickable` de
+                    // la Surface : TalkBack et le contacteur disent la phrase (vérifié par le test instrumenté).
                     onClick(label = speakLabel) {
                         onSpeak()
                         true
