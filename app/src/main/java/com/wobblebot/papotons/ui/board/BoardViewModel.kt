@@ -756,6 +756,12 @@ class BoardViewModel @Inject constructor(
             } catch (exception: IOException) {
                 // Marqueur des copies ou picto choisi impossible à écrire : rien n'a été écrit en base.
                 reportEditFailure(current, writing, EditFailure.Storage, exception)
+            } catch (exception: CancellationException) {
+                // Une IllegalStateException elle aussi : un écran qui part n'est pas un échec.
+                throw exception
+            } catch (exception: IllegalStateException) {
+                // Base fermée (remplacée ou restaurée pendant l'écriture) : un message, pas un plantage.
+                reportEditFailure(current, writing, EditFailure.Storage, exception)
             }
         }
     }

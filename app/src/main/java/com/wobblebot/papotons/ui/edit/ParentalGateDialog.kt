@@ -4,8 +4,10 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
@@ -59,7 +61,8 @@ fun ParentalGateDialog(onPassed: () -> Unit, onClose: () -> Unit) {
         properties = DialogProperties(dismissOnClickOutside = false),
         title = { Text(stringResource(R.string.parental_gate_title)) },
         text = {
-            Column {
+            // Grande police et clavier ouvert : sans défilement, le champ de réponse sortirait de la fenêtre.
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(stringResource(R.string.parental_gate_question, question.first, question.second))
                 Spacer(modifier = Modifier.height(QUESTION_SPACING))
                 OutlinedTextField(

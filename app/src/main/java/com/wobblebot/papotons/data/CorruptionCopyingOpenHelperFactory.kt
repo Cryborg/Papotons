@@ -144,7 +144,8 @@ class CorruptionCopyingOpenHelperFactory(
             return
         }
         val copied = sources.filter { source -> copyOrDropPartial(source, File(pending, source.name)) }
-        if (copied.isEmpty() || !pending.renameTo(target)) {
+        // Sans la base, un journal seul ne se relit pas : gardé, il évincerait une vraie copie à l'élagage.
+        if (File(databasePath) !in copied || !pending.renameTo(target)) {
             Log.e(TAG, "Corrupted database $databasePath: no copy kept (${copied.size} of ${sources.size} files copied)")
             if (pending.exists() && !pending.deleteRecursively()) Log.w(TAG, "Pending copy $pending could not be deleted")
             return

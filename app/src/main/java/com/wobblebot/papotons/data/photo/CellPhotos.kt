@@ -104,7 +104,9 @@ class CellPhotos @Inject constructor(@ApplicationContext private val context: Co
         if (name in unreadable) return
         if (images.containsKey(name)) return
         val image = withContext(Dispatchers.IO) {
-            val file = listOf(File(photosDirectory, name), File(pendingDirectory, name)).firstOrNull { it.isFile }
+            // La préparée d'abord : `commit` la renomme vers les validées, et lue dans l'autre ordre, un
+            // renommage entre les deux tests la ferait passer pour absente, sans nouvel essai.
+            val file = listOf(File(pendingDirectory, name), File(photosDirectory, name)).firstOrNull { it.isFile }
             if (file == null) {
                 if (missingReported.add(name)) Log.w(TAG, "A cell photo is missing")
                 null

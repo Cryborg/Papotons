@@ -5,6 +5,7 @@ import com.wobblebot.papotons.data.board.BoardOrigin
 import com.wobblebot.papotons.data.board.CellEntity
 import com.wobblebot.papotons.data.board.FIRST_SCREEN_POSITION
 import com.wobblebot.papotons.data.board.FIRST_USER_BOARD_ID
+import com.wobblebot.papotons.data.board.MAX_SCREENS
 import com.wobblebot.papotons.data.board.MAX_SCREEN_POSITION
 import com.wobblebot.papotons.data.board.legacyFirstScreenOf
 import com.wobblebot.papotons.data.photo.CELL_PHOTO_NAME
@@ -192,7 +193,7 @@ suspend fun recoverContent(
         profiles = if (hasProfiles) profiles.values.toList() else null,
     )
     val read = backupContent(manifest, boards.values.toList(), cells, defaultProfileName)
-    val placed = withScreensForEveryone(read.boards, unplacedScreens, read.cells)
+    val placed = withScreensForEveryone(read.boards, unplacedScreens, read.cells, ::leaveOut)
     // Sans grille, un utilisateur ne s'ouvrirait plus.
     val withBoards = placed.mapTo(HashSet()) { it.profileId }
     val keptProfiles = read.profiles.filter { it.id in withBoards }
@@ -205,9 +206,11 @@ suspend fun recoverContent(
  * Les écrans au rang perdu ([unplacedScreens]) rangés après les autres écrans de leur utilisateur ;
  * un utilisateur dont aucun écran n'a survécu reçoit le premier écran que choisirait la migration
  * 4 → 5 parmi ses grilles relues. Une seule grille perdue ne fait donc jamais tomber tout un
- * utilisateur, et seul l'ordre des onglets change : aucune case ne bouge.
+ * utilisateur, et seul l'ordre des onglets change : aucune case ne bouge. Au-delà de [MAX_SCREENS]
+ * écrans, les derniers rangs redeviennent de simples grilles, comptées par [leaveOut] : sinon les
+ * réglages refuseraient tout nouvel écran à cet utilisateur.
  */
-private fun withScreensForEveryone(boards: List<BoardEntity>, unplacedScreens: List<Long>, cells: List<CellEntity>): List<BoardEntity> {
+private fun withScreensForEveryone(boards: List<BoardEntity>, unplacedScreens: List<Long>, cells: List<CellEntity>, leaveOut: (String) -> Unit): List<BoardEntity> {
     val positions = boards.associateTo(HashMap()) { it.id to it.screenPosition }
     val linkedBoardIds = cells.mapNotNullTo(HashSet()) { it.linkedBoardId }
     for (profileBoards in boards.groupBy { it.profileId }.values) {
@@ -218,6 +221,10 @@ private fun withScreensForEveryone(boards: List<BoardEntity>, unplacedScreens: L
         }
         if (profileBoards.none { positions[it.id] != null }) {
             legacyFirstScreenOf(startBoardId = null, profileBoards.map { BoardOrigin(it.id, it.coreBoardId) }, linkedBoardIds)?.let { positions[it] = FIRST_SCREEN_POSITION }
+        }
+        for (board in profileBoards.filter { positions[it.id] != null }.sortedBy { positions[it.id] }.drop(MAX_SCREENS)) {
+            positions[board.id] = null
+            leaveOut("over the screen limit")
         }
     }
     return boards.map { it.copy(screenPosition = positions[it.id]) }

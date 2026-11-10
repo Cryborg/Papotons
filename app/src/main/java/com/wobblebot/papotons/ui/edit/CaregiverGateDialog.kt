@@ -48,7 +48,9 @@ import com.wobblebot.papotons.data.caregiver.isValidCaregiverCode
 import com.wobblebot.papotons.ui.settings.CaregiversUiState
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val FIELD_SPACING = 8.dp
 
@@ -141,8 +143,9 @@ private fun CaregiverGateDialog(
                 if (chosen == null || isChecking) return@NewCodeStep
                 isChecking = true
                 scope.launch(Dispatchers.Main) {
-                    // L'adulte a répondu : l'accès s'ouvre même si le code n'a pas pu s'écrire.
-                    if (!onRecover(chosen.id, code)) Toast.makeText(context, notChanged, Toast.LENGTH_LONG).show()
+                    // L'adulte a répondu : l'accès s'ouvre même si le code n'a pas pu s'écrire. Jusqu'au bout
+                    // même si la modale part (écran éteint pendant le hachage) : sinon le nouveau code se perd.
+                    if (!withContext(NonCancellable) { onRecover(chosen.id, code) }) Toast.makeText(context, notChanged, Toast.LENGTH_LONG).show()
                     isChecking = false
                     onPassed()
                 }
