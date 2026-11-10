@@ -38,6 +38,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.DpRect
@@ -535,13 +536,15 @@ class BoardScreenLayoutTest {
         // TalkBack annonce l'action « Dire la phrase » sur la carte.
         sentence.assert(SemanticsMatcher("says the sentence") { it.config.getOrNull(SemanticsActions.OnClick)?.label == speakLabel })
         sentence.performClick()
+        // Par l'action d'accessibilité aussi (TalkBack, contacteur), pas seulement au toucher.
+        sentence.performSemanticsAction(SemanticsActions.OnClick)
         val deleteLast = composeRule.onNodeWithContentDescription(context.getString(R.string.message_delete_last)).assertIsEnabled()
         deleteLast.performClick()
         deleteLast.performClick()
         composeRule.onNodeWithContentDescription(context.getString(R.string.message_clear)).assertIsEnabled().performClick()
 
         // Deux effacements pour un vidage : une inversion des deux boutons se verrait.
-        assertEquals(listOf(1, 2, 1), listOf(spoken, deleted, cleared))
+        assertEquals(listOf(2, 2, 1), listOf(spoken, deleted, cleared))
     }
 
     @Test
