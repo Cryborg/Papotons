@@ -1,6 +1,7 @@
 package com.wobblebot.papotons.ui.edit
 
 import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -272,6 +273,7 @@ private fun NewCodeStep(name: String, isChecking: Boolean, onSubmit: (String) ->
 }
 
 /** Le message d'erreur d'un code et de sa confirmation, `null` s'ils conviennent. */
+@StringRes
 internal fun codeError(code: String, again: String): Int? = when {
     !isValidCaregiverCode(code) -> R.string.caregiver_code_invalid
     code != again -> R.string.caregiver_code_mismatch
@@ -280,7 +282,7 @@ internal fun codeError(code: String, again: String): Int? = when {
 
 /** Annoncée : le focus de TalkBack reste sur le bouton qui n'a rien fait. */
 @Composable
-internal fun CodeError(message: Int) {
+internal fun CodeError(@StringRes message: Int) {
     Text(
         // La longueur du code en argument : « Le code fait exactement 4 chiffres. » ; ignorée par les autres.
         text = stringResource(message, CAREGIVER_CODE_LENGTH),
