@@ -114,7 +114,14 @@ class CellPhotos @Inject constructor(@ApplicationContext private val context: Co
                 // Illisible : signalé une fois, pas redécodé à chaque affichage. Une absence, elle, peut
                 // n'être que passagère (renommage en cours) : on réessaiera.
                 // Un fichier parti pendant le décodage (validé, donc renommé) n'est pas illisible.
-                decodeForDisplay(file).also { if (it == null && file.isFile && unreadable.add(name)) Log.w(TAG, "A cell photo is unreadable") }
+                // Sans mémoire, la case reste sans photo pour cette fois, sans être marquée illisible.
+                val decoded = try {
+                    decodeForDisplay(file)
+                } catch (error: OutOfMemoryError) {
+                    Log.w(TAG, "No memory to decode a cell photo")
+                    return@withContext null
+                }
+                decoded.also { if (it == null && file.isFile && unreadable.add(name)) Log.w(TAG, "A cell photo is unreadable") }
             }
         } ?: return
         mutex.withLock {
