@@ -400,7 +400,7 @@ class CorruptedCopyRecoveryTest {
         validate(recovered.content)
     }
     @Test
-    fun `an id out of range or not a number leaves its row out`() = runTest {
+    fun `an id out of range or not a number leaves its row out, except a cell's`() = runTest {
         val recovered = recover(
             tables(
                 profiles = listOf(profile(0, "Zéro"), profile(1), profile(MAX_BOARD_ID + 1, "Trop"), profile(2, "Marie"), profile(3, "Zoé") + ("id" to "3")),
@@ -411,8 +411,9 @@ class CorruptedCopyRecoveryTest {
 
         assertEquals(listOf("Léo", "Marie"), recovered.content.profiles.map { it.name })
         assertEquals(listOf(1L, 10L), recovered.content.boards.map { it.id })
-        assertEquals(listOf(2L), recovered.content.cells.map { it.id })
-        assertEquals(mapOf("profile id" to 3, "board id" to 3, "cell id" to 1), recovered.leftOut)
+        // L'id d'une case ne compte pas (la base en donne un neuf) : illisible, la case revient à sa place.
+        assertEquals(listOf(0L, 2L), recovered.content.cells.map { it.id })
+        assertEquals(mapOf("profile id" to 3, "board id" to 3), recovered.leftOut)
         validate(recovered.content)
     }
 
@@ -443,6 +444,18 @@ class CorruptedCopyRecoveryTest {
         )!!.content.boards
 
         assertEquals(listOf(MAX_SCREEN_POSITION, null), boards.map { it.screenPosition })
+    }
+
+    @Test
+    fun `a screen with no rank left is counted`() = runTest {
+        val recovered = recover(
+            tables(
+                profiles = listOf(profile(1)),
+                boards = listOf(board(1, screenPosition = MAX_SCREEN_POSITION.toLong()), board(2, screenPosition = -1)),
+            ),
+        )!!
+
+        assertEquals(mapOf("over the screen limit" to 1), recovered.leftOut)
     }
 
     @Test
