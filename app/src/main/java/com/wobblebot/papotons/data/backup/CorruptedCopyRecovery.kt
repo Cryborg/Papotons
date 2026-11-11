@@ -145,9 +145,9 @@ suspend fun recoverContent(
     // Pictos (`Long`) et photos (`String`) distincts : ce que la sauvegarde compte.
     val images = HashSet<Any>()
     for (row in tables.cells) {
-        val id = row.long("id") ?: run { leaveOut("cell id"); continue }
-        // Pas de doublon d'id écarté : une clé brouillée en double porte une autre case, et la base en
-        // donne de neuves à la restauration. Seule la place compte.
+        // Ni doublon ni id illisible écarté : une clé brouillée porte quand même une case, et la base en
+        // donne de neuves à la restauration (zéro, comme dans une sauvegarde). Seule la place compte.
+        val id = row.long("id") ?: 0L
         if (cells.size >= MAX_CELLS) run { leaveOut("over the backup limits"); continue }
         val board = row.long("board_id")?.let(boards::get) ?: run { leaveOut("cell board"); continue }
         val gridRow = row.int("grid_row")?.takeIf { it in 0 until board.rowCount } ?: run { leaveOut("cell position"); continue }
@@ -216,7 +216,10 @@ private fun withScreensForEveryone(boards: List<BoardEntity>, unplacedScreens: L
     for (profileBoards in boards.groupBy { it.profileId }.values) {
         var next = profileBoards.mapNotNull { it.screenPosition }.maxOrNull()?.plus(1) ?: FIRST_SCREEN_POSITION
         for (board in profileBoards.filter { it.id in unplacedScreens }) {
-            if (next > MAX_SCREEN_POSITION) break
+            if (next > MAX_SCREEN_POSITION) {
+                leaveOut("over the screen limit")
+                continue
+            }
             positions[board.id] = next++
         }
         if (profileBoards.none { positions[it.id] != null }) {

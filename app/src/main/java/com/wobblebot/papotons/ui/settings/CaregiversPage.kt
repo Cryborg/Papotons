@@ -63,7 +63,7 @@ fun CaregiversPage(state: CaregiversUiState, actions: CaregiverActions) {
     }
     AddButton(stringResource(R.string.caregiver_add), enabled = !state.isWorking) { editedId = NEW_CAREGIVER }
     state.failure?.let { failure ->
-        FailureText(stringResource(if (failure == CaregiverFailure.NotSaved) R.string.caregiver_not_saved else R.string.caregiver_not_deleted))
+        FailureText(stringResource(failure.message))
     }
     val close = { editedId = NO_CAREGIVER_EDITED }
     if (editedId == NEW_CAREGIVER) {
@@ -112,3 +112,9 @@ private fun CaregiverRow(caregiver: Caregiver, isEnabled: Boolean, onEdit: () ->
 /** « 7 novembre 2026 » : l'appli est en français quelle que soit la langue de l'appareil. */
 private fun formatDate(epochMs: Long): String =
     DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(Locale.FRENCH).format(Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()))
+
+internal val CaregiverFailure.message: Int
+    get() = when (this) {
+        CaregiverFailure.NotSaved -> R.string.caregiver_not_saved
+        CaregiverFailure.NotDeleted -> R.string.caregiver_not_deleted
+    }

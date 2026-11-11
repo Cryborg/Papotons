@@ -83,7 +83,13 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
         val image = withContext(Dispatchers.IO) {
             val file = File(downloadedDirectory, "$pictogramId$EXTENSION")
             if (file.isFile) {
-                decodeFile(file)
+                // Une image décorative ne doit jamais empêcher de parler : sans mémoire, la case reste sans picto.
+                try {
+                    decodeFile(file)
+                } catch (error: OutOfMemoryError) {
+                    Log.w(TAG, "No memory to decode pictogram $pictogramId")
+                    null
+                }
             } else {
                 // Ni embarqué ni téléchargé : la case a perdu son image (restauration partielle, import).
                 Log.w(TAG, "Pictogram $pictogramId is neither bundled nor downloaded")

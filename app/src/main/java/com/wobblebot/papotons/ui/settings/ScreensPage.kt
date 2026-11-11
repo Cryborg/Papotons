@@ -52,6 +52,10 @@ private val ICON_BUTTON_SIZE = 48.dp
 /** Pour « Ajouter un écran ». */
 private const val NEW_SCREEN = 0L
 
+/** Décalage d'un écran dans l'ordre des onglets. */
+private const val MOVE_UP = -1
+private const val MOVE_DOWN = 1
+
 /**
  * Les écrans de l'utilisateur ouvert, dans l'ordre des onglets : monter, descendre, modifier, ajouter.
  * [newScreenSize] : la taille présélectionnée d'un nouvel écran (celle de l'écran affiché). La modale en
@@ -149,14 +153,14 @@ private fun ScreenRow(screen: Screen, isFirst: Boolean, isLast: Boolean, isEnabl
         if (isFirst) {
             Spacer(modifier = Modifier.size(ICON_BUTTON_SIZE))
         } else {
-            IconButton(onClick = { onMove(-1) }, enabled = canMove) {
+            IconButton(onClick = { onMove(MOVE_UP) }, enabled = canMove) {
                 Icon(painterResource(R.drawable.ic_arrow_upward), contentDescription = stringResource(R.string.screen_move_up_description, screen.name))
             }
         }
         if (isLast) {
             Spacer(modifier = Modifier.size(ICON_BUTTON_SIZE))
         } else {
-            IconButton(onClick = { onMove(1) }, enabled = canMove) {
+            IconButton(onClick = { onMove(MOVE_DOWN) }, enabled = canMove) {
                 Icon(painterResource(R.drawable.ic_arrow_downward), contentDescription = stringResource(R.string.screen_move_down_description, screen.name))
             }
         }

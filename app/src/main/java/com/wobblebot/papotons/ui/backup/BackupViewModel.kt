@@ -13,6 +13,7 @@ import com.wobblebot.papotons.data.backup.PendingRestore
 import com.wobblebot.papotons.data.backup.RefusalReason
 import com.wobblebot.papotons.data.board.BoardRepository
 import com.wobblebot.papotons.ui.board.PHOTO_REQUEST_TIMEOUT_MS
+import com.wobblebot.papotons.ui.board.STOP_TIMEOUT_MS
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
@@ -31,7 +32,6 @@ import java.time.LocalDate
 import javax.inject.Inject
 
 private const val TAG = "BackupViewModel"
-private const val STOP_TIMEOUT_MS = 5_000L
 
 /** Ce que la modale de sauvegarde dit après un travail. */
 enum class BackupMessage { Saved, SavedWithoutSomeImages, SaveFailed, SaveTooLarge, Restored, Recovered, NothingRecovered, RestoreFailed, NotPapotons, Unreadable, TooLarge, Invalid, NoDocumentApp }
