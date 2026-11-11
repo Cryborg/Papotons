@@ -2,6 +2,12 @@
 
 Relevés de la tournée du gate (vérification et envoi du travail des routines), le plus récent en tête.
 
+## Gate du 2026-11-11
+
+- `testDebugUnitTest` (19 s) et `lintDebug` (28 s), verts. Working copy propre, aucun schéma Room neuf.
+- Part : 20 commits importés de la tournée cloud (TalkBack et contacteur qui disent la phrase, image sans mémoire au décodage, récupération de Room sans effacement sans copie, case à l'id illisible remise en place, refus d'installation par Play, messages d'erreur typés, épinglage TODO-21, coupe sans moitié d'émoji TODO-23) et ce relevé.
+- Rien réparé, rien annulé.
+
 ## Gate du 2026-11-10
 
 - `testDebugUnitTest` (19 s) et `lintDebug` (26 s), verts. Working copy propre, aucun schéma Room neuf.
