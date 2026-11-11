@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var inAppUpdateManager: InAppUpdateManager
 
     private val updateResultLauncher: ActivityResultLauncher<IntentSenderRequest> =
-        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { _ ->
             inAppUpdateManager.onUpdateFlowResult()
         }
 
