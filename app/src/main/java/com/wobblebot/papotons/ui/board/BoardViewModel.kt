@@ -26,6 +26,7 @@ import com.wobblebot.papotons.domain.ConjugationTable
 import com.wobblebot.papotons.domain.Screen
 import com.wobblebot.papotons.domain.SentenceWord
 import com.wobblebot.papotons.domain.WordCategory
+import com.wobblebot.papotons.domain.isInside
 import com.wobblebot.papotons.domain.layoutGrid
 import com.wobblebot.papotons.domain.sentenceTokens
 import com.wobblebot.papotons.speech.MediaVolume
@@ -870,6 +871,9 @@ class BoardViewModel @Inject constructor(
             // L'accueil réinséré garde son id : la pile ne change pas et le collecteur ne verrait rien.
             verbForms.value = null
             return null
+        }
+        board.cells.filterNot { it.isInside(board.rowCount, board.columnCount) }.forEach { cell ->
+            Log.w(TAG, "Cell ${cell.id} at (${cell.row}, ${cell.column}) is outside a ${board.rowCount} x ${board.columnCount} grid")
         }
         return DisplayedBoard(
             id = board.id,
