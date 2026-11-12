@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.SentenceToken
+import com.wobblebot.papotons.domain.sentenceText
 import kotlinx.collections.immutable.ImmutableList
 
 private val SENTENCE_CONTENT_PADDING = 12.dp
@@ -58,7 +59,7 @@ fun MessageBar(
     val speakLabel = stringResource(R.string.message_speak)
     val hint = stringResource(R.string.message_hint)
     // LazyRow ne compose que les mots visibles : TalkBack lirait une phrase tronquée.
-    val sentence = if (hasWords) words.joinToString(separator = " ") { it.text } else hint
+    val sentence = if (hasWords) sentenceText(words) else hint
     Row(
         modifier = modifier.fillMaxHeight(),
         horizontalArrangement = Arrangement.spacedBy(TARGET_SPACING),
