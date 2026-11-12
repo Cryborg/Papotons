@@ -63,6 +63,15 @@ class VoiceSelectionTest {
     }
 
     @Test
+    fun `an offline voice named in ISO 3 code counts as the language`() {
+        val current = VoiceOption("fr-network", french, isOffline = false)
+        val iso3French = Locale.Builder().setLanguage("fra").build()
+        val available = listOf(current, VoiceOption("fra-local", iso3French, isOffline = true))
+
+        assertEquals(VoiceChoice.SwitchTo("fra-local"), chooseOfflineVoice(current, available, french))
+    }
+
+    @Test
     fun `an offline voice of another language does not count`() {
         val current = VoiceOption("fr-network", french, isOffline = false)
         val available = listOf(current, VoiceOption("en-local", Locale.US, isOffline = true))
