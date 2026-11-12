@@ -57,7 +57,11 @@ class AndroidSpeechEngine(
     override fun stop() {
         // Les erreurs des énoncés coupés ici ne comptent plus, comme après une interruption.
         firstLiveUtterance = utteranceCount + 1
-        textToSpeech.stop()
+        try {
+            textToSpeech.stop()
+        } catch (exception: RuntimeException) {
+            Log.w(TAG, "Text-to-speech stop failed", exception)
+        }
     }
 
     override fun configure(): Boolean {
@@ -126,8 +130,14 @@ class AndroidSpeechEngine(
         return result == TextToSpeech.SUCCESS
     }
 
+    // Un moteur mis à jour ou tué peut lever ici (« Service not registered ») : la voix se
+    // relance sur l'appui même de l'enfant, ça ne doit jamais faire planter l'appli.
     override fun shutdown() {
-        textToSpeech.shutdown()
+        try {
+            textToSpeech.shutdown()
+        } catch (exception: RuntimeException) {
+            Log.w(TAG, "Text-to-speech shutdown failed", exception)
+        }
     }
 
     private fun Voice.toOption() = VoiceOption(
