@@ -214,7 +214,9 @@ private fun CodeStep(
 private fun RecoveryStep(onAnswered: (Boolean) -> Unit, onClose: () -> Unit) {
     val question = remember { RecoveryQuestion.random() }
     var answer by remember { mutableStateOf("") }
-    val submit = { onAnswered(question.isAnsweredBy(answer)) }
+    val canSubmit = answer.isNotBlank()
+    // Comme pour le code : une réponse vide (Entrée trop tôt) ne referme pas le contrôle.
+    val submit = { if (canSubmit) onAnswered(question.isAnsweredBy(answer)) }
     AlertDialog(
         onDismissRequest = onClose,
         properties = DialogProperties(dismissOnClickOutside = false),
@@ -234,7 +236,7 @@ private fun RecoveryStep(onAnswered: (Boolean) -> Unit, onClose: () -> Unit) {
                 )
             }
         },
-        confirmButton = { Button(onClick = submit) { Text(stringResource(R.string.caregiver_gate_confirm)) } },
+        confirmButton = { Button(onClick = submit, enabled = canSubmit) { Text(stringResource(R.string.caregiver_gate_confirm)) } },
         dismissButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.caregiver_gate_cancel)) } },
     )
 }
