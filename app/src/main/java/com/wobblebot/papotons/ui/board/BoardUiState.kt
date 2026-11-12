@@ -53,9 +53,6 @@ data class BoardUiState(
 ) {
     val isSettingsOpen: Boolean get() = settingsPage != null
 
-    /** Une phrase, une modification, un réglage ou un choix de forme est en cours : rien ne doit l'interrompre. */
-    val isBusy: Boolean get() = message.isNotEmpty() || isEditing || isSettingsOpen || verbForms != null
-
     /** La taille des cases de l'écran ouvert, lue sur son accueil d'origine ; `null` pour un écran hors des tailles. */
     val boardSize: BoardSize? get() = BoardSize.withHome(board?.rootCoreBoardId)
 }

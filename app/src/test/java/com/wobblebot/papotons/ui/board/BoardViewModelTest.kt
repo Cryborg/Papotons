@@ -235,7 +235,6 @@ class BoardViewModelTest {
         assertEquals(listOf("veux", "je"), viewModel.messageTexts())
         // Chaque mot garde le picto de sa case ; « veux » est en texte seul.
         assertEquals(listOf(emptyList(), listOf(10L)), viewModel.state().message.map { token -> token.pictures.map { (it as Picture.Pictogram).id } })
-        assertTrue(viewModel.state().isBusy)
     }
 
     @Test
@@ -423,7 +422,6 @@ class BoardViewModelTest {
         viewModel.onClearMessage()
 
         assertTrue(viewModel.state().message.isEmpty())
-        assertFalse(viewModel.state().isBusy)
         // Les mots touchés en rafale qui attendent encore leur tour se taisent avec le message.
         assertEquals(1, speaker.stopCount)
     }
@@ -897,15 +895,14 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun `the settings close when the edit mode starts, and keep the app busy while open`() = runTest(dispatcher) {
+    fun `the settings close when the edit mode starts`() = runTest(dispatcher) {
         val viewModel = startViewModel()
-        assertFalse(viewModel.state().isBusy)
+        assertFalse(viewModel.state().isSettingsOpen)
 
         viewModel.onOpenSettings()
         assertTrue(viewModel.state().isSettingsOpen)
-        assertTrue(viewModel.state().isBusy)
         viewModel.onCloseSettings()
-        assertFalse(viewModel.state().isBusy)
+        assertFalse(viewModel.state().isSettingsOpen)
 
         viewModel.onOpenSettings()
         // Sinon la grille à modifier resterait cachée sous les Réglages.
@@ -965,7 +962,6 @@ class BoardViewModelTest {
         val second = startViewModel(savedState = first.dieAndKeep(savedState), voice = FakeSpeaker())
 
         assertFalse(second.state().isSettingsOpen)
-        assertFalse(second.state().isBusy)
     }
 
     @Test
@@ -1095,7 +1091,7 @@ class BoardViewModelTest {
         val viewModel = startViewModel()
         viewModel.onStartEditing()
         assertEquals(1, speaker.stopCount)
-        assertTrue(viewModel.state().isBusy)
+        assertTrue(viewModel.state().isEditing)
         viewModel.tap("je")
 
         viewModel.onStopEditing()
@@ -1976,13 +1972,13 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun `an open page keeps the update restart away`() = runTest(dispatcher) {
+    fun `a long click on a known verb opens its forms`() = runTest(dispatcher) {
         val viewModel = startViewModel()
         viewModel.openVerbBoard()
 
         viewModel.onCellLongClick(viewModel.cell("ai"))
 
-        assertTrue(viewModel.state().isBusy)
+        assertNotNull(viewModel.state().verbForms)
     }
 
     @Test
