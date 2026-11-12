@@ -1,14 +1,11 @@
 package com.wobblebot.papotons.domain
 
-import android.util.Log
 import androidx.compose.runtime.Immutable
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 
 /** L'accueil standard dans `CoreVocabulary` : chaque utilisateur en a une copie (`core_board_id`) ; celle de la graine ou de la migration garde cet id. */
 const val HOME_BOARD_ID = 1L
-
-private const val TAG = "Board"
 
 /**
  * Une case, posée à une position fixe de sa grille. [linkedBoardId] non nul en fait un dossier :
@@ -52,6 +49,8 @@ data class Board(
     val cells: ImmutableList<Cell>,
 )
 
+fun Cell.isInside(rowCount: Int, columnCount: Int): Boolean = row in 0 until rowCount && column in 0 until columnCount
+
 /**
  * Range les cases dans une matrice [rowCount] × [columnCount] d'après leur position stockée,
  * jamais d'après leur rang dans [cells] : c'est ce qui garantit qu'une case ne change pas de
@@ -59,13 +58,9 @@ data class Board(
  */
 fun layoutGrid(rowCount: Int, columnCount: Int, cells: List<Cell>): ImmutableList<ImmutableList<Cell?>> {
     val slots = Array(rowCount) { arrayOfNulls<Cell>(columnCount) }
+    // Une case hors de la grille reste en base : on ne la montre pas, on ne la supprime pas.
     for (cell in cells) {
-        if (cell.row in 0 until rowCount && cell.column in 0 until columnCount) {
-            slots[cell.row][cell.column] = cell
-        } else {
-            // Gardée en base : on ne la montre pas, on ne la supprime pas.
-            Log.w(TAG, "Cell ${cell.id} at (${cell.row}, ${cell.column}) is outside a $rowCount x $columnCount grid")
-        }
+        if (cell.isInside(rowCount, columnCount)) slots[cell.row][cell.column] = cell
     }
     return slots.map { it.toList().toImmutableList() }.toImmutableList()
 }

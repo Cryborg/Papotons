@@ -16,7 +16,7 @@ Ce dossier :
 4. **Les dossiers** : thèmes et contenus utiles ? Lesquels manquent ?
 5. **L'édition par l'adulte** : ajouter une case, une photo, chercher un picto, sauvegarder : est-ce faisable sans aide ?
 6. **La voix** et la phrase : compréhensible, assez rapide, « j'ai » plutôt que « je ai » ?
-7. **Les tailles des cases** (Réglages > Taille des cases) : grandes cases (3 × 4), moyennes (5 × 6), standard (7 × 8). Les mots retenus pour les deux petites tailles sont-ils les bons ? Leurs grilles sont dans `grilles/` (07 à 14).
+7. **Les tailles des cases** (Réglages > Écrans, à la création d'un écran) : grandes cases (3 × 4), moyennes (5 × 6), standard (7 × 8). Les mots retenus pour les deux petites tailles sont-ils les bons ? Leurs grilles sont dans `grilles/` (07 à 14).
 
 ## Qui inviter
 

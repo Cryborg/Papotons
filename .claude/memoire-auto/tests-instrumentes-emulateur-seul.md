@@ -8,7 +8,7 @@ metadata:
   modified: 2026-11-07T16:37:01.849Z
 ---
 
-Toujours préfixer `connectedDebugAndroidTest` par `ANDROID_SERIAL=emulator-5554` (AVD `Medium_Phone_API_37.0`, lancé sans fenêtre), même quand un appareil réel est branché : le Pixel 7 Pro, ou la tablette Galaxy Tab A9+ (SM-X210, série R9WWA08BTGZ) qui porte les vraies grilles d'Anton.
+Toujours préfixer `connectedDebugAndroidTest` par `ANDROID_SERIAL=emulator-5554` (AVD `Medium_Phone_API_37.0`, lancé sans fenêtre), même quand un appareil réel est branché : le Pixel 7 Pro, ou la tablette Galaxy Tab A9+ (SM-X210, série R9WWA08BTGZ) qui porte les vraies grilles d'un enfant.
 
 **Why:** à la fin des tests, Gradle désinstalle l'appli et ses données (arrivé le 2026-11-06 sur le Pixel) ; et quatre tests (`EditEntryTest`, `CaregiverGateTest`, `EditModeLifecycleTest`, `VerbFormsBackTest`) ouvrent la vraie appli et écrivent dans ses données. Le 2026-11-07, Franck a demandé pourquoi pas la tablette : on a convenu d'un essai visuel seulement.
 
