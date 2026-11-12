@@ -52,6 +52,8 @@ class ConjugationTableTest {
         assertEquals("avaient besoin", avoirBesoin.form(Tense.IMPERFECT, THIRD_PLURAL))
         assertEquals("vais avoir besoin", avoirBesoin.form(Tense.NEAR_FUTURE, FIRST_SINGULAR))
         assertEquals("ai eu besoin", avoirBesoin.form(Tense.PAST_COMPOUND, FIRST_SINGULAR))
+        // Seule la ponctuation finale tombe : un nombre en fin de case reste dans chaque forme.
+        assertEquals("compte jusqu'à 10", forms("compter jusqu'à 10 !").form(Tense.PRESENT, FIRST_SINGULAR))
     }
 
     @Test
