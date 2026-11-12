@@ -74,13 +74,8 @@ class FakeBoardDao(
         return boards.value.size
     }
 
-    /** Levée par `boardExists` et `firstScreenOf` (base illisible en cours d'usage). */
+    /** Levée par `firstScreenOf` (base illisible en cours d'usage). */
     var existsFailure: RuntimeException? = null
-
-    override suspend fun boardExists(boardId: Long): Boolean {
-        existsFailure?.let { throw it }
-        return boards.value.any { it.id == boardId }
-    }
 
     override suspend fun largestBoardId(): Long? = boards.value.maxOfOrNull { it.id }
 

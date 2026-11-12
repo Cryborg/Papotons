@@ -76,9 +76,6 @@ abstract class BoardDao {
     @Query("SELECT COUNT(*) FROM cells")
     abstract suspend fun countCells(): Int
 
-    @Query("SELECT EXISTS(SELECT 1 FROM boards WHERE id = :boardId)")
-    abstract suspend fun boardExists(boardId: Long): Boolean
-
     @Query("SELECT MAX(id) FROM boards")
     abstract suspend fun largestBoardId(): Long?
 
