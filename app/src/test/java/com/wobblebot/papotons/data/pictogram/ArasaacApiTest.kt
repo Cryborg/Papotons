@@ -65,6 +65,7 @@ class ArasaacApiTest {
     fun `a result without keyword is kept unnamed, one without id is a failure`() {
         val flags = """"sex": false, "violence": false"""
         assertEquals(listOf(PictogramResult(7, "")), parseSearchResults("""[{"_id": 7, $flags}]"""))
+        assertEquals(listOf(PictogramResult(7, "")), parseSearchResults("""[{"_id": 7, "keywords": [{"keyword": null}], $flags}]"""))
         // Le même picto deux fois : une seule vignette (clé unique dans la grille).
         assertEquals(listOf(7L), parseSearchResults("""[{"_id": 7, $flags}, {"_id": 7, $flags}]""").map { it.id })
         assertThrows(ArasaacException::class.java) { parseSearchResults("""[{"keywords": [], $flags}]""") }
