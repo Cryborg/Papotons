@@ -300,26 +300,34 @@ private fun CellEditor(
         }
     }
     if (isDeleteConfirmOpen && existing != null) {
-        val confirmText = if (existing.linkedBoardId != null) R.string.editor_delete_folder_confirm else R.string.editor_delete_word_confirm
-        AlertDialog(
-            onDismissRequest = { isDeleteConfirmOpen = false },
-            properties = DialogProperties(dismissOnClickOutside = false),
-            text = { Text(stringResource(confirmText, existing.label)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        isDeleteConfirmOpen = false
-                        onDelete()
-                    },
-                ) {
-                    Text(stringResource(R.string.editor_delete), color = MaterialTheme.colorScheme.error)
-                }
+        DeleteConfirmDialog(
+            label = existing.label,
+            isFolder = existing.linkedBoardId != null,
+            onConfirm = {
+                isDeleteConfirmOpen = false
+                onDelete()
             },
-            dismissButton = {
-                TextButton(onClick = { isDeleteConfirmOpen = false }) { Text(stringResource(R.string.editor_cancel)) }
-            },
+            onDismiss = { isDeleteConfirmOpen = false },
         )
     }
+}
+
+@Composable
+private fun DeleteConfirmDialog(label: String, isFolder: Boolean, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val confirmText = if (isFolder) R.string.editor_delete_folder_confirm else R.string.editor_delete_word_confirm
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnClickOutside = false),
+        text = { Text(stringResource(confirmText, label)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.editor_delete), color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.editor_cancel)) }
+        },
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
