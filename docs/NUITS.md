@@ -2,6 +2,12 @@
 
 Relevés de la tournée du gate (vérification et envoi du travail des routines), le plus récent en tête.
 
+## Gate du 2026-11-13
+
+- `testDebugUnitTest` (20 s) et `lintDebug` (26 s), verts. Working copy propre, aucun schéma Room neuf.
+- Part : 16 commits importés de la tournée cloud (migration 3 vers 4 qui garde ses ids d'accueil, arrêt du moteur de voix qui ne plante plus, voix locale en code ISO 3 reconnue, nombre en fin de case gardé dans la conjugaison, drapeau nul qui n'écarte que son picto, « Code oublié ? » vide qui ne referme plus le contrôle, code mort retiré TODO-32/33/38, constats au TODO) et ce relevé.
+- Rien réparé, rien annulé.
+
 ## Gate du 2026-11-12
 
 - `testDebugUnitTest` (21 s) et `lintDebug` (25 s), verts. Working copy propre, aucun schéma Room neuf.
