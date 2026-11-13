@@ -145,9 +145,7 @@ class BoardDaoTest {
         assertEquals(0, boardDao.deleteCellAndOrphanBoards(folderCellId, setOf(1L)).boardCount)
 
         // Le cycle A↔B reste (rien ne s'efface sans certitude), S aussi : l'accueil la vise encore.
-        assertTrue(boardDao.boardExists(2))
-        assertTrue(boardDao.boardExists(3))
-        assertTrue(boardDao.boardExists(4))
+        assertEquals(boards.size, boardDao.countBoards())
         assertEquals(listOf(4L), checkNotNull(boardDao.observeBoard(1).first()).cells.mapNotNull { it.linkedBoardId })
     }
 

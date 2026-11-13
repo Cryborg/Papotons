@@ -151,13 +151,15 @@ fun parseSearchResults(json: String): List<PictogramResult> = try {
         for (index in 0 until results.length()) {
             if (size >= MAX_RESULTS) break
             val pictogram = results.getJSONObject(index)
-            // Le filtre enfant repose sur ces deux drapeaux : sans eux (API changée), on écarte
-            // plutôt que de tout laisser passer.
-            if (!pictogram.has("sex") || !pictogram.has("violence")) {
+            // Le filtre enfant repose sur ces deux drapeaux : absents, nuls ou d'un autre type (API
+            // changée), on écarte ce résultat plutôt que de tout laisser passer ou tout refuser.
+            val isSexual = pictogram.opt("sex") as? Boolean
+            val isViolent = pictogram.opt("violence") as? Boolean
+            if (isSexual == null || isViolent == null) {
                 unflaggedCount++
                 continue
             }
-            if (pictogram.getBoolean("sex") || pictogram.getBoolean("violence")) continue
+            if (isSexual || isViolent) continue
             val id = pictogram.getLong("_id")
             // Une clé en double ferait planter la grille des résultats.
             if (!ids.add(id)) continue

@@ -163,7 +163,8 @@ private fun CellButton(
     moveActions: List<CustomAccessibilityAction> = emptyList(),
 ) {
     val isFolder = cell.linkedBoardId != null
-    // Seul un verbe a des formes ; ailleurs (et en édition) un appui long reste un appui simple.
+    // Seul un verbe a des formes, hors édition ; ailleurs un appui long reste un appui simple.
+    // En édition, il soulève la case (`cellDrag`).
     val hasForms = cell.category == WordCategory.VERB && !isFolder && !isEditing
     val description = when {
         isEditing && isFolder -> stringResource(R.string.edit_folder_description, cell.label)

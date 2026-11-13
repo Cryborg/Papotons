@@ -7,6 +7,7 @@ import kotlinx.collections.immutable.toImmutableList
 private const val ELIDABLE_SUBJECT = "je"
 private const val APOSTROPHE = "'"
 private const val MUTE_H = 'h'
+private const val WORD_SEPARATOR = " "
 /** Voyelles en tête de mot (partagées avec les tests du vocabulaire). */
 internal const val VOWELS = "aàâäeéèêëiîïoôöuùûüyÿœæ"
 /** Les mots d'une case, séparés par une espace ou une espace insécable (« quoi ? », « avoir besoin »). */
@@ -53,6 +54,9 @@ fun sentenceTokens(words: List<SentenceWord>): List<SentenceToken> = buildList {
         }
     }
 }
+
+/** La phrase en texte : la même pour la voix et pour TalkBack. */
+fun sentenceText(tokens: List<SentenceToken>): String = tokens.joinToString(separator = WORD_SEPARATOR) { it.text }
 
 private fun picturesOf(vararg words: SentenceWord): ImmutableList<Picture> =
     words.mapNotNull { it.picture }.toImmutableList()

@@ -28,6 +28,7 @@ import com.wobblebot.papotons.domain.SentenceWord
 import com.wobblebot.papotons.domain.WordCategory
 import com.wobblebot.papotons.domain.isInside
 import com.wobblebot.papotons.domain.layoutGrid
+import com.wobblebot.papotons.domain.sentenceText
 import com.wobblebot.papotons.domain.sentenceTokens
 import com.wobblebot.papotons.speech.MediaVolume
 import com.wobblebot.papotons.speech.Speaker
@@ -347,7 +348,7 @@ class BoardViewModel @Inject constructor(
     fun onSpeakMessage() {
         val words = message.value
         if (words.isEmpty()) return
-        speaker.speak(sentenceTokens(words).joinToString(separator = " ") { it.text }, interrupt = true)
+        speaker.speak(sentenceText(sentenceTokens(words)), interrupt = true)
         mediaVolume.refresh()
     }
 
@@ -403,8 +404,13 @@ class BoardViewModel @Inject constructor(
     fun onStopEditing() {
         isEditing.value = false
         hasMoveFailed.value = false
-        editor.value = null
+        closeEditor()
         onSearchClose()
+    }
+
+    /** Ferme l'éditeur sans garde : la photo prise et pas enregistrée part avec lui. */
+    private fun closeEditor() {
+        editor.value = null
         chosenBytes = null
         discardUnsavedPhoto()
     }
@@ -421,13 +427,11 @@ class BoardViewModel @Inject constructor(
      * on l'attend, puis on relit.
      */
     private fun reopenFromStart() {
-        editor.value = null
+        closeEditor()
         hasMoveFailed.value = false
         // Pas seulement le collecteur de pile : une pile qui revient à la même valeur ([1], [], [1]) peut lui échapper.
         verbForms.value = null
         onSearchClose()
-        chosenBytes = null
-        discardUnsavedPhoto()
         viewModelScope.launch {
             homeOpening?.join()
             navigation.value = persistentListOf()
@@ -726,9 +730,7 @@ class BoardViewModel @Inject constructor(
     fun onEditorOpenFolder() {
         val target = editor.value?.target as? EditTarget.ExistingCell ?: return
         val linkedBoardId = target.cell.linkedBoardId ?: return
-        editor.value = null
-        chosenBytes = null
-        discardUnsavedPhoto()
+        closeEditor()
         navigation.update { stack -> if (isShowingTopOf(stack)) stack.adding(linkedBoardId) else stack }
     }
 

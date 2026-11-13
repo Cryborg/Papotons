@@ -3,7 +3,6 @@ package com.wobblebot.papotons.data.profile
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.wobblebot.papotons.data.board.FIRST_USER_BOARD_ID
-import com.wobblebot.papotons.domain.BoardSize
 
 /**
  * Les grilles existantes deviennent celles d'un premier utilisateur, nommé [firstProfileName].
@@ -34,8 +33,12 @@ class Migration3To4(private val firstProfileName: String) : Migration(3, 4) {
     }
 }
 
-/** Avant les tailles, un dossier de l'adulte pouvait recevoir l'id de l'accueil d'une taille. */
-private val SIZE_HOMES_THAT_WERE_FOLDER_IDS = BoardSize.entries.filter { it != BoardSize.STANDARD }.map { it.homeBoardId }
+/**
+ * Avant les tailles, un dossier de l'adulte pouvait recevoir l'id de l'accueil d'une taille : celles
+ * de la version 4 (grandes cases et moyenne), figées. Lire `BoardSize.entries` ferait changer une
+ * migration publiée à l'ajout d'une taille.
+ */
+private val SIZE_HOMES_THAT_WERE_FOLDER_IDS = listOf(13L, 7L)
 
 /**
  * La grille du vocabulaire de base dont une grille d'avant les utilisateurs est la copie : son id sous

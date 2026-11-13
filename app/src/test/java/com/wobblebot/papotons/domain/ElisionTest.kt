@@ -16,6 +16,12 @@ class ElisionTest {
     private fun afterSubject(verbLabel: String) = texts(listOf(subject, verb(verbLabel)))
 
     @Test
+    fun `the sentence text joins the shown words with a space, elision included`() {
+        assertEquals("j'ai faim", sentenceText(sentenceTokens(listOf(subject, verb("ai"), word("faim", WordCategory.NOUN)))))
+        assertEquals("", sentenceText(emptyList()))
+    }
+
+    @Test
     fun `je before a conjugated verb starting with a vowel is elided`() {
         assertEquals(listOf("j'ai", "faim"), texts(listOf(subject, verb("ai"), word("faim", WordCategory.NOUN))))
         assertEquals(listOf("j'aime"), afterSubject("aime"))

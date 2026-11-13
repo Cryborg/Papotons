@@ -2,6 +2,7 @@ package com.wobblebot.papotons.speech
 
 import android.speech.tts.TextToSpeech
 import java.util.Locale
+import java.util.MissingResourceException
 
 /**
  * Vrai quand `TextToSpeech.setLanguage` a trouvé la langue. Une voix fr-FR répond
@@ -39,7 +40,8 @@ sealed interface VoiceChoice {
  * de `setLanguage`.
  */
 fun chooseOfflineVoice(current: VoiceOption?, available: List<VoiceOption>?, wanted: Locale): VoiceChoice {
-    fun suits(voice: VoiceOption) = voice.isOffline && voice.locale.language == wanted.language
+    // Comparé en code ISO 3 : certains moteurs rendent leurs voix en « fra » et non en « fr ».
+    fun suits(voice: VoiceOption) = voice.isOffline && voice.locale.iso3Language() == wanted.iso3Language()
 
     if (current != null && suits(current)) return VoiceChoice.KeepCurrent
     if (current == null && available == null) return VoiceChoice.KeepCurrent
@@ -47,4 +49,11 @@ fun chooseOfflineVoice(current: VoiceOption?, available: List<VoiceOption>?, wan
         .filter(::suits)
         .minByOrNull { if (it.locale == wanted) 0 else 1 }
     return if (best == null) VoiceChoice.NoOfflineVoice else VoiceChoice.SwitchTo(best.name)
+}
+
+/** Une langue sans code ISO 3 connu se compare telle quelle. */
+private fun Locale.iso3Language(): String = try {
+    isO3Language
+} catch (exception: MissingResourceException) {
+    language
 }

@@ -65,7 +65,7 @@ class ConjugationTable private constructor(
      * simple (« veux ») de la table, et le reste (« besoin ») suit chaque forme. `null` hors table.
      */
     fun formsOf(spoken: String): VerbForms? {
-        val words = splitWords(spoken.trim().trimEnd { !it.isLetter() }).filter { it.isNotEmpty() }
+        val words = splitWords(spoken.trim().trimEnd { !it.isLetterOrDigit() }).filter { it.isNotEmpty() }
         val head = words.firstOrNull()?.lowercase(Locale.FRENCH) ?: return null
         val infinitive = if (head in formsByInfinitive) head else infinitiveBySimpleForm[head] ?: return null
         val complement = words.drop(1).joinToString(" ")

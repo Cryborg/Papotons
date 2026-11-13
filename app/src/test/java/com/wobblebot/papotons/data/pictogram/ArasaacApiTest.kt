@@ -70,6 +70,8 @@ class ArasaacApiTest {
         assertThrows(ArasaacException::class.java) { parseSearchResults("""[{"keywords": [], $flags}]""") }
         // Sans ses drapeaux (API changée), un résultat est écarté : le filtre enfant ne s'ouvre pas.
         assertEquals(emptyList<PictogramResult>(), parseSearchResults("""[{"_id": 8}]"""))
+        // Un drapeau nul n'écarte que son résultat, sans faire échouer toute la recherche.
+        assertEquals(listOf(7L), parseSearchResults("""[{"_id": 8, "sex": null, "violence": false}, {"_id": 7, $flags}]""").map { it.id })
     }
 
     @Test

@@ -74,14 +74,6 @@ class FakeBoardDao(
         return boards.value.size
     }
 
-    /** Levée par `boardExists` et `firstScreenOf` (base illisible en cours d'usage). */
-    var existsFailure: RuntimeException? = null
-
-    override suspend fun boardExists(boardId: Long): Boolean {
-        existsFailure?.let { throw it }
-        return boards.value.any { it.id == boardId }
-    }
-
     override suspend fun largestBoardId(): Long? = boards.value.maxOfOrNull { it.id }
 
     /** Ajouté au compte des cases : une base pleine sans les créer. */
@@ -291,7 +283,6 @@ class FakeBoardDao(
         boards.value.any { it.id == boardId && it.profileId == profileId && it.screenPosition != null }
 
     override suspend fun firstScreenOf(profileId: Long): Long? {
-        existsFailure?.let { throw it }
         return screensOfNow(profileId).firstOrNull()?.id
     }
 
