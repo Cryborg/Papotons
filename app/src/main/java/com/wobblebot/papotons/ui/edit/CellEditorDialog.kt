@@ -249,32 +249,7 @@ private fun CellEditor(
                         }
                     }
                 }
-                Section(R.string.editor_category) {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING),
-                        verticalArrangement = Arrangement.spacedBy(ITEM_SPACING),
-                    ) {
-                        FilterChip(
-                            selected = categoryName == null,
-                            onClick = { categoryName = null },
-                            label = { Text(stringResource(R.string.editor_category_none)) },
-                        )
-                        for (category in WordCategory.entries) {
-                            FilterChip(
-                                selected = categoryName == category.name,
-                                onClick = { categoryName = category.name },
-                                label = { Text(stringResource(category.displayName())) },
-                                leadingIcon = {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(CATEGORY_SWATCH_SIZE)
-                                            .background(wordCategoryBackground(category), CircleShape),
-                                    )
-                                },
-                            )
-                        }
-                    }
-                }
+                CategoryPicker(categoryName, onCategoryChange = { categoryName = it })
                 state.failure?.let { failure ->
                     Text(
                         stringResource(if (failure == EditFailure.Storage) R.string.editor_failed_storage else R.string.editor_failed_conflict),
@@ -344,6 +319,37 @@ private fun CellEditor(
                 TextButton(onClick = { isDeleteConfirmOpen = false }) { Text(stringResource(R.string.editor_cancel)) }
             },
         )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CategoryPicker(categoryName: String?, onCategoryChange: (String?) -> Unit) {
+    Section(R.string.editor_category) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING),
+            verticalArrangement = Arrangement.spacedBy(ITEM_SPACING),
+        ) {
+            FilterChip(
+                selected = categoryName == null,
+                onClick = { onCategoryChange(null) },
+                label = { Text(stringResource(R.string.editor_category_none)) },
+            )
+            for (category in WordCategory.entries) {
+                FilterChip(
+                    selected = categoryName == category.name,
+                    onClick = { onCategoryChange(category.name) },
+                    label = { Text(stringResource(category.displayName())) },
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(CATEGORY_SWATCH_SIZE)
+                                .background(wordCategoryBackground(category), CircleShape),
+                        )
+                    },
+                )
+            }
+        }
     }
 }
 
