@@ -232,8 +232,7 @@ fun BoardRoute(
         }
     }
     // À l'accueil, le retour arrière garde son sens habituel (quitter l'appli) ; en édition, il la termine.
-    // La page des formes se referme aussi par le retour arrière, même ouverte depuis l'accueil.
-    BackHandler(enabled = state.board?.canGoBack == true || state.verbForms != null, onBack = viewModel::onBack)
+    BackHandler(enabled = state.canGoBack, onBack = viewModel::onBack)
     BackHandler(enabled = state.isEditing && state.board?.canGoBack != true, onBack = viewModel::onStopEditing)
     // Les modales de sauvegarde n'existent qu'en édition, derrière le contrôle parental.
     LaunchedEffect(state.isEditing) {
@@ -480,8 +479,7 @@ fun BoardScreen(
         val insets = WindowInsets.statusBars.union(WindowInsets.captionBar).union(WindowInsets.displayCutout).only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
         Column(modifier = Modifier.windowInsetsPadding(insets.union(navigationInsets))) {
             BoardTopBar(
-                // La page des formes se referme par « Retour », même ouverte depuis l'accueil.
-                canGoBack = state.board?.canGoBack == true || state.verbForms != null,
+                canGoBack = state.canGoBack,
                 speechStatus = state.speechStatus,
                 hasLostBoards = state.hasLostBoards,
                 isMuted = state.isMuted,

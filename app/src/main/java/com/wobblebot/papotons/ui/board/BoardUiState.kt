@@ -53,6 +53,9 @@ data class BoardUiState(
 ) {
     val isSettingsOpen: Boolean get() = settingsPage != null
 
+    /** « Retour » existe : une grille ouverte depuis un dossier, ou la page des formes (même ouverte depuis l'accueil). */
+    val canGoBack: Boolean get() = board?.canGoBack == true || verbForms != null
+
     /** La taille des cases de l'écran ouvert, lue sur son accueil d'origine ; `null` pour un écran hors des tailles. */
     val boardSize: BoardSize? get() = BoardSize.withHome(board?.rootCoreBoardId)
 }
