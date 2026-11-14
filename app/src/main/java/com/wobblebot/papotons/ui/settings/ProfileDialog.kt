@@ -2,6 +2,8 @@ package com.wobblebot.papotons.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -12,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.tooling.preview.Preview
@@ -47,7 +50,8 @@ fun ProfileDialog(initialName: String?, onSave: (String) -> Unit, onDelete: (() 
         properties = DialogProperties(dismissOnClickOutside = false),
         title = { Text(stringResource(if (initialName == null) R.string.profile_new_title else R.string.profile_edit_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(FIELD_SPACING)) {
+            // Comme ScreenDialog : clavier ouvert sur un téléphone couché, le corps doit défiler.
+            Column(verticalArrangement = Arrangement.spacedBy(FIELD_SPACING), modifier = Modifier.verticalScroll(rememberScrollState())) {
                 if (initialName == null) Text(stringResource(R.string.profile_new_explanation), style = MaterialTheme.typography.bodyMedium)
                 NameField(
                     name = name,
