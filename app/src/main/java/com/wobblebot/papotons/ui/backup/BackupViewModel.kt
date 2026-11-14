@@ -212,7 +212,15 @@ class BackupViewModel @Inject constructor(
         analysis?.cancel()
         analysis = null
         val hadPending = dialog.value.pendingRestore != null
-        dialog.update { it.copy(isDialogOpen = false, pendingRestore = null, recoveryChoices = persistentListOf()) }
+        // La copie bloquante d'une lecture annulée peut durer encore : les boutons reviennent tout de suite.
+        dialog.update {
+            it.copy(
+                isDialogOpen = false,
+                pendingRestore = null,
+                recoveryChoices = persistentListOf(),
+                isWorking = it.isWorking && !wasAnalyzing,
+            )
+        }
         if (hadPending || wasAnalyzing) viewModelScope.launch { store.discard() }
     }
 
@@ -233,7 +241,8 @@ class BackupViewModel @Inject constructor(
                 block()
                 success ?: dialog.value.message
             } catch (exception: CancellationException) {
-                dialog.update { it.copy(isWorking = false) }
+                // Seule une fin d'édition annule un travail, et elle a déjà rendu les boutons : les
+                // rendre ici, à la fin de la copie, dégriserait ceux d'une lecture lancée entre-temps.
                 throw exception
             } catch (exception: BackupRefusedException) {
                 Log.e(TAG, "Backup refused (${exception.reason}): ${exception.message}")

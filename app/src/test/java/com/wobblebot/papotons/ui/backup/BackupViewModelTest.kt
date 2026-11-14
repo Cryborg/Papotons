@@ -23,12 +23,16 @@ import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,6 +58,8 @@ class FakeBackupStore : BackupStore {
     var leftOutImages = 0
     var analyzeFailure: Exception? = null
     var analyzeGate: CompletableDeferred<Unit>? = null
+    /** Comme la copie bloquante du vrai magasin : une annulation n'est vue qu'à la fin de la lecture. */
+    var analyzeIgnoresCancellation = false
     var restoreGate: CompletableDeferred<Unit>? = null
     val pending = PendingRestore(
         "papotons.obz",
@@ -67,7 +73,14 @@ class FakeBackupStore : BackupStore {
     }
 
     override suspend fun analyze(source: Uri): PendingRestore {
-        analyzeGate?.await()
+        analyzeGate?.let { gate ->
+            if (analyzeIgnoresCancellation) {
+                withContext(NonCancellable) { gate.await() }
+                currentCoroutineContext().ensureActive()
+            } else {
+                gate.await()
+            }
+        }
         analyzeFailure?.let { throw it }
         return pending
     }
@@ -378,6 +391,32 @@ class BackupViewModelTest {
         assertEquals(1, store.discardCount)
         viewModel.onOpen()
         assertNull(viewModel.uiState.value.pendingRestore)
+    }
+
+    @Test
+    fun `the buttons come back as soon as the edit ends during a reading`() = runTest(dispatcher) {
+        val viewModel = viewModel()
+        store.analyzeGate = CompletableDeferred()
+        store.analyzeIgnoresCancellation = true
+        viewModel.onRestoreRequested()
+        viewModel.onRestoreDocument(document)
+        assertTrue(viewModel.uiState.value.isWorking)
+
+        viewModel.onEditingEnded()
+        assertFalse(viewModel.uiState.value.isWorking)
+
+        // Une seconde lecture lancée avant la fin de la première copie garde ses boutons grisés.
+        val firstGate = checkNotNull(store.analyzeGate)
+        store.analyzeGate = CompletableDeferred()
+        store.analyzeIgnoresCancellation = false
+        viewModel.onRestoreRequested()
+        viewModel.onRestoreDocument(document)
+        firstGate.complete(Unit)
+        assertTrue(viewModel.uiState.value.isWorking)
+
+        checkNotNull(store.analyzeGate).complete(Unit)
+        assertNotNull(viewModel.uiState.value.pendingRestore)
+        assertFalse(viewModel.uiState.value.isWorking)
     }
 
     @Test
