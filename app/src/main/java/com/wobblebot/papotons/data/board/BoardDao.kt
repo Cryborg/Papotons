@@ -210,7 +210,8 @@ abstract class BoardDao {
         val screens = screensOf(profileId)
         val position = (screens.mapNotNull { it.screenPosition }.maxOrNull() ?: (FIRST_SCREEN_POSITION - 1)) + 1
         // Au-delà des grilles ou du rang, la sauvegarde refuserait la base : l'export doit rester possible
-        // (invariant 4). Un rang maximal ne vient que d'une sauvegarde modifiée à la main.
+        // (invariant 4). Un rang maximal ne vient que d'une sauvegarde modifiée à la main : la récupération
+        // d'une copie abîmée renumérote ses écrans à la suite.
         val firstBoardId = maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID)
         if (screens.size >= MAX_SCREENS || isOverExportLimits(seed, firstBoardId) || position > MAX_SCREEN_POSITION) throw TooManyScreensException()
         val copy = seed.forProfile(profileId, firstBoardId)

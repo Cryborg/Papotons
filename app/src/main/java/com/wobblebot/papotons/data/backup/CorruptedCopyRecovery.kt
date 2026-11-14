@@ -208,27 +208,26 @@ suspend fun recoverContent(
  * 4 → 5 parmi ses grilles relues. Une seule grille perdue ne fait donc jamais tomber tout un
  * utilisateur, et seul l'ordre des onglets change : aucune case ne bouge. Au-delà de [MAX_SCREENS]
  * écrans, les derniers rangs redeviennent de simples grilles, comptées par [leaveOut] : sinon les
- * réglages refuseraient tout nouvel écran à cet utilisateur.
+ * réglages refuseraient tout nouvel écran à cet utilisateur. Les rangs gardés sont ensuite renumérotés
+ * à la suite depuis [FIRST_SCREEN_POSITION], dans le même ordre.
  */
 private fun withScreensForEveryone(boards: List<BoardEntity>, unplacedScreens: List<Long>, cells: List<CellEntity>, leaveOut: (String) -> Unit): List<BoardEntity> {
     val positions = boards.associateTo(HashMap()) { it.id to it.screenPosition }
     val linkedBoardIds = cells.mapNotNullTo(HashSet()) { it.linkedBoardId }
     for (profileBoards in boards.groupBy { it.profileId }.values) {
         var next = profileBoards.mapNotNull { it.screenPosition }.maxOrNull()?.plus(1) ?: FIRST_SCREEN_POSITION
-        for (board in profileBoards.filter { it.id in unplacedScreens }) {
-            if (next > MAX_SCREEN_POSITION) {
-                leaveOut("over the screen limit")
-                continue
-            }
-            positions[board.id] = next++
-        }
+        for (board in profileBoards.filter { it.id in unplacedScreens }) positions[board.id] = next++
         if (profileBoards.none { positions[it.id] != null }) {
             legacyFirstScreenOf(startBoardId = null, profileBoards.map { BoardOrigin(it.id, it.coreBoardId) }, linkedBoardIds)?.let { positions[it] = FIRST_SCREEN_POSITION }
         }
-        for (board in profileBoards.filter { positions[it.id] != null }.sortedBy { positions[it.id] }.drop(MAX_SCREENS)) {
+        val screens = profileBoards.filter { positions[it.id] != null }.sortedBy { positions[it.id] }
+        for (board in screens.drop(MAX_SCREENS)) {
             positions[board.id] = null
             leaveOut("over the screen limit")
         }
+        // Rangs compacts : un rang brouillé relu très haut laisserait sinon le prochain écran créé
+        // au-delà de [MAX_SCREEN_POSITION], et les réglages refuseraient tout nouvel écran.
+        screens.take(MAX_SCREENS).forEachIndexed { index, board -> positions[board.id] = FIRST_SCREEN_POSITION + index }
     }
     return boards.map { it.copy(screenPosition = positions[it.id]) }
 }
