@@ -301,6 +301,22 @@ class RecoveringSpeakerTest {
     }
 
     @Test
+    fun `the recreation budget comes back when the replay was cleared during the init`() {
+        val speaker = RecoveringSpeaker(factory, scheduler)
+        engine(0).callbacks.onInit(true)
+        engine(0).acceptsSpeech = false
+        speaker.speak("un", interrupt = false)
+        speaker.stop()
+        engine(1).callbacks.onInit(true)
+
+        engine(1).acceptsSpeech = false
+        speaker.speak("deux", interrupt = false)
+        engine(2).callbacks.onInit(true)
+
+        assertEquals(listOf("deux"), engine(2).spoken)
+    }
+
+    @Test
     fun `an utterance error raises the alert without speaking the word later`() {
         val speaker = RecoveringSpeaker(factory, scheduler)
         engine(0).callbacks.onInit(true)

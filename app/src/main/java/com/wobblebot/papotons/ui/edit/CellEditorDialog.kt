@@ -249,32 +249,7 @@ private fun CellEditor(
                         }
                     }
                 }
-                Section(R.string.editor_category) {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING),
-                        verticalArrangement = Arrangement.spacedBy(ITEM_SPACING),
-                    ) {
-                        FilterChip(
-                            selected = categoryName == null,
-                            onClick = { categoryName = null },
-                            label = { Text(stringResource(R.string.editor_category_none)) },
-                        )
-                        for (category in WordCategory.entries) {
-                            FilterChip(
-                                selected = categoryName == category.name,
-                                onClick = { categoryName = category.name },
-                                label = { Text(stringResource(category.displayName())) },
-                                leadingIcon = {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(CATEGORY_SWATCH_SIZE)
-                                            .background(wordCategoryBackground(category), CircleShape),
-                                    )
-                                },
-                            )
-                        }
-                    }
-                }
+                CategoryPicker(categoryName, onCategoryChange = { categoryName = it })
                 state.failure?.let { failure ->
                     Text(
                         stringResource(if (failure == EditFailure.Storage) R.string.editor_failed_storage else R.string.editor_failed_conflict),
@@ -325,25 +300,64 @@ private fun CellEditor(
         }
     }
     if (isDeleteConfirmOpen && existing != null) {
-        val confirmText = if (existing.linkedBoardId != null) R.string.editor_delete_folder_confirm else R.string.editor_delete_word_confirm
-        AlertDialog(
-            onDismissRequest = { isDeleteConfirmOpen = false },
-            properties = DialogProperties(dismissOnClickOutside = false),
-            text = { Text(stringResource(confirmText, existing.label)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        isDeleteConfirmOpen = false
-                        onDelete()
-                    },
-                ) {
-                    Text(stringResource(R.string.editor_delete), color = MaterialTheme.colorScheme.error)
-                }
+        DeleteConfirmDialog(
+            label = existing.label,
+            isFolder = existing.linkedBoardId != null,
+            onConfirm = {
+                isDeleteConfirmOpen = false
+                onDelete()
             },
-            dismissButton = {
-                TextButton(onClick = { isDeleteConfirmOpen = false }) { Text(stringResource(R.string.editor_cancel)) }
-            },
+            onDismiss = { isDeleteConfirmOpen = false },
         )
+    }
+}
+
+@Composable
+private fun DeleteConfirmDialog(label: String, isFolder: Boolean, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val confirmText = if (isFolder) R.string.editor_delete_folder_confirm else R.string.editor_delete_word_confirm
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnClickOutside = false),
+        text = { Text(stringResource(confirmText, label)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.editor_delete), color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.editor_cancel)) }
+        },
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CategoryPicker(categoryName: String?, onCategoryChange: (String?) -> Unit) {
+    Section(R.string.editor_category) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(ITEM_SPACING),
+            verticalArrangement = Arrangement.spacedBy(ITEM_SPACING),
+        ) {
+            FilterChip(
+                selected = categoryName == null,
+                onClick = { onCategoryChange(null) },
+                label = { Text(stringResource(R.string.editor_category_none)) },
+            )
+            for (category in WordCategory.entries) {
+                FilterChip(
+                    selected = categoryName == category.name,
+                    onClick = { onCategoryChange(category.name) },
+                    label = { Text(stringResource(category.displayName())) },
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(CATEGORY_SWATCH_SIZE)
+                                .background(wordCategoryBackground(category), CircleShape),
+                        )
+                    },
+                )
+            }
+        }
     }
 }
 

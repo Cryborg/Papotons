@@ -132,6 +132,9 @@ class RecoveringSpeaker @Inject constructor(
         }
         // Honoré même après le délai : un moteur lent qui finit par répondre rend la voix.
         mutableStatus.value = if (hasLocalVoice) SpeechStatus.Ready else SpeechStatus.LanguageMissing
+        // Rien à rejouer (file vidée par `stop` pendant l'init) : aucun énoncé accepté ne rendrait le
+        // budget, et le prochain mot refusé, des heures plus tard, serait perdu sans recréation.
+        if (pendingTexts.isEmpty()) hasRecreatedAfterError = false
         speakPendingTexts()
     }
 

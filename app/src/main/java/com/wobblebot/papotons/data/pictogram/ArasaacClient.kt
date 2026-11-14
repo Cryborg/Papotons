@@ -163,7 +163,8 @@ fun parseSearchResults(json: String): List<PictogramResult> = try {
             val id = pictogram.getLong("_id")
             // Une clé en double ferait planter la grille des résultats.
             if (!ids.add(id)) continue
-            val keyword = pictogram.optJSONArray("keywords")?.optJSONObject(0)?.optString("keyword").orEmpty()
+            // Pas `optString` : sur Android, un mot-clé nul y devient le texte « null », lu par TalkBack.
+            val keyword = pictogram.optJSONArray("keywords")?.optJSONObject(0)?.opt("keyword") as? String ?: ""
             add(PictogramResult(id, keyword))
         }
         if (unflaggedCount > 0) Log.w(TAG, "$unflaggedCount results without sex or violence flag dropped")
