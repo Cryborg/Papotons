@@ -434,10 +434,10 @@ abstract class BoardDao {
         return previousPhoto
     }
 
-    /** [seed] copiée à partir de [firstBoardId] ferait refuser la base par la sauvegarde (invariant 4). */
     /** Le prochain id d'une grille de l'adulte : après la plus grande, jamais sous les ids réservés au vocabulaire de base. */
     private suspend fun nextUserBoardId(): Long = maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID)
 
+    /** [seed] copiée à partir de [firstBoardId] ferait refuser la base par la sauvegarde (invariant 4). */
     private suspend fun isOverExportLimits(seed: VocabularySeed, firstBoardId: Long): Boolean =
         countBoards() + seed.boards.size > MAX_BOARDS ||
             countCells() + seed.cells.size > MAX_CELLS ||
