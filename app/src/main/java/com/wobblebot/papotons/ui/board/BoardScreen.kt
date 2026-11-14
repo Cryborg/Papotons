@@ -375,21 +375,24 @@ fun BoardRoute(
         state = backupState,
         onSave = {
             val fileName = backupViewModel.onSaveRequested(backupFileNamePattern)
-            try {
-                saveBackup.launch(fileName)
-            } catch (exception: ActivityNotFoundException) {
-                Log.w(TAG, "No document creator", exception)
-                backupViewModel.onDocumentRequestFailed()
+            if (fileName != null) {
+                try {
+                    saveBackup.launch(fileName)
+                } catch (exception: ActivityNotFoundException) {
+                    Log.w(TAG, "No document creator", exception)
+                    backupViewModel.onDocumentRequestFailed()
+                }
             }
         },
         onRestore = {
-            backupViewModel.onRestoreRequested()
-            try {
-                // Tout type : celui d'un `.obz` varie d'un fournisseur à l'autre.
-                openBackup.launch(arrayOf(ANY_MIME_TYPE))
-            } catch (exception: ActivityNotFoundException) {
-                Log.w(TAG, "No document picker", exception)
-                backupViewModel.onDocumentRequestFailed()
+            if (backupViewModel.onRestoreRequested()) {
+                try {
+                    // Tout type : celui d'un `.obz` varie d'un fournisseur à l'autre.
+                    openBackup.launch(arrayOf(ANY_MIME_TYPE))
+                } catch (exception: ActivityNotFoundException) {
+                    Log.w(TAG, "No document picker", exception)
+                    backupViewModel.onDocumentRequestFailed()
+                }
             }
         },
         onRecover = backupViewModel::onRecoverRequested,

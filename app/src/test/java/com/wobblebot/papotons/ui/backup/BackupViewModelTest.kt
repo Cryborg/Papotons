@@ -32,6 +32,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
@@ -377,6 +378,20 @@ class BackupViewModelTest {
         assertEquals(1, store.discardCount)
         viewModel.onOpen()
         assertNull(viewModel.uiState.value.pendingRestore)
+    }
+
+    @Test
+    fun `a second tap before the document comes back opens no second chooser`() = runTest(dispatcher) {
+        val viewModel = viewModel()
+        assertNotNull(viewModel.onSaveRequested("%1\$s"))
+        assertNull(viewModel.onSaveRequested("%1\$s"))
+        assertFalse(viewModel.onRestoreRequested())
+        assertTrue(viewModel.onSaveDocument(document))
+        assertEquals(listOf(document), store.exported)
+
+        assertTrue(viewModel.onRestoreRequested())
+        assertFalse(viewModel.onRestoreRequested())
+        assertNull(viewModel.onSaveRequested("%1\$s"))
     }
 
     @Test

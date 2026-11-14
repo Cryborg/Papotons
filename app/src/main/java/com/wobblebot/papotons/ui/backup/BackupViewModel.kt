@@ -112,14 +112,21 @@ class BackupViewModel @Inject constructor(
         dialog.update { it.copy(isDialogOpen = false, message = null) }
     }
 
-    /** Rend le nom proposé pour le fichier ([fileNamePattern] : un `%1$s` pour la date). */
-    fun onSaveRequested(fileNamePattern: String): String {
+    /**
+     * Rend le nom proposé pour le fichier ([fileNamePattern] : un `%1$s` pour la date), ou `null`
+     * si un document est déjà demandé : un double appui n'ouvre pas un second créateur.
+     */
+    fun onSaveRequested(fileNamePattern: String): String? {
+        if (isAwaitingDocument) return null
         documentRequestedAtMs = elapsedRealtimeMs()
         return fileNamePattern.format(LocalDate.now().toString())
     }
 
-    fun onRestoreRequested() {
+    /** Faux si un document est déjà demandé : un double appui n'ouvre pas un second sélecteur. */
+    fun onRestoreRequested(): Boolean {
+        if (isAwaitingDocument) return false
         documentRequestedAtMs = elapsedRealtimeMs()
+        return true
     }
 
     fun onDocumentRequestFailed() {
