@@ -15,6 +15,7 @@ import com.wobblebot.papotons.data.backup.BackupContent
 import com.wobblebot.papotons.data.photo.CELL_PHOTOS_DIRECTORY
 import com.wobblebot.papotons.data.photo.CELL_PHOTO_NAME
 import com.wobblebot.papotons.data.pictogram.DOWNLOADED_PICTOGRAMS_DIRECTORY
+import com.wobblebot.papotons.data.pictogram.PICTOGRAM_FILE_EXTENSION
 import com.wobblebot.papotons.data.profile.isValidProfileName
 import com.wobblebot.papotons.domain.Board
 import com.wobblebot.papotons.domain.Cell
@@ -56,7 +57,7 @@ private const val PREFERENCES_RETRY_DELAY_MS = 10_000L
 private const val SWEEP_MODIFICATION_MARGIN_MS = 2_000L
 
 /** Les seuls noms que le ménage efface : ceux qu'écrivent les pictos téléchargés et les photos. */
-private val PICTOGRAM_FILE_NAME = Regex("""(\d+)\.png""")
+private val PICTOGRAM_FILE_NAME = Regex("""(\d+)""" + Regex.escape(PICTOGRAM_FILE_EXTENSION))
 
 private fun CellContent.toEntity(boardId: Long, row: Int, column: Int, linkedBoardId: Long?) = CellEntity(
     boardId = boardId,

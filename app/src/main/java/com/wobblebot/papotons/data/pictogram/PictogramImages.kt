@@ -28,7 +28,8 @@ import javax.inject.Singleton
 
 private const val TAG = "PictogramImages"
 private const val DIRECTORY = "pictograms"
-private const val EXTENSION = ".png"
+/** L'extension d'un fichier de picto, embarqué ou téléchargé : l'export la relit pour reconnaître les pictos visés. */
+const val PICTOGRAM_FILE_EXTENSION = ".png"
 
 /**
  * Les pictos sont livrés en 300 px et s'affichent autour de 150 px sur les tablettes visées :
@@ -81,7 +82,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
     suspend fun ensureLoaded(pictogramId: Long) {
         if (pictogramId in bundledIds.await() || images.containsKey(pictogramId)) return
         val image = withContext(Dispatchers.IO) {
-            val file = File(downloadedDirectory, "$pictogramId$EXTENSION")
+            val file = File(downloadedDirectory, "$pictogramId$PICTOGRAM_FILE_EXTENSION")
             if (file.isFile) {
                 // Une image décorative ne doit jamais empêcher de parler : sans mémoire, la case reste sans picto.
                 try {
@@ -109,7 +110,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
     suspend fun isOnDevice(pictogramId: Long): Boolean {
         if (pictogramId in bundledIds.await()) return true
         return withContext(Dispatchers.IO) {
-            val file = File(downloadedDirectory, "$pictogramId$EXTENSION")
+            val file = File(downloadedDirectory, "$pictogramId$PICTOGRAM_FILE_EXTENSION")
             // Sans la mémoire pour le vérifier, il est gardé : la restauration ne bute pas dessus.
             val isReadable = file.isFile && try {
                 decodeFile(file) != null
@@ -122,8 +123,8 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
 
     /** L'image d'un picto pour une sauvegarde ; `null` s'il n'est pas sur l'appareil. À fermer par l'appelant. */
     suspend fun open(pictogramId: Long): InputStream? {
-        if (pictogramId in bundledIds.await()) return withContext(Dispatchers.IO) { context.assets.open("$DIRECTORY/$pictogramId$EXTENSION") }
-        return withContext(Dispatchers.IO) { File(downloadedDirectory, "$pictogramId$EXTENSION").takeIf { it.isFile }?.inputStream() }
+        if (pictogramId in bundledIds.await()) return withContext(Dispatchers.IO) { context.assets.open("$DIRECTORY/$pictogramId$PICTOGRAM_FILE_EXTENSION") }
+        return withContext(Dispatchers.IO) { File(downloadedDirectory, "$pictogramId$PICTOGRAM_FILE_EXTENSION").takeIf { it.isFile }?.inputStream() }
     }
 
     /** Hors du thread principal : jusqu'à trente vignettes par recherche, sur une tablette modeste. */
@@ -154,7 +155,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
                     output.write(bytes)
                     output.fd.sync()
                 }
-                pending.renameTo(File(downloadedDirectory, "$pictogramId$EXTENSION")).also { isRenamed ->
+                pending.renameTo(File(downloadedDirectory, "$pictogramId$PICTOGRAM_FILE_EXTENSION")).also { isRenamed ->
                     if (isRenamed) syncDirectory() else Log.e(TAG, "Pictogram $pictogramId could not be renamed into place")
                 }
             } catch (exception: IOException) {
@@ -233,7 +234,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
         val options = BitmapFactory.Options().apply { inSampleSize = SAMPLE_SIZE }
         try {
             for (fileName in fileNames) {
-                val pictogramId = fileName.removeSuffix(EXTENSION).toLongOrNull()
+                val pictogramId = fileName.removeSuffix(PICTOGRAM_FILE_EXTENSION).toLongOrNull()
                 if (pictogramId == null) {
                     Log.w(TAG, "Unexpected file $fileName among the pictograms")
                     continue
@@ -260,7 +261,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
             // Publié quoi qu'il arrive : un échec en route ne fait pas perdre les images déjà lues.
             // Fusionné : un picto choisi pendant le carton n'est pas effacé.
             publish(decoded)
-            bundledIds.complete(fileNames.mapNotNull { it.removeSuffix(EXTENSION).toLongOrNull() }.toSet())
+            bundledIds.complete(fileNames.mapNotNull { it.removeSuffix(PICTOGRAM_FILE_EXTENSION).toLongOrNull() }.toSet())
         }
         // Aucun fichier (APK mal empaqueté) est aussi un échec : jamais un « 0 sur 0 » en simple info.
         if (decoded.isEmpty() || decoded.size < fileNames.size) {
