@@ -188,7 +188,8 @@ fun SettingsDialog(
     if (isAboutOpen) {
         AboutDialog(onClose = { isAboutOpen = false })
     }
-    if (isUpdateConfirmOpen) {
+    // Un « Installer » raté relit l'état : la modale tombe dès que la mise à jour n'est plus prête.
+    if (isUpdateConfirmOpen && content.updateStatus == UpdateStatus.ReadyToInstall) {
         UpdateReadyDialog(onInstall = onInstallUpdate, onLater = { isUpdateConfirmOpen = false })
     }
 }
