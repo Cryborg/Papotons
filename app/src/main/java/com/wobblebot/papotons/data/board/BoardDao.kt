@@ -191,7 +191,7 @@ abstract class BoardDao {
     @Transaction
     open suspend fun insertProfileWithCoreVocabulary(name: String, seed: VocabularySeed): Long {
         // Au-delà, la sauvegarde refuserait la base : l'export doit rester possible (invariant 4).
-        val firstBoardId = maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID)
+        val firstBoardId = nextUserBoardId()
         if (countProfiles() >= MAX_PROFILES || isOverExportLimits(seed, firstBoardId)) throw TooManyProfilesException()
         val profileId = insertProfile(ProfileEntity(name = name, startBoardId = null))
         val copy = seed.forProfile(profileId, firstBoardId)
@@ -212,7 +212,7 @@ abstract class BoardDao {
         // Au-delà des grilles ou du rang, la sauvegarde refuserait la base : l'export doit rester possible
         // (invariant 4). Un rang maximal ne vient que d'une sauvegarde modifiée à la main : la récupération
         // d'une copie abîmée renumérote ses écrans à la suite.
-        val firstBoardId = maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID)
+        val firstBoardId = nextUserBoardId()
         if (screens.size >= MAX_SCREENS || isOverExportLimits(seed, firstBoardId) || position > MAX_SCREEN_POSITION) throw TooManyScreensException()
         val copy = seed.forProfile(profileId, firstBoardId)
         val boards = copy.boards.asScreen(rootCoreBoardId, position, name)
@@ -435,6 +435,9 @@ abstract class BoardDao {
     }
 
     /** [seed] copiée à partir de [firstBoardId] ferait refuser la base par la sauvegarde (invariant 4). */
+    /** Le prochain id d'une grille de l'adulte : après la plus grande, jamais sous les ids réservés au vocabulaire de base. */
+    private suspend fun nextUserBoardId(): Long = maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID)
+
     private suspend fun isOverExportLimits(seed: VocabularySeed, firstBoardId: Long): Boolean =
         countBoards() + seed.boards.size > MAX_BOARDS ||
             countCells() + seed.cells.size > MAX_CELLS ||
@@ -450,7 +453,7 @@ abstract class BoardDao {
     @Transaction
     open suspend fun insertFolder(board: BoardEntity, folderCell: CellEntity): Long {
         val profileId = profileOf(folderCell.boardId) ?: throw BoardNotFoundException(folderCell.boardId)
-        val newId = maxOf((largestBoardId() ?: 0L) + 1, FIRST_USER_BOARD_ID)
+        val newId = nextUserBoardId()
         // Comme les écrans et les utilisateurs : l'export doit rester possible (invariant 4).
         if (countBoards() >= MAX_BOARDS || newId > MAX_BOARD_ID) throw TooManyBoardsException()
         if (countCells() >= MAX_CELLS) throw TooManyCellsException()
