@@ -12,7 +12,7 @@ Le bouton « À propos » (icône « i ») de la barre du haut devient une roue 
 Fichiers :
 - `ui/board/BoardTopBar.kt` : `onAboutClick` devient `onSettingsClick`, icône `ic_settings` (Material « settings » contour), description `settings_open`.
 - `ui/settings/SettingsDialog.kt` (nouveau) : `Dialog` plein écran (`usePlatformDefaultWidth = false`, `dismissOnClickOutside = false`), titre, bouton Fermer, une ligne par entrée (titre + phrase d'explication), cibles de 48 dp au moins, défilement vertical.
-- `ui/board/BoardViewModel.kt` + `BoardUiState.kt` : `isSettingsOpen`, en mémoire seulement comme `isEditing` (jamais dans `savedState` : pas de réouverture sans contrôle après la mort du processus). `onOpenSettings()`, `onCloseSettings()`. `onStartEditing()` ferme les Réglages. `isBusy` compte les Réglages ouverts (la mise à jour ne redémarre pas sous l'adulte).
+- `ui/board/BoardViewModel.kt` + `BoardUiState.kt` : `isSettingsOpen`, en mémoire seulement comme `isEditing` (jamais dans `savedState` : pas de réouverture sans contrôle après la mort du processus). `onOpenSettings()`, `onCloseSettings()`. `onStartEditing()` ferme les Réglages.
 - `ui/board/BoardScreen.kt` : `GatedAction.OpenSettings` ; `ON_STOP` (vrai départ) ferme aussi les Réglages, comme il termine l'édition ; retour arrière ferme les Réglages (la `Dialog` le fait).
 - `ui/about/AboutDialog.kt` : retire `onEditBoards`.
 - `res/values/strings_settings.xml` (nouveau), `res/drawable/ic_settings.xml` (nouveau), `strings_about.xml` (`about_open` gardé : titre de l'entrée « À propos »), `strings_edit.xml` (commentaire de `edit_open`).
@@ -37,7 +37,6 @@ Rien de nouveau qui puisse échouer : l'ouverture est un état en mémoire. Une 
 ## Plan de test
 
 - VM : `onOpenSettings` ouvre, `onStartEditing` ferme (sinon l'édition s'afficherait sous les Réglages) ; un ViewModel recréé depuis `savedState` n'a pas les Réglages ouverts.
-- VM : `isBusy` vrai avec Réglages ouverts.
 - Instrumenté : la roue ouvre le contrôle, pas les Réglages ; mauvaise réponse : ni Réglages ni édition ; bonne réponse : Réglages, puis « Modifier les grilles » : édition et Réglages fermés.
 - Disposition : la roue ne chevauche pas les boutons de la phrase (tests existants renommés).
 
