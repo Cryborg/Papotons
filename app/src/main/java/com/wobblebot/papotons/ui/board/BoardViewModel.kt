@@ -657,7 +657,7 @@ class BoardViewModel @Inject constructor(
     fun onEditorSave(content: CellContent, asFolder: Boolean) {
         if (editor.value?.isImportingPhoto == true) return
         // À l'appui : à la taille des dossiers du jeu affiché, pas de celui ouvert quand l'écriture aboutit.
-        val folderSize = BoardSize.withHome(uiState.value.board?.rootCoreBoardId) ?: BoardSize.STANDARD
+        val folderSize = uiState.value.boardSize ?: BoardSize.STANDARD
         writeFromEditor { target, writeToken ->
             // La photo validée d'abord ; validation idempotente : un nouvel essai après un échec en
             // base réutilise le même fichier.
