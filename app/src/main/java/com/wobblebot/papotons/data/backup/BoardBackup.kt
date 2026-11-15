@@ -19,6 +19,7 @@ import com.wobblebot.papotons.data.photo.CellPhotos
 import com.wobblebot.papotons.data.pictogram.DOWNLOADED_PICTOGRAMS_DIRECTORY
 import com.wobblebot.papotons.data.pictogram.MAX_DOWNLOADED_SIDE_PX
 import com.wobblebot.papotons.data.pictogram.MAX_PICTOGRAM_BYTES
+import com.wobblebot.papotons.data.pictogram.PICTOGRAM_FILE_EXTENSION
 import com.wobblebot.papotons.data.pictogram.PictogramImages
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -380,7 +381,7 @@ class BoardBackup @Inject constructor(
     private fun putRecoveryMaterial(zip: ZipOutputStream, budget: ArchiveBudget, pictogramIds: Set<Long>, photoFiles: Set<String>) {
         val copies = CorruptedDatabaseCopies(context.filesDir)
         if (!copies.directory.exists()) return
-        val referencedPictogramFiles = pictogramIds.map { "$it.png" }.toSet()
+        val referencedPictogramFiles = pictogramIds.map { "$it$PICTOGRAM_FILE_EXTENSION" }.toSet()
         val material = copies.copyDirectories().flatMap { copy ->
             copy.listFiles().orEmpty().filter { it.isFile }.map { "$CORRUPTED_COPIES_PREFIX/${copy.name}/${it.name}" to it }
         } + downloadedDirectory.listFiles().orEmpty().filter { it.isFile && it.name !in referencedPictogramFiles }.map { "$UNREFERENCED_IMAGES_PREFIX/pictograms/${it.name}" to it } +

@@ -188,7 +188,7 @@ class CorruptedCopyRecoveryTest {
             ),
         )!!.content.boards
 
-        assertEquals(listOf(0, 4, 3, 5, 6, null, 0), boards.map { it.screenPosition })
+        assertEquals(listOf(0, 2, 1, 3, 4, null, 0), boards.map { it.screenPosition })
     }
 
     @Test
@@ -435,19 +435,7 @@ class CorruptedCopyRecoveryTest {
     }
 
     @Test
-    fun `a screen with no rank left after the last one becomes a plain board`() = runTest {
-        val boards = recover(
-            tables(
-                profiles = listOf(profile(1)),
-                boards = listOf(board(1, screenPosition = MAX_SCREEN_POSITION.toLong()), board(2, screenPosition = -1)),
-            ),
-        )!!.content.boards
-
-        assertEquals(listOf(MAX_SCREEN_POSITION, null), boards.map { it.screenPosition })
-    }
-
-    @Test
-    fun `a screen with no rank left is counted`() = runTest {
+    fun `a screen place garbled to the highest rank still leaves room, and nothing is left out`() = runTest {
         val recovered = recover(
             tables(
                 profiles = listOf(profile(1)),
@@ -455,7 +443,8 @@ class CorruptedCopyRecoveryTest {
             ),
         )!!
 
-        assertEquals(mapOf("over the screen limit" to 1), recovered.leftOut)
+        assertEquals(listOf(0, 1), recovered.content.boards.map { it.screenPosition })
+        assertTrue(recovered.leftOut.isEmpty())
     }
 
     @Test
