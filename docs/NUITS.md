@@ -2,6 +2,12 @@
 
 Relevés de la tournée du gate (vérification et envoi du travail des routines), le plus récent en tête.
 
+## Gate du 2026-11-15
+
+- `testDebugUnitTest` (27 s) et `lintDebug` (27 s), verts. Working copy propre, aucun schéma Room neuf.
+- Part : 16 commits importés de la tournée cloud (double appui qui n'ouvre plus deux sélecteurs de sauvegarde TODO-41, boutons rendus dès la fin d'édition TODO-42, écrans d'une copie abîmée renumérotés TODO-45, modale d'utilisateur qui défile clavier ouvert, confirmation d'installation fermée quand la mise à jour n'est plus prête, trois doublons ramenés à une source, imports morts, constats au TODO) et ce relevé.
+- Rien réparé, rien annulé.
+
 ## Gate du 2026-11-13
 
 - `testDebugUnitTest` (20 s) et `lintDebug` (26 s), verts. Working copy propre, aucun schéma Room neuf.
