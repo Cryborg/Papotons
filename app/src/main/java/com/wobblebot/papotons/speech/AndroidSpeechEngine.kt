@@ -9,19 +9,13 @@ import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import android.util.Log
 import com.wobblebot.papotons.R
+import com.wobblebot.papotons.domain.takeWhole
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.Locale
 import javax.inject.Inject
 
 private const val TAG = "AndroidSpeechEngine"
 private const val UTTERANCE_ID_PREFIX = "papotons-"
-
-/** [text] ramené à [maxLength] caractères au plus, sans couper un emoji (paire de substitution) en deux. */
-internal fun cutForSpeech(text: String, maxLength: Int): String {
-    if (text.length <= maxLength) return text
-    val cut = text.take(maxLength)
-    return if (cut.last().isHighSurrogate()) cut.dropLast(1) else cut
-}
 
 /**
  * `TextToSpeech` sur le contexte d'application : le service du moteur reste lié tant que
@@ -49,7 +43,7 @@ class AndroidSpeechEngine(
         // une panne. La coupe ne tombe jamais au milieu d'un emoji (paire de substitution).
         val maxLength = TextToSpeech.getMaxSpeechInputLength() - 1
         if (text.length > maxLength) Log.w(TAG, "Utterance of ${text.length} characters cut to $maxLength")
-        val utterance = cutForSpeech(text, maxLength)
+        val utterance = text.takeWhole(maxLength)
         val queueMode = if (interrupt) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
         return textToSpeech.speak(utterance, queueMode, null, UTTERANCE_ID_PREFIX + utteranceNumber) != TextToSpeech.ERROR
     }

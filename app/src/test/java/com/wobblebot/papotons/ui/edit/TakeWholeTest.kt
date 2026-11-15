@@ -1,5 +1,6 @@
 package com.wobblebot.papotons.ui.edit
 
+import com.wobblebot.papotons.domain.takeWhole
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

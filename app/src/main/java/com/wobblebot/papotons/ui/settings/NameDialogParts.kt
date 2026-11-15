@@ -18,7 +18,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.window.DialogProperties
 import com.wobblebot.papotons.data.profile.MAX_PROFILE_NAME_LENGTH
-import com.wobblebot.papotons.ui.edit.takeWhole
+import com.wobblebot.papotons.domain.takeWhole
 
 /**
  * Le nom d'un utilisateur, d'un accompagnant ou d'un écran : une ligne, [MAX_PROFILE_NAME_LENGTH]
