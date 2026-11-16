@@ -1,6 +1,7 @@
 package com.wobblebot.papotons.data.pictogram
 
 import android.util.Log
+import com.wobblebot.papotons.data.readAtMost
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
@@ -8,7 +9,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONException
-import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.HttpURLConnection
@@ -25,7 +25,6 @@ private const val USER_AGENT = "Papotons"
 private const val TIMEOUT_MS = 10_000
 private const val MAX_SEARCH_BYTES = 2 * 1024 * 1024
 private const val MAX_RESULTS = 30
-private const val READ_BUFFER_BYTES = 8 * 1024
 private const val HEX_DIGITS = "0123456789ABCDEF"
 
 /** Un picto trouvé : son identifiant ARASAAC et son premier mot-clé (description accessible). */
@@ -107,16 +106,8 @@ class HttpArasaacClient @Inject constructor() : ArasaacClient {
 }
 
 /** Tout le flux, ou un échec au-delà de [maxBytes] (une réponse démesurée n'entre jamais en mémoire). */
-internal fun readCapped(input: InputStream, maxBytes: Int): ByteArray {
-    val output = ByteArrayOutputStream()
-    val buffer = ByteArray(READ_BUFFER_BYTES)
-    while (true) {
-        val count = input.read(buffer)
-        if (count < 0) return output.toByteArray()
-        if (output.size() + count > maxBytes) throw ResponseTooLargeException(maxBytes)
-        output.write(buffer, 0, count)
-    }
-}
+internal fun readCapped(input: InputStream, maxBytes: Int): ByteArray =
+    input.readAtMost(maxBytes.toLong()) ?: throw ResponseTooLargeException(maxBytes)
 
 /** Un mot-clé cherchable : au moins une lettre ou un chiffre (« . » ou « .. » viseraient une autre route). */
 fun isSearchable(keyword: String): Boolean = keyword.any(Char::isLetterOrDigit)

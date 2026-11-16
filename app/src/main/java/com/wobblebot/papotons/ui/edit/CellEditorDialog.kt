@@ -52,6 +52,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.domain.CellContent
 import com.wobblebot.papotons.domain.WordCategory
+import com.wobblebot.papotons.domain.takeWhole
 import com.wobblebot.papotons.domain.Picture
 import com.wobblebot.papotons.ui.board.CellEditorState
 import com.wobblebot.papotons.ui.board.CellPicture
@@ -377,10 +378,4 @@ private fun WordCategory.displayName(): Int = when (this) {
     WordCategory.QUESTION -> R.string.category_question
     WordCategory.NEGATION -> R.string.category_negation
     WordCategory.LITTLE_WORD -> R.string.category_little_word
-}
-
-/** Coupe à [maxLength] sans jamais laisser une moitié d'émoji (paire de substitution). */
-internal fun String.takeWhole(maxLength: Int): String {
-    val cut = take(maxLength)
-    return if (cut.length == maxLength && cut.last().isHighSurrogate()) cut.dropLast(1) else cut
 }

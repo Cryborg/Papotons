@@ -50,8 +50,7 @@ import kotlinx.collections.immutable.ImmutableList
 
 // Grille
 internal val GRID_PADDING = 8.dp
-// 8 dp au moins entre deux cibles : un appui qui tremble ne doit pas toucher la voisine.
-internal val CELL_SPACING = 8.dp
+internal val CELL_SPACING = TARGET_SPACING
 
 // Glisser-déposer, en édition : la place d'origine de la case portée reste visible, en pâle.
 private const val LIFTED_ORIGIN_ALPHA = 0.35f

@@ -11,6 +11,7 @@ import android.util.Log
 import com.wobblebot.papotons.R
 import com.wobblebot.papotons.data.CorruptedDatabaseCopies
 import com.wobblebot.papotons.data.PapotonsDatabase
+import com.wobblebot.papotons.data.readAtMost
 import com.wobblebot.papotons.data.board.BoardEntity
 import com.wobblebot.papotons.data.board.CellEntity
 import com.wobblebot.papotons.data.board.BoardRepository
@@ -30,7 +31,6 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
@@ -715,20 +715,6 @@ private class CountingOutputStream(output: OutputStream) : FilterOutputStream(ou
     override fun write(buffer: ByteArray, offset: Int, length: Int) {
         out.write(buffer, offset, length)
         count += length
-    }
-}
-
-/** `null` au-delà de [maxBytes] : rien n'est gardé en mémoire au-delà de la borne. */
-private fun InputStream.readAtMost(maxBytes: Long): ByteArray? {
-    val bytes = ByteArrayOutputStream()
-    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-    var total = 0L
-    while (true) {
-        val read = read(buffer)
-        if (read < 0) return bytes.toByteArray()
-        total += read
-        if (total > maxBytes) return null
-        bytes.write(buffer, 0, read)
     }
 }
 
