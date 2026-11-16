@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import com.wobblebot.papotons.data.plusEvictingOldest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -59,12 +60,14 @@ interface PictogramStore {
  * Les pictos embarqués (`assets/pictograms/<id>.png`), décodés une fois au démarrage, pendant le
  * carton du studio, puis publiés d'un bloc : une seule recomposition des cases, pas une par image.
  * Les pictos téléchargés (`files/pictograms/<id>.png`) se décodent à la demande, quand une case les
- * affiche : seuls ceux qui servent coûtent de la mémoire. Toute publication passe par [mutex] et
- * fusionne : aucune ne peut en effacer une autre.
+ * affiche : seuls ceux qui servent coûtent de la mémoire, et ils sont bornés comme les photos (une
+ * grosse restauration en vise des centaines). Toute publication passe par [mutex] et fusionne :
+ * aucune ne peut en effacer une autre.
  */
 @Singleton
 class PictogramImages @Inject constructor(@ApplicationContext private val context: Context) : PictogramStore {
-    private var images by mutableStateOf<Map<Long, ImageBitmap>>(emptyMap())
+    private var bundledImages by mutableStateOf<Map<Long, ImageBitmap>>(emptyMap())
+    private var downloadedImages by mutableStateOf<Map<Long, ImageBitmap>>(emptyMap())
     private val mutex = Mutex()
     private val downloadedDirectory = File(context.filesDir, DOWNLOADED_PICTOGRAMS_DIRECTORY)
 
@@ -76,11 +79,11 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
     private val bundledIds = CompletableDeferred<Set<Long>>()
 
     /** `null` tant que les pictos ne sont pas décodés, ou pour un picto absent ou illisible. */
-    fun image(pictogramId: Long): ImageBitmap? = images[pictogramId]
+    fun image(pictogramId: Long): ImageBitmap? = bundledImages[pictogramId] ?: downloadedImages[pictogramId]
 
     /** Décode un picto téléchargé s'il ne l'est pas encore. Rien tant que les embarqués ne sont pas listés. */
     suspend fun ensureLoaded(pictogramId: Long) {
-        if (pictogramId in bundledIds.await() || images.containsKey(pictogramId)) return
+        if (pictogramId in bundledIds.await() || downloadedImages.containsKey(pictogramId)) return
         val image = withContext(Dispatchers.IO) {
             val file = File(downloadedDirectory, "$pictogramId$PICTOGRAM_FILE_EXTENSION")
             if (file.isFile) {
@@ -97,7 +100,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
                 null
             }
         } ?: return
-        publish(mapOf(pictogramId to image))
+        publishDownloaded(pictogramId, image)
     }
 
     /**
@@ -165,7 +168,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
                 if (pending.exists()) pending.delete()
             }
         }
-        if (isWritten && publish) publish(mapOf(pictogramId to image))
+        if (isWritten && publish) publishDownloaded(pictogramId, image)
         return isWritten
     }
 
@@ -186,8 +189,12 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
         }
     }
 
-    private suspend fun publish(decoded: Map<Long, ImageBitmap>) {
-        mutex.withLock { images = images + decoded }
+    private suspend fun publishBundled(decoded: Map<Long, ImageBitmap>) {
+        mutex.withLock { bundledImages = bundledImages + decoded }
+    }
+
+    private suspend fun publishDownloaded(pictogramId: Long, image: ImageBitmap) {
+        mutex.withLock { downloadedImages = downloadedImages.plusEvictingOldest(pictogramId, image) }
     }
 
     private fun decodeFile(file: File): ImageBitmap? = decodeBounded { options -> BitmapFactory.decodeFile(file.path, options) }
@@ -259,8 +266,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
             Log.e(TAG, "Out of memory after ${decoded.size} pictograms", error)
         } finally {
             // Publié quoi qu'il arrive : un échec en route ne fait pas perdre les images déjà lues.
-            // Fusionné : un picto choisi pendant le carton n'est pas effacé.
-            publish(decoded)
+            publishBundled(decoded)
             bundledIds.complete(fileNames.mapNotNull { it.removeSuffix(PICTOGRAM_FILE_EXTENSION).toLongOrNull() }.toSet())
         }
         // Aucun fichier (APK mal empaqueté) est aussi un échec : jamais un « 0 sur 0 » en simple info.
