@@ -7,9 +7,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
 import android.net.Uri
-import android.system.ErrnoException
-import android.system.Os
-import android.system.OsConstants
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,6 +16,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
 import com.wobblebot.papotons.data.plusEvictingOldest
+import com.wobblebot.papotons.data.syncDirectory
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -165,7 +163,7 @@ class CellPhotos @Inject constructor(@ApplicationContext private val context: Co
                 square.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output).also { output.fd.sync() }
             }
             if (!isCompressed || !pending.renameTo(File(photosDirectory, name))) throw IOException("Restored photo not written")
-            syncDirectory()
+            syncDirectory(photosDirectory, TAG)
             // Une version d'avant, décodée ou jugée illisible, ne doit pas masquer celle-ci.
             unreadable.remove(name)
             missingReported.remove(name)
@@ -188,7 +186,7 @@ class CellPhotos @Inject constructor(@ApplicationContext private val context: Co
         if (target.isFile) return@withContext true
         photosDirectory.mkdirs()
         val isMoved = File(pendingDirectory, name).renameTo(target)
-        if (isMoved) syncDirectory() else Log.e(TAG, "A prepared photo could not be committed")
+        if (isMoved) syncDirectory(photosDirectory, TAG) else Log.e(TAG, "A prepared photo could not be committed")
         isMoved
     }
 
@@ -258,20 +256,6 @@ class CellPhotos @Inject constructor(@ApplicationContext private val context: Co
     } catch (exception: RuntimeException) {
         Log.w(TAG, "A cell photo could not be decoded: ${exception.javaClass.simpleName}")
         null
-    }
-
-    /** Le renommage n'est durable qu'une fois le dossier synchronisé (coupure de courant). */
-    private fun syncDirectory() {
-        try {
-            val descriptor = Os.open(photosDirectory.path, OsConstants.O_RDONLY, 0)
-            try {
-                Os.fsync(descriptor)
-            } finally {
-                Os.close(descriptor)
-            }
-        } catch (exception: ErrnoException) {
-            Log.w(TAG, "Photo directory could not be synced: ${exception.javaClass.simpleName}")
-        }
     }
 
     /**
