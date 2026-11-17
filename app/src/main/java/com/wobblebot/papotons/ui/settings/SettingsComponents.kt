@@ -197,10 +197,10 @@ private fun IconBadge(@DrawableRes icon: Int, colors: BadgeColors) {
 
 /** L'initiale d'un prénom dans une pastille ronde. Décorative : le prénom est écrit à côté. */
 @Composable
-fun NameBadge(name: String, colors: BadgeColors, modifier: Modifier = Modifier) {
+fun NameBadge(name: String, colors: BadgeColors) {
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier
+        modifier = Modifier
             .size(BADGE_SIZE)
             .clip(CircleShape)
             .background(colors.container)

@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
+import com.wobblebot.papotons.data.plusEvictingOldest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -49,13 +50,6 @@ private const val JPEG_QUALITY = 80
 
 /** Divise le côté gardé à l'affichage (240 px) : une case ou un mot de la phrase n'en demandent pas plus. */
 private const val DISPLAY_SAMPLE_SIZE = 2
-
-/**
- * Photos gardées décodées (environ 115 Ko chacune) : au-delà, la plus anciennement décodée sort, et
- * se redécode si une case l'affiche encore. Plus que le plus grand écran (accueil 7 × 8 et la
- * phrase), pour que les photos d'un même écran ne se chassent pas entre elles.
- */
-private const val MAX_DECODED_PHOTOS = 96
 
 /**
  * Ce que l'édition demande aux photos. Couture de test : le ViewModel se teste sur la JVM.
@@ -124,13 +118,8 @@ class CellPhotos @Inject constructor(@ApplicationContext private val context: Co
                 decoded.also { if (it == null && file.isFile && unreadable.add(name)) Log.w(TAG, "A cell photo is unreadable") }
             }
         } ?: return
-        mutex.withLock {
-            // Ordre d'arrivée : les plus anciennes sortent au-delà de la borne.
-            val updated = LinkedHashMap(images)
-            updated[name] = image
-            while (updated.size > MAX_DECODED_PHOTOS) updated.remove(updated.keys.first())
-            images = updated
-        }
+        // Environ 115 Ko par photo décodée : le cache est borné.
+        mutex.withLock { images = images.plusEvictingOldest(name, image) }
     }
 
     /** Au démarrage : les photos préparées et jamais validées, et la prise de vue, ne servent plus. */

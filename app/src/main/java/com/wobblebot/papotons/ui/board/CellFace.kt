@@ -146,7 +146,8 @@ internal fun Pictogram(pictogramId: Long, modifier: Modifier) {
         // La table des images est un état Compose : le picto se recompose quand elle se remplit.
         val image = LocalPictogramImages.current(pictogramId)
         val load = LocalPictogramLoader.current
-        LaunchedEffect(pictogramId) { load(pictogramId) }
+        // Relancé si l'image sort du cache borné pendant qu'elle est à l'écran.
+        LaunchedEffect(pictogramId, image == null) { if (image == null) load(pictogramId) }
         if (image != null) {
             Image(
                 bitmap = image,
