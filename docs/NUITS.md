@@ -2,6 +2,12 @@
 
 Relevés de la tournée du gate (vérification et envoi du travail des routines), le plus récent en tête.
 
+## Gate du 2026-11-17
+
+- `testDebugUnitTest` (16 s) et `lintDebug` (25 s), verts. Working copy propre, aucun schéma Room neuf.
+- Part : 9 commits importés de la tournée cloud (cache des pictos téléchargés borné comme celui des photos TODO-39, paramètre mort de `NameBadge` retiré, TODO-49 au TODO, tri du chantier, état des routines) et ce relevé.
+- Rien réparé, rien annulé.
+
 ## Gate du 2026-11-16
 
 - `testDebugUnitTest` (30 s) et `lintDebug` (28 s), verts. Working copy propre, aucun schéma Room neuf.
