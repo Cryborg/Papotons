@@ -47,8 +47,8 @@ android {
         // doivent pouvoir faire tourner l'appli (décision du 2026-11-06, docs/TODO.md).
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
