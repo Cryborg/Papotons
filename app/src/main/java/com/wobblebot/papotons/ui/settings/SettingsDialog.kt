@@ -28,6 +28,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -120,6 +121,10 @@ fun SettingsDialog(
 ) {
     var isAboutOpen by remember { mutableStateOf(false) }
     var isUpdateConfirmOpen by remember { mutableStateOf(false) }
+    // Une mise à jour qui n'est plus prête referme la demande : sans ça, elle se rouvrirait seule au prochain téléchargement.
+    LaunchedEffect(content.updateStatus) {
+        if (content.updateStatus != UpdateStatus.ReadyToInstall) isUpdateConfirmOpen = false
+    }
     val title = stringResource(R.string.settings_title)
     val back = { if (page == SettingsPage.Home) onClose() else onPageChosen(SettingsPage.Home) }
     Dialog(
