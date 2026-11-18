@@ -2,9 +2,6 @@ package com.wobblebot.papotons.data.pictogram
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.system.ErrnoException
-import android.system.Os
-import android.system.OsConstants
 import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.compose.runtime.getValue
@@ -13,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import com.wobblebot.papotons.data.plusEvictingOldest
+import com.wobblebot.papotons.data.syncDirectory
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -159,7 +157,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
                     output.fd.sync()
                 }
                 pending.renameTo(File(downloadedDirectory, "$pictogramId$PICTOGRAM_FILE_EXTENSION")).also { isRenamed ->
-                    if (isRenamed) syncDirectory() else Log.e(TAG, "Pictogram $pictogramId could not be renamed into place")
+                    if (isRenamed) syncDirectory(downloadedDirectory, TAG) else Log.e(TAG, "Pictogram $pictogramId could not be renamed into place")
                 }
             } catch (exception: IOException) {
                 Log.e(TAG, "Pictogram $pictogramId could not be written", exception)
@@ -170,23 +168,6 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
         }
         if (isWritten && publish) publishDownloaded(pictogramId, image)
         return isWritten
-    }
-
-    /**
-     * Le renommage n'est durable qu'une fois le dossier synchronisé : sans cela, après une coupure
-     * de courant, la base (synchronisée) pourrait viser un fichier dont l'entrée n'existe plus.
-     */
-    private fun syncDirectory() {
-        try {
-            val descriptor = Os.open(downloadedDirectory.path, OsConstants.O_RDONLY, 0)
-            try {
-                Os.fsync(descriptor)
-            } finally {
-                Os.close(descriptor)
-            }
-        } catch (exception: ErrnoException) {
-            Log.w(TAG, "Pictogram directory could not be synced", exception)
-        }
     }
 
     private suspend fun publishBundled(decoded: Map<Long, ImageBitmap>) {
