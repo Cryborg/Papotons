@@ -475,7 +475,8 @@ class BoardViewModel @Inject constructor(
     private fun reportMoveFailure(cell: Cell, boardId: Long, session: Long, exception: Exception) {
         Log.e(TAG, "Cell ${cell.id} of board $boardId could not be moved", exception)
         // Seulement dans l'édition qui l'a lancé : terminée entre-temps, ni elle ni la suivante ne l'affichent.
-        if (isEditing.value && session == editSession) hasMoveFailed.value = true
+        // Et seulement sur sa grille : une grille quittée entre-temps ne parle pas de l'échec.
+        if (isEditing.value && session == editSession && uiState.value.board?.id == boardId) hasMoveFailed.value = true
     }
 
     fun onEmptySlotClick(row: Int, column: Int) {
