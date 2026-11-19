@@ -151,13 +151,13 @@ private fun CellButton(
     isEditing: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    isLifted: Boolean = false,
+    isLifted: Boolean,
     /** En édition : le glisser partagé par la grille ; `null` hors édition (rien ne se déplace). */
-    drag: CellDrag? = null,
-    slot: GridSlot = GridSlot(cell.row, cell.column),
-    geometry: GridGeometry? = null,
-    onCellMoved: (Cell, Int, Int) -> Unit = { _, _, _ -> },
-    moveActions: List<CustomAccessibilityAction> = emptyList(),
+    drag: CellDrag?,
+    slot: GridSlot,
+    geometry: GridGeometry,
+    onCellMoved: (Cell, Int, Int) -> Unit,
+    moveActions: List<CustomAccessibilityAction>,
 ) {
     val isFolder = cell.linkedBoardId != null
     // Seul un verbe a des formes, hors édition ; ailleurs un appui long reste un appui simple.
@@ -183,7 +183,7 @@ private fun CellButton(
                 onLongClickLabel = if (hasForms) stringResource(R.string.conjugation_long_click_label) else null,
                 role = Role.Button,
             )
-            .then(if (drag != null && geometry != null) Modifier.cellDrag(cell, slot, geometry, drag, onCellMoved) else Modifier)
+            .then(if (drag != null) Modifier.cellDrag(cell, slot, geometry, drag, onCellMoved) else Modifier)
             // Soulevée : sa place d'origine reste visible, en pâle.
             .then(if (isLifted) Modifier.alpha(LIFTED_ORIGIN_ALPHA) else Modifier)
             .semantics {

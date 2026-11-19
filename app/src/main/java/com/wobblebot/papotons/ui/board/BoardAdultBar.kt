@@ -29,7 +29,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wobblebot.papotons.R
-import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.ImmutableList
 import com.wobblebot.papotons.domain.Screen
 
@@ -63,10 +62,10 @@ fun BoardAdultBar(
     onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier,
     /** Les écrans de l'utilisateur ; affichés à partir de deux. */
-    screens: ImmutableList<Screen> = persistentListOf(),
+    screens: ImmutableList<Screen>,
     /** L'écran ouvert (le bas de la pile), marqué au centre. */
-    selectedScreenId: Long? = null,
-    onScreenChosen: (Long) -> Unit = {},
+    selectedScreenId: Long?,
+    onScreenChosen: (Long) -> Unit,
 ) {
     Layout(
         modifier = modifier
