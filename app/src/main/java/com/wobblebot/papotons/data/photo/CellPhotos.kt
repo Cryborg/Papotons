@@ -132,11 +132,7 @@ class CellPhotos @Inject constructor(@ApplicationContext private val context: Co
         val target = File(pendingDirectory, name)
         try {
             val square = readSquare { context.contentResolver.openInputStream(source) } ?: return@withContext null
-            pendingDirectory.mkdirs()
-            val isCompressed = FileOutputStream(target).use { output ->
-                square.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output).also { output.fd.sync() }
-            }
-            if (isCompressed) name else reportImportFailure(IOException("compression failed"), target)
+            if (writeJpeg(square, target)) name else reportImportFailure(IOException("compression failed"), target)
         } catch (exception: IOException) {
             reportImportFailure(exception, target)
         } catch (exception: RuntimeException) {
@@ -144,6 +140,14 @@ class CellPhotos @Inject constructor(@ApplicationContext private val context: Co
             reportImportFailure(exception, target)
         } catch (error: OutOfMemoryError) {
             reportImportFailure(error, target)
+        }
+    }
+
+    /** Le seul format d'une photo gardée : JPEG à [JPEG_QUALITY], synchronisé sur le disque. */
+    private fun writeJpeg(square: Bitmap, target: File): Boolean {
+        pendingDirectory.mkdirs()
+        return FileOutputStream(target).use { output ->
+            square.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output).also { output.fd.sync() }
         }
     }
 
@@ -157,12 +161,8 @@ class CellPhotos @Inject constructor(@ApplicationContext private val context: Co
         val pending = File(pendingDirectory, name)
         try {
             val square = readSquare(open) ?: return@withContext false
-            pendingDirectory.mkdirs()
             photosDirectory.mkdirs()
-            val isCompressed = FileOutputStream(pending).use { output ->
-                square.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output).also { output.fd.sync() }
-            }
-            if (!isCompressed || !pending.renameTo(File(photosDirectory, name))) throw IOException("Restored photo not written")
+            if (!writeJpeg(square, pending) || !pending.renameTo(File(photosDirectory, name))) throw IOException("Restored photo not written")
             syncDirectory(photosDirectory, TAG)
             // Une version d'avant, décodée ou jugée illisible, ne doit pas masquer celle-ci.
             unreadable.remove(name)
