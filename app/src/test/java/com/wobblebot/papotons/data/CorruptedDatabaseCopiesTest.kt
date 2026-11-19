@@ -45,6 +45,16 @@ class CorruptedDatabaseCopiesTest {
     }
 
     @Test
+    fun `an interrupted copy is dropped and the kept copies stay`() {
+        copy("${PENDING_COPY_PREFIX}x/base")
+        copy("000001-a")
+
+        copies.dropPendingCopies()
+
+        assertEquals(listOf("000001-a"), kept())
+    }
+
+    @Test
     fun `the first copy after an edit survives four corruptions`() {
         copy("000001-original")
         // Grilles refaites après la première perte.
