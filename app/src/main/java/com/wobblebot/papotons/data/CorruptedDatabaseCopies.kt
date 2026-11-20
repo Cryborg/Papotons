@@ -83,6 +83,17 @@ class CorruptedDatabaseCopies(filesDirectory: File) {
         }
     }
 
+    /**
+     * Les copies interrompues (processus tué pendant la copie), que rien d'autre ne supprime et qui
+     * pèseraient à vie dans la sauvegarde. Seulement avant la première ouverture de la base : une
+     * copie en cours d'une autre corruption serait effacée.
+     */
+    fun dropPendingCopies() {
+        for (pending in directory.listFiles().orEmpty().filter { it.name.startsWith(PENDING_COPY_PREFIX) }) {
+            if (pending.deleteRecursively()) Log.w(TAG, "Interrupted copy $pending deleted") else Log.w(TAG, "Interrupted copy $pending could not be deleted")
+        }
+    }
+
     /** Les copies gardées (une par dossier), sans celles en cours. */
     fun copyDirectories(): List<File> = directory.listFiles().orEmpty().filter { it.isDirectory && !it.name.startsWith(PENDING_COPY_PREFIX) }
 

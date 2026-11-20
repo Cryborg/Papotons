@@ -109,10 +109,12 @@ class PapotonsDatabases(private val open: (onReplaced: () -> Unit, isReplacement
  * perdue, fermée plus tard, supprime en partant le `-wal` et le `-shm` de son chemin PAR LEUR NOM,
  * qui seraient alors ceux de la base neuve.
  */
-fun PapotonsDatabases(context: Context, name: String, onBuilt: (PapotonsDatabase) -> Unit = {}): PapotonsDatabases =
-    PapotonsDatabases { onReplaced, isReplacement ->
+fun PapotonsDatabases(context: Context, name: String, onBuilt: (PapotonsDatabase) -> Unit = {}): PapotonsDatabases {
+    CorruptedDatabaseCopies(context.filesDir).dropPendingCopies()
+    return PapotonsDatabases { onReplaced, isReplacement ->
         val factory = CorruptionCopyingOpenHelperFactory(context, onReplaced)
         val journalMode = if (isReplacement) RoomDatabase.JournalMode.TRUNCATE else RoomDatabase.JournalMode.AUTOMATIC
         val database = buildDatabase(context, name, factory, journalMode).also(onBuilt)
         OpenedDatabase(database.boardDao(), factory::isLost, factory::isReplaced)
     }
+}

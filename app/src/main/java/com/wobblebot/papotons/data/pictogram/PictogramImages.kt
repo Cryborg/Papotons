@@ -69,6 +69,10 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
     private val mutex = Mutex()
     private val downloadedDirectory = File(context.filesDir, DOWNLOADED_PICTOGRAMS_DIRECTORY)
 
+    private fun downloadedFile(pictogramId: Long) = File(downloadedDirectory, "$pictogramId$PICTOGRAM_FILE_EXTENSION")
+
+    private fun pictogramIdOf(fileName: String): Long? = fileName.removeSuffix(PICTOGRAM_FILE_EXTENSION).toLongOrNull()
+
     /**
      * Les ids embarqués : « embarqué » se décide par la liste des assets, pas par « déjà décodé ».
      * Attendu, jamais lu vide : une case affichée sous le carton du studio, avant la fin du
@@ -83,7 +87,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
     suspend fun ensureLoaded(pictogramId: Long) {
         if (pictogramId in bundledIds.await() || downloadedImages.containsKey(pictogramId)) return
         val image = withContext(Dispatchers.IO) {
-            val file = File(downloadedDirectory, "$pictogramId$PICTOGRAM_FILE_EXTENSION")
+            val file = downloadedFile(pictogramId)
             if (file.isFile) {
                 // Une image décorative ne doit jamais empêcher de parler : sans mémoire, la case reste sans picto.
                 try {
@@ -111,7 +115,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
     suspend fun isOnDevice(pictogramId: Long): Boolean {
         if (pictogramId in bundledIds.await()) return true
         return withContext(Dispatchers.IO) {
-            val file = File(downloadedDirectory, "$pictogramId$PICTOGRAM_FILE_EXTENSION")
+            val file = downloadedFile(pictogramId)
             // Sans la mémoire pour le vérifier, il est gardé : la restauration ne bute pas dessus.
             val isReadable = file.isFile && try {
                 decodeFile(file) != null
@@ -125,7 +129,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
     /** L'image d'un picto pour une sauvegarde ; `null` s'il n'est pas sur l'appareil. À fermer par l'appelant. */
     suspend fun open(pictogramId: Long): InputStream? {
         if (pictogramId in bundledIds.await()) return withContext(Dispatchers.IO) { context.assets.open("$DIRECTORY/$pictogramId$PICTOGRAM_FILE_EXTENSION") }
-        return withContext(Dispatchers.IO) { File(downloadedDirectory, "$pictogramId$PICTOGRAM_FILE_EXTENSION").takeIf { it.isFile }?.inputStream() }
+        return withContext(Dispatchers.IO) { downloadedFile(pictogramId).takeIf { it.isFile }?.inputStream() }
     }
 
     /** Hors du thread principal : jusqu'à trente vignettes par recherche, sur une tablette modeste. */
@@ -156,7 +160,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
                     output.write(bytes)
                     output.fd.sync()
                 }
-                pending.renameTo(File(downloadedDirectory, "$pictogramId$PICTOGRAM_FILE_EXTENSION")).also { isRenamed ->
+                pending.renameTo(downloadedFile(pictogramId)).also { isRenamed ->
                     if (isRenamed) syncDirectory(downloadedDirectory, TAG) else Log.e(TAG, "Pictogram $pictogramId could not be renamed into place")
                 }
             } catch (exception: IOException) {
@@ -222,7 +226,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
         val options = BitmapFactory.Options().apply { inSampleSize = SAMPLE_SIZE }
         try {
             for (fileName in fileNames) {
-                val pictogramId = fileName.removeSuffix(PICTOGRAM_FILE_EXTENSION).toLongOrNull()
+                val pictogramId = pictogramIdOf(fileName)
                 if (pictogramId == null) {
                     Log.w(TAG, "Unexpected file $fileName among the pictograms")
                     continue
@@ -248,7 +252,7 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
         } finally {
             // Publié quoi qu'il arrive : un échec en route ne fait pas perdre les images déjà lues.
             publishBundled(decoded)
-            bundledIds.complete(fileNames.mapNotNull { it.removeSuffix(PICTOGRAM_FILE_EXTENSION).toLongOrNull() }.toSet())
+            bundledIds.complete(fileNames.mapNotNull(::pictogramIdOf).toSet())
         }
         // Aucun fichier (APK mal empaqueté) est aussi un échec : jamais un « 0 sur 0 » en simple info.
         if (decoded.isEmpty() || decoded.size < fileNames.size) {

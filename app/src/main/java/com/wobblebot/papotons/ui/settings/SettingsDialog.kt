@@ -76,9 +76,6 @@ private val PROFILE_CARD_SPACING = 16.dp
 /** Un titre de page tient sur deux lignes à police agrandie ; TalkBack lit le titre entier (`paneTitle`). */
 private const val TITLE_MAX_LINES = 2
 
-/** Un prénom long passe à la ligne plutôt que d'être réduit à quelques lettres par « Changer ». */
-private const val PROFILE_NAME_MAX_LINES = 2
-
 /** Largeur de carte, à police normale, sous laquelle « Changer » passe sous le prénom ; grandit avec la police. */
 private val PROFILE_CARD_BUTTON_BESIDE_MIN_WIDTH = 300.dp
 
@@ -383,7 +380,7 @@ private fun OpenProfileCard(name: String, onChange: () -> Unit) {
                     Spacer(modifier = Modifier.width(PROFILE_CARD_SPACING))
                     // Un seul arrêt TalkBack : « Léo, Utilisateur ouvert ».
                     Column(modifier = Modifier.weight(1f).semantics(mergeDescendants = true) {}) {
-                        Text(name, style = MaterialTheme.typography.titleMedium, maxLines = PROFILE_NAME_MAX_LINES, overflow = TextOverflow.Ellipsis)
+                        Text(name, style = MaterialTheme.typography.titleMedium, maxLines = NAME_MAX_LINES, overflow = TextOverflow.Ellipsis)
                         Text(stringResource(R.string.settings_open_profile), style = MaterialTheme.typography.bodyMedium)
                     }
                     if (isButtonBeside) ChangeProfileButton(colors, onChange)

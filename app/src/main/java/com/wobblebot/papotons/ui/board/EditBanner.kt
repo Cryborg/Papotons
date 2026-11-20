@@ -44,7 +44,7 @@ private val WRITTEN_BACKUP_MIN_WIDTH = 360.dp
  * [hasMoveFailed] : un déplacement de case a échoué, dit à la place du titre (la barre ne grandit pas).
  */
 @Composable
-fun EditBanner(onDone: () -> Unit, onBackup: () -> Unit, hasUnsavedChanges: Boolean, modifier: Modifier = Modifier, hasMoveFailed: Boolean = false) {
+fun EditBanner(onDone: () -> Unit, onBackup: () -> Unit, hasUnsavedChanges: Boolean, modifier: Modifier = Modifier, hasMoveFailed: Boolean) {
     BoxWithConstraints(modifier = modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
         val isBackupWritten = maxWidth >= WRITTEN_BACKUP_MIN_WIDTH * LocalDensity.current.fontScale
         BannerRow(onDone, onBackup, hasUnsavedChanges, isBackupWritten, hasMoveFailed)
