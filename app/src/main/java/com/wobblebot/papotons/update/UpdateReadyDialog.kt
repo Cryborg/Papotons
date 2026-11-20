@@ -14,8 +14,8 @@ import com.wobblebot.papotons.R
  * Une mise à jour est téléchargée et n'attend plus que le feu vert de l'utilisateur.
  *
  * On ne l'installe pas dans son dos : `completeUpdate()` redémarre l'appli, et le faire au
- * milieu d'une phrase serait vécu comme une panne. « Plus tard » est une réponse pleine
- * et entière : l'hôte la retient pour la session.
+ * milieu d'une phrase serait vécu comme une panne. « Plus tard » referme la modale : elle ne
+ * se rouvre qu'au toucher de la ligne « Mise à jour prête » des Réglages.
  */
 @Composable
 fun UpdateReadyDialog(onInstall: () -> Unit, onLater: () -> Unit) {
