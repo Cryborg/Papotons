@@ -2,6 +2,11 @@
 
 Relevés de la tournée du gate (vérification et envoi du travail des routines), le plus récent en tête.
 
+## Gate du 2026-11-21
+
+- Tâches : tests unitaires (15 s) et lint (25 s), verts. 6 commits importés de la tournée cloud. Aucun schéma Room touché.
+- Part : l'éditeur de case et ses lanceurs photo sortent de BoardRoute, le KDoc de la modale de mise à jour corrigé. Rien réparé ni annulé.
+
 ## Gate du 2026-11-20
 
 - `testDebugUnitTest` (18 s) et `lintDebug` (29 s), verts. Working copy propre, aucun schéma Room neuf.
