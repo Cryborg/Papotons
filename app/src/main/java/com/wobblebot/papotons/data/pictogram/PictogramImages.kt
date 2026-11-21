@@ -216,7 +216,6 @@ class PictogramImages @Inject constructor(@ApplicationContext private val contex
             context.assets.list(DIRECTORY).orEmpty()
         } catch (exception: IOException) {
             Log.e(TAG, "Bundled pictograms could not be listed", exception)
-            bundledIds.complete(emptySet())
             return@withContext
         }
         // Avant que les écritures ne puissent commencer (elles attendent la liste) : le ménage ne
