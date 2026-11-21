@@ -165,9 +165,6 @@ fun BoardRoute(
     // Devant le contrôle, pas derrière : le restaurer ne fait que redemander la réponse.
     var gatedAction by rememberSaveable { mutableStateOf<GatedAction?>(null) }
     val activity = LocalActivity.current
-    val canTakePhoto = remember(context) { context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) }
-    val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture(), viewModel::onCameraResult)
-    val choosePhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia(), viewModel::onPhotoResult)
     // Revenu trop tard (l'adulte est parti), un document termine l'édition comme une photo.
     val saveBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BACKUP_MIME_TYPE)) { document ->
         if (!backupViewModel.onSaveDocument(document)) viewModel.onStopEditing()
@@ -306,46 +303,7 @@ fun BoardRoute(
             onClose = { gatedAction = null },
         )
     }
-    state.editor?.let { editor ->
-        CellEditorDialog(
-            state = editor,
-            onSave = viewModel::onEditorSave,
-            onDelete = viewModel::onEditorDelete,
-            onOpenFolder = viewModel::onEditorOpenFolder,
-            onSearchPictogram = viewModel::onSearchOpen,
-            onRemovePictogram = viewModel::onChosenPictogramRemoved,
-            onTakePhoto = if (canTakePhoto) {
-                {
-                    try {
-                        takePhoto.launch(viewModel.onCameraRequested())
-                    } catch (exception: ActivityNotFoundException) {
-                        Log.w(TAG, "No camera app", exception)
-                        viewModel.onPhotoRequestFailed()
-                    }
-                }
-            } else {
-                null
-            },
-            onChoosePhoto = {
-                try {
-                    viewModel.onGalleryRequested()
-                    choosePhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                } catch (exception: ActivityNotFoundException) {
-                    Log.w(TAG, "No photo picker", exception)
-                    viewModel.onPhotoRequestFailed()
-                }
-            },
-            onClose = viewModel::onEditorClose,
-        )
-    }
-    state.pictogramSearch?.let { search ->
-        PictogramSearchDialog(
-            state = search,
-            onSearch = viewModel::onSearch,
-            onPick = viewModel::onSearchPick,
-            onClose = viewModel::onSearchClose,
-        )
-    }
+    CellEditorDialogs(state, viewModel)
     if (state.isVolumeLockedDialogOpen) {
         VolumeLockedDialog(
             onOpenSettings = {
@@ -421,6 +379,55 @@ fun BoardRoute(
             },
             areSettingsUnreachable = areSettingsUnreachable,
             onClose = { isSpeechDialogOpen = false },
+        )
+    }
+}
+
+/** Éditeur de case et recherche de picto, avec l'appareil photo et la galerie qu'ils ouvrent. */
+@Composable
+private fun CellEditorDialogs(state: BoardUiState, viewModel: BoardViewModel) {
+    val context = LocalContext.current
+    val canTakePhoto = remember(context) { context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) }
+    val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture(), viewModel::onCameraResult)
+    val choosePhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia(), viewModel::onPhotoResult)
+    state.editor?.let { editor ->
+        CellEditorDialog(
+            state = editor,
+            onSave = viewModel::onEditorSave,
+            onDelete = viewModel::onEditorDelete,
+            onOpenFolder = viewModel::onEditorOpenFolder,
+            onSearchPictogram = viewModel::onSearchOpen,
+            onRemovePictogram = viewModel::onChosenPictogramRemoved,
+            onTakePhoto = if (canTakePhoto) {
+                {
+                    try {
+                        takePhoto.launch(viewModel.onCameraRequested())
+                    } catch (exception: ActivityNotFoundException) {
+                        Log.w(TAG, "No camera app", exception)
+                        viewModel.onPhotoRequestFailed()
+                    }
+                }
+            } else {
+                null
+            },
+            onChoosePhoto = {
+                try {
+                    viewModel.onGalleryRequested()
+                    choosePhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                } catch (exception: ActivityNotFoundException) {
+                    Log.w(TAG, "No photo picker", exception)
+                    viewModel.onPhotoRequestFailed()
+                }
+            },
+            onClose = viewModel::onEditorClose,
+        )
+    }
+    state.pictogramSearch?.let { search ->
+        PictogramSearchDialog(
+            state = search,
+            onSearch = viewModel::onSearch,
+            onPick = viewModel::onSearchPick,
+            onClose = viewModel::onSearchClose,
         )
     }
 }
