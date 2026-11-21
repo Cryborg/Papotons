@@ -89,7 +89,27 @@ Pour les **joueurs**, pas pour les développeurs :
 | Garde contre une course entre deux écrans | 🐛 Correction d'un bug de navigation |
 | Migration du schéma de sauvegarde | (rien : invisible pour le joueur) |
 
-**500 caractères au plus par langue**, contenu du bloc seul : le script compte et refuse avant le build, comme il refuse une langue manquante. Au-delà de 450, regrouper (« 🐛 Corrections diverses »).
+### Écrire comme on parle
+
+Une note se lit comme une phrase qu'on dirait à un joueur, pas comme un titre de commit raccourci :
+
+- **une vraie phrase, avec un verbe** : « Choisis n'importe quelle couleur avec le nouveau nuancier », pas « Nuancier, couleurs récentes et taille libre » ;
+- **ce que le joueur voit ou fait, avec les mots de l'écran** : le nom d'un bouton ou d'un mode tel qu'il s'affiche, jamais un nom du code ou de l'équipe (calque, couleur libre, transaction, catalogue, tour sauté...) ;
+- **une correction dit le souci que le joueur a pu voir**, puis qu'il est réglé : « Le pot de peinture ne déborde plus sur les traits colorés », pas « Un remplissage ne ronge plus un trait de couleur libre » ;
+- **une idée par ligne** : deux idées collées par une virgule, « et » ou deux points se séparent, ou la moins utile part ;
+- **relire chaque ligne à voix haute** : un joueur qui n'a jamais vu le code comprend-il ce qui change pour lui, du premier coup ? Sinon, la réécrire ;
+- **trop long pour la limite** : retirer les lignes de moindre intérêt, ou les fondre dans « 🐛 Et d'autres petites corrections ». Jamais compresser les phrases en style télégraphique pour gagner des caractères.
+
+| Trop sec ou obscur | Naturel |
+|---|---|
+| ✨ Nuancier, couleurs récentes et taille de pinceau libre | ✨ Choisis n'importe quelle couleur et la taille de ton pinceau |
+| 🔧 Chaque thème a la même chance de sortir, petit ou grand | 🔧 Les petits thèmes sortent aussi souvent que les gros |
+| 🐛 Les ex aequo partagent le même rang au classement | 🐛 Deux joueurs à égalité ont maintenant la même place au classement |
+| 🐛 L'invitation s'efface quand la partie n'est plus joignable | 🐛 Une invitation à une partie terminée disparaît toute seule |
+
+En anglais aussi : une phrase qu'un joueur anglophone dirait, pas le calque du français.
+
+**500 caractères au plus par langue**, contenu du bloc seul : le script compte et refuse avant le build, comme il refuse une langue manquante. Au-delà, voir « trop long pour la limite » plus haut.
 
 ```
 ## v1.4.0
