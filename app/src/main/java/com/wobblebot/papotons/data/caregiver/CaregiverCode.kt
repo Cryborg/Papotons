@@ -21,7 +21,7 @@ fun isValidCaregiverCode(code: String): Boolean = code.length == CAREGIVER_CODE_
  * fichier, et c'est pourquoi les accompagnants ne partent jamais dans une sauvegarde `.obz`.
  */
 object CaregiverCode {
-    fun newSalt(random: SecureRandom = SecureRandom()): ByteArray = ByteArray(SALT_LENGTH_BYTES).also(random::nextBytes)
+    fun newSalt(): ByteArray = ByteArray(SALT_LENGTH_BYTES).also(SecureRandom()::nextBytes)
 
     fun hash(code: String, salt: ByteArray): ByteArray {
         require(isValidCaregiverCode(code)) { "A caregiver code is $CAREGIVER_CODE_LENGTH digits" }
