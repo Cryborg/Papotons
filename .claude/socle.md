@@ -11,10 +11,10 @@ Lu par les skills et agents du plugin `socle` (review-and-fix, lessons, push-own
 
 ## Gates
 
-- toujours : `bash .claude/scripts/gradle-queue.sh compileDebugKotlin`
-- toujours : `bash .claude/scripts/gradle-queue.sh testDebugUnitTest`
-- toujours : `bash .claude/scripts/gradle-queue.sh lintDebug` (`MissingTranslation` en erreur, aucune baseline)
-- si ressources, manifeste ou catalogue de versions : `bash .claude/scripts/gradle-queue.sh assembleDebug`
+Toutes les tâches d'une gate dans UN seul appel Gradle (un tour de file et une configuration au lieu de trois), une fois, à la fin. Pendant le travail, seulement les tests du code touché (`bash .claude/scripts/gradle-queue.sh testDebugUnitTest --tests '<motif>'`).
+
+- toujours, à la fin : `bash .claude/scripts/gradle-queue.sh testDebugUnitTest lintDebug` (les tests compilent déjà le code : pas de `compileDebugKotlin` à part ; `MissingTranslation` en erreur, aucune baseline)
+- si ressources, manifeste ou catalogue de versions : ajouter `assembleDebug` au même appel
 - si code instrumenté touché : `bash .claude/scripts/gradle-queue.sh connectedAndroidTest`
 
 ## Revue
