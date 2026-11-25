@@ -2,6 +2,12 @@
 
 Relevés de la tournée du gate (vérification et envoi du travail des routines), le plus récent en tête.
 
+## Gate du 2026-11-25
+
+- Tâches : `testDebugUnitTest` et `lintDebug` verts en une série (57 s). 15 commits importés de la tournée cloud. Aucun schéma Room touché.
+- Part : trois retraits de code mort ou redoublé (`complete` de `loadBundled`, paramètre de `newSalt`, extension de photo écrite deux fois), le tri du TODO (TODO-24, 56, 57) et l'état de la tournée cloud.
+- Rien réparé ni annulé.
+
 ## Gate du 2026-11-21
 
 - Tâches : tests unitaires (15 s) et lint (25 s), verts. 6 commits importés de la tournée cloud. Aucun schéma Room touché.
