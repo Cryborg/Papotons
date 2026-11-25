@@ -36,7 +36,7 @@ private const val TAG = "CellPhotos"
 const val CELL_PHOTOS_DIRECTORY = "photos"
 
 /** Le seul nom qu'une photo validée peut porter (`<uuid>.jpg`, comme [CellPhotos.prepare] l'écrit). */
-val CELL_PHOTO_NAME = Regex("""[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg""")
+val CELL_PHOTO_NAME = Regex("""[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}""" + Regex.escape(EXTENSION))
 private const val PENDING_DIRECTORY = "photos-pending"
 private const val CAMERA_DIRECTORY = "camera"
 private const val CAMERA_FILE = "capture.jpg"
