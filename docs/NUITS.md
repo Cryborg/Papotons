@@ -2,6 +2,12 @@
 
 Relevés de la tournée du gate (vérification et envoi du travail des routines), le plus récent en tête.
 
+## Gate du 2026-11-26
+
+- Tâches : `testDebugUnitTest` et `lintDebug` verts en une série (17 s). 6 commits importés de la tournée cloud. Aucun schéma Room touché.
+- Part : la voix du pays exact préférée aussi chez les moteurs qui nomment leurs voix en code ISO 3 (et son test), le README et le TODO (TODO-55, 56) remis justes, l'état de la tournée cloud.
+- Rien réparé ni annulé.
+
 ## Gate du 2026-11-25
 
 - Tâches : `testDebugUnitTest` et `lintDebug` verts en une série (57 s). 15 commits importés de la tournée cloud. Aucun schéma Room touché.
