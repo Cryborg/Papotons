@@ -47,7 +47,7 @@ fun chooseOfflineVoice(current: VoiceOption?, available: List<VoiceOption>?, wan
     if (current == null && available == null) return VoiceChoice.KeepCurrent
     val best = available.orEmpty()
         .filter(::suits)
-        .minByOrNull { if (it.locale == wanted) 0 else 1 }
+        .minByOrNull { if (it.locale.iso3Country() == wanted.iso3Country()) 0 else 1 }
     return if (best == null) VoiceChoice.NoOfflineVoice else VoiceChoice.SwitchTo(best.name)
 }
 
@@ -56,4 +56,11 @@ private fun Locale.iso3Language(): String = try {
     isO3Language
 } catch (exception: MissingResourceException) {
     language
+}
+
+/** Un pays sans code ISO 3 connu se compare tel quel. */
+private fun Locale.iso3Country(): String = try {
+    isO3Country
+} catch (exception: MissingResourceException) {
+    country
 }

@@ -72,6 +72,18 @@ class VoiceSelectionTest {
     }
 
     @Test
+    fun `the exact country is preferred among voices named in ISO 3 code`() {
+        val current = VoiceOption("fr-network", french, isOffline = false)
+        val available = listOf(
+            current,
+            VoiceOption("fra-can-local", Locale("fra", "CAN"), isOffline = true),
+            VoiceOption("fra-fra-local", Locale("fra", "FRA"), isOffline = true),
+        )
+
+        assertEquals(VoiceChoice.SwitchTo("fra-fra-local"), chooseOfflineVoice(current, available, french))
+    }
+
+    @Test
     fun `an offline voice of another language does not count`() {
         val current = VoiceOption("fr-network", french, isOffline = false)
         val available = listOf(current, VoiceOption("en-local", Locale.US, isOffline = true))
