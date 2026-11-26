@@ -1451,6 +1451,16 @@ class BoardViewModelTest {
     }
 
     @Test
+    fun `a photo coming back to a recreated process is discarded`() = runTest(dispatcher) {
+        val (viewModel, _) = editingEmptyHome()
+
+        viewModel.onCameraResult(isSaved = true)
+
+        assertEquals(0, photos.prepareCount)
+        assertEquals(1, photos.cameraCaptureDiscarded)
+    }
+
+    @Test
     fun `an import finishing after the editor closed is thrown away`() = runTest(dispatcher) {
         val (viewModel, dao) = editingEmptyHome()
         photos.prepareGate = CompletableDeferred()
