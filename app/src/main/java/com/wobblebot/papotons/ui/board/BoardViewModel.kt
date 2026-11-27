@@ -148,6 +148,9 @@ class BoardViewModel @Inject constructor(
     /** Change à chaque photo demandée ou abandonnée : un import arrivé trop tard est jeté. */
     private var photoCount = 0L
 
+    /** Change à chaque import lancé : seul le dernier vide la prise de vue. */
+    private var importCount = 0L
+
     /** Depuis quand l'appli photo ou le sélecteur sont ouverts ; `null` sinon. */
     private var photoRequestedAtMs: Long? = null
     private var cameraCapture: Uri? = null
@@ -538,10 +541,13 @@ class BoardViewModel @Inject constructor(
             return
         }
         val photoNumber = ++photoCount
+        val importNumber = ++importCount
         editor.update { it?.copy(isImportingPhoto = true, photoFailure = null) }
         viewModelScope.launch {
             val name = photos.prepare(source)
-            photos.discardCameraCapture()
+            // « Retirer » rend les boutons pendant l'import : une photo demandée depuis écrit peut-être
+            // déjà dans la prise de vue, c'est son propre retour qui la videra.
+            if (importNumber == importCount && photoRequestedAtMs == null) photos.discardCameraCapture()
             if (photoNumber != photoCount || editor.value == null) {
                 if (name != null) photos.delete(name)
                 return@launch

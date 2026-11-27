@@ -1620,6 +1620,23 @@ class BoardViewModelTest {
     }
 
     @Test
+    fun `a late import never deletes the photo taken after it was removed`() = runTest(dispatcher) {
+        val (viewModel, _) = editingEmptyHome()
+        photos.prepareGate = CompletableDeferred()
+        viewModel.onGalleryRequested()
+        viewModel.onPhotoResult(gallery)
+        viewModel.onChosenPictogramRemoved()
+
+        viewModel.onCameraRequested()
+        checkNotNull(photos.prepareGate).complete(Unit)
+
+        assertEquals(0, photos.cameraCaptureDiscarded)
+        viewModel.onCameraResult(isSaved = true)
+        assertEquals("photo2.jpg", viewModel.state().editor?.chosenPhoto)
+        assertEquals(1, photos.cameraCaptureDiscarded)
+    }
+
+    @Test
     fun `removing the image during an import never leaves the editor stuck`() = runTest(dispatcher) {
         val (viewModel, dao) = editingEmptyHome()
         photos.prepareGate = CompletableDeferred()
