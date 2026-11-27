@@ -65,7 +65,7 @@
     "app/src/main/java/com/wobblebot/papotons/ui/backup/RestoreConfirmDialog.kt": "2026-11-27",
     "app/src/main/java/com/wobblebot/papotons/ui/board/BoardAdultBar.kt": "2026-11-27",
     "app/src/main/java/com/wobblebot/papotons/ui/board/BoardCardStyle.kt": "2026-11-27",
-    "app/src/main/java/com/wobblebot/papotons/ui/board/BoardScreen.kt": "2026-11-26",
+    "app/src/main/java/com/wobblebot/papotons/ui/board/BoardScreen.kt": "2026-11-27",
     "app/src/main/java/com/wobblebot/papotons/ui/board/BoardTopBar.kt": "2026-11-27",
     "app/src/main/java/com/wobblebot/papotons/ui/board/BoardUiState.kt": "2026-11-27",
     "app/src/main/java/com/wobblebot/papotons/ui/board/BoardViewModel.kt": "2026-11-27",
