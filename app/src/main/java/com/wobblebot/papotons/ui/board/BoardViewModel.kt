@@ -520,7 +520,11 @@ class BoardViewModel @Inject constructor(
      * de l'appli photo : l'édition se termine, la photo est ignorée.
      */
     fun onPhotoResult(source: Uri?) {
-        val requestedAt = photoRequestedAtMs ?: return
+        // Process killed while the camera was open: the photo the adult took must not stay in the cache.
+        val requestedAt = photoRequestedAtMs ?: run {
+            photos.discardCameraCapture()
+            return
+        }
         photoRequestedAtMs = null
         if (elapsedRealtimeMs() - requestedAt > PHOTO_REQUEST_TIMEOUT_MS) {
             Log.i(TAG, "Photo came back too late, edit mode ended")

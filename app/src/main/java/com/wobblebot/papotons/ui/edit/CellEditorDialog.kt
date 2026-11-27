@@ -266,12 +266,12 @@ private fun CellEditor(
                             Text(stringResource(R.string.editor_delete), color = MaterialTheme.colorScheme.error)
                         }
                         if (existing.linkedBoardId != null) {
-                            // Seulement sans modification en cours : ouvrir le dossier ferme l'éditeur et
-                            // jetterait le brouillon sans le dire.
+                            // Seulement sans modification ni photo en cours d'import : ouvrir le dossier ferme
+                            // l'éditeur et jetterait le brouillon sans le dire.
                             val isUnchanged = label == existing.label && pictogramId == existing.pictogramId &&
                                 categoryName == existing.category?.name && photoFile == existing.photoFile &&
                                 spokenText == existing.spokenText.orEmpty()
-                            OutlinedButton(onClick = onOpenFolder, enabled = !state.isWriting && isUnchanged) {
+                            OutlinedButton(onClick = onOpenFolder, enabled = !state.isWriting && !state.isImportingPhoto && isUnchanged) {
                                 Text(stringResource(R.string.editor_open_folder))
                             }
                         }
