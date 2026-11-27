@@ -2,6 +2,12 @@
 
 Relevés de la tournée du gate (vérification et envoi du travail des routines), le plus récent en tête.
 
+## Gate du 2026-11-27
+
+- Tâches : `testDebugUnitTest` et `lintDebug` verts en une série (34 s). 9 commits importés de la tournée cloud. Aucun schéma Room touché.
+- Part : « Ouvrir le dossier » qui attend la fin de l'import d'une photo, la photo revenue dans un processus recréé effacée du cache (et son test), les constats de la relecture et de la tranche tournante au TODO, l'état de la tournée cloud.
+- Rien réparé ni annulé.
+
 ## Gate du 2026-11-26
 
 - Tâches : `testDebugUnitTest` et `lintDebug` verts en une série (17 s). 6 commits importés de la tournée cloud. Aucun schéma Room touché.
