@@ -2,6 +2,12 @@
 
 Relevés de la tournée du gate (vérification et envoi du travail des routines), le plus récent en tête.
 
+## Gate du 2026-11-28
+
+- Tâches : `testDebugUnitTest` et `lintDebug` verts en une série (38 s). 8 commits importés de la tournée cloud. Aucun schéma Room touché.
+- Part : les Réglages de la grille sortis dans leur propre dialogue, l'import de photo en retard qui n'efface plus la photo prise après « Retirer », l'état de la tournée cloud.
+- Rien réparé ni annulé.
+
 ## Gate du 2026-11-27
 
 - Tâches : `testDebugUnitTest` et `lintDebug` verts en une série (34 s). 9 commits importés de la tournée cloud. Aucun schéma Room touché.
