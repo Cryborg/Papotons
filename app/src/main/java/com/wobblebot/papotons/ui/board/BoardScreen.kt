@@ -71,8 +71,10 @@ import com.wobblebot.papotons.ui.edit.CellEditorDialog
 import com.wobblebot.papotons.ui.edit.AdultGateDialog
 import com.wobblebot.papotons.ui.edit.PictogramSearchDialog
 import com.wobblebot.papotons.ui.settings.CaregiverActions
+import com.wobblebot.papotons.ui.settings.CaregiversUiState
 import com.wobblebot.papotons.ui.settings.CaregiversViewModel
 import com.wobblebot.papotons.ui.settings.ProfileActions
+import com.wobblebot.papotons.ui.settings.ProfilesUiState
 import com.wobblebot.papotons.ui.settings.ProfilesViewModel
 import com.wobblebot.papotons.ui.settings.ScreenActions
 import com.wobblebot.papotons.ui.settings.ScreensViewModel
@@ -135,29 +137,8 @@ fun BoardRoute(
     val context = LocalContext.current
     val backupState by backupViewModel.uiState.collectAsStateWithLifecycle()
     val profilesState by profilesViewModel.uiState.collectAsStateWithLifecycle()
-    val screensState by screensViewModel.uiState.collectAsStateWithLifecycle()
     // Collecté dès l'écran affiché : le contrôle ne doit pas attendre la lecture au moment de l'appui.
     val caregiversState by caregiversViewModel.uiState.collectAsStateWithLifecycle()
-    val caregiverActions = remember(caregiversViewModel) {
-        CaregiverActions(onSave = caregiversViewModel::onSave, onDelete = caregiversViewModel::onDelete)
-    }
-    val profileActions = remember(profilesViewModel) {
-        ProfileActions(
-            onChosen = profilesViewModel::onSwitch,
-            onCreate = profilesViewModel::onCreate,
-            onRename = profilesViewModel::onRename,
-            onDelete = profilesViewModel::onDelete,
-            onExitLockChanged = profilesViewModel::onExitLockChanged,
-        )
-    }
-    val screenActions = remember(screensViewModel) {
-        ScreenActions(
-            onCreate = screensViewModel::onCreate,
-            onRename = screensViewModel::onRename,
-            onDelete = screensViewModel::onDelete,
-            onMove = screensViewModel::onMove,
-        )
-    }
     val backupFileNamePattern = stringResource(R.string.backup_file_name)
     var isSpeechDialogOpen by rememberSaveable { mutableStateOf(false) }
     var areSettingsUnreachable by rememberSaveable { mutableStateOf(false) }
@@ -243,43 +224,20 @@ fun BoardRoute(
         isLeaveGated = isLeaveGated,
         isInMultiWindow = isInMultiWindow,
     )
-    // Un échec d'une ouverture précédente ne s'affiche plus.
-    LaunchedEffect(state.isSettingsOpen) {
-        if (state.isSettingsOpen) {
-            profilesViewModel.onShown()
-            caregiversViewModel.onShown()
-            screensViewModel.onShown()
-        }
-    }
-    if (state.isSettingsOpen) {
-        SettingsDialog(
-            page = state.settingsPage ?: SettingsPage.Home,
-            content = SettingsContent(
-                screens = state.board?.screens ?: persistentListOf(),
-                screensState = screensState,
-                newScreenSize = state.boardSize ?: BoardSize.STANDARD,
-                profiles = profilesState,
-                caregivers = caregiversState,
-                hasUnsavedChanges = backupState.hasUnsavedChanges,
-                // Relu seulement Réglages ouverts.
-                isAppPinned = rememberIsPinned(),
-                updateStatus = updateStatus,
-            ),
-            profileActions = profileActions,
-            caregiverActions = caregiverActions,
-            screenActions = screenActions,
-            onPageChosen = viewModel::onSettingsPageChosen,
-            onEditBoards = viewModel::onStartEditing,
-            // La sauvegarde n'existe qu'en édition : on y entre, comme « Restaurer » des grilles perdues.
-            onBackup = {
-                viewModel.onStartEditing()
-                backupViewModel.onOpen()
-            },
-            onStartUpdate = onStartUpdate,
-            onInstallUpdate = onInstallUpdate,
-            onClose = viewModel::onCloseSettings,
-        )
-    }
+    BoardSettingsDialog(
+        state = state,
+        viewModel = viewModel,
+        backupViewModel = backupViewModel,
+        hasUnsavedChanges = backupState.hasUnsavedChanges,
+        profilesViewModel = profilesViewModel,
+        profilesState = profilesState,
+        caregiversViewModel = caregiversViewModel,
+        caregiversState = caregiversState,
+        screensViewModel = screensViewModel,
+        updateStatus = updateStatus,
+        onStartUpdate = onStartUpdate,
+        onInstallUpdate = onInstallUpdate,
+    )
     gatedAction?.let { action ->
         AdultGateDialog(
             state = caregiversState,
@@ -379,6 +337,82 @@ fun BoardRoute(
             },
             areSettingsUnreachable = areSettingsUnreachable,
             onClose = { isSpeechDialogOpen = false },
+        )
+    }
+}
+
+/** Les Réglages, ouverts derrière le contrôle parental, avec les actions de leurs pages. */
+@Composable
+private fun BoardSettingsDialog(
+    state: BoardUiState,
+    viewModel: BoardViewModel,
+    backupViewModel: BackupViewModel,
+    hasUnsavedChanges: Boolean,
+    profilesViewModel: ProfilesViewModel,
+    profilesState: ProfilesUiState,
+    caregiversViewModel: CaregiversViewModel,
+    caregiversState: CaregiversUiState,
+    screensViewModel: ScreensViewModel,
+    updateStatus: UpdateStatus,
+    onStartUpdate: () -> Unit,
+    onInstallUpdate: () -> Unit,
+) {
+    val screensState by screensViewModel.uiState.collectAsStateWithLifecycle()
+    val caregiverActions = remember(caregiversViewModel) {
+        CaregiverActions(onSave = caregiversViewModel::onSave, onDelete = caregiversViewModel::onDelete)
+    }
+    val profileActions = remember(profilesViewModel) {
+        ProfileActions(
+            onChosen = profilesViewModel::onSwitch,
+            onCreate = profilesViewModel::onCreate,
+            onRename = profilesViewModel::onRename,
+            onDelete = profilesViewModel::onDelete,
+            onExitLockChanged = profilesViewModel::onExitLockChanged,
+        )
+    }
+    val screenActions = remember(screensViewModel) {
+        ScreenActions(
+            onCreate = screensViewModel::onCreate,
+            onRename = screensViewModel::onRename,
+            onDelete = screensViewModel::onDelete,
+            onMove = screensViewModel::onMove,
+        )
+    }
+    // Un échec d'une ouverture précédente ne s'affiche plus.
+    LaunchedEffect(state.isSettingsOpen) {
+        if (state.isSettingsOpen) {
+            profilesViewModel.onShown()
+            caregiversViewModel.onShown()
+            screensViewModel.onShown()
+        }
+    }
+    if (state.isSettingsOpen) {
+        SettingsDialog(
+            page = state.settingsPage ?: SettingsPage.Home,
+            content = SettingsContent(
+                screens = state.board?.screens ?: persistentListOf(),
+                screensState = screensState,
+                newScreenSize = state.boardSize ?: BoardSize.STANDARD,
+                profiles = profilesState,
+                caregivers = caregiversState,
+                hasUnsavedChanges = hasUnsavedChanges,
+                // Relu seulement Réglages ouverts.
+                isAppPinned = rememberIsPinned(),
+                updateStatus = updateStatus,
+            ),
+            profileActions = profileActions,
+            caregiverActions = caregiverActions,
+            screenActions = screenActions,
+            onPageChosen = viewModel::onSettingsPageChosen,
+            onEditBoards = viewModel::onStartEditing,
+            // La sauvegarde n'existe qu'en édition : on y entre, comme « Restaurer » des grilles perdues.
+            onBackup = {
+                viewModel.onStartEditing()
+                backupViewModel.onOpen()
+            },
+            onStartUpdate = onStartUpdate,
+            onInstallUpdate = onInstallUpdate,
+            onClose = viewModel::onCloseSettings,
         )
     }
 }
